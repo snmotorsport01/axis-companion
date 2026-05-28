@@ -2,6 +2,13 @@
   "_schema": "axis-firmware-manifest/v1",
   "releases": [
     {
+      "version": "v1.0.1",
+      "date": "2026-05-28",
+      "notes": "v1.0.1 — DNS hijack auto-stops after 30s (was preventing OTA from fetching github.io). USB flash this once, then future updates via OTA.",
+      "url": "firmware/smart_knob_shifter-v1.0.1.bin",
+      "size_bytes": 1524464
+    },
+    {
       "version": "v1.0.0",
       "date": "2026-05-28",
       "notes": "v1.0.0 — Stable baseline. P1 pairing + captive portal · P2 tune · P3 calibrate · P4 telemetry · P5 brand · P6 screensaver. Digit-only WiFi pwd. iOS: open in Safari for OTA (not Captive Wi-Fi popup).",
