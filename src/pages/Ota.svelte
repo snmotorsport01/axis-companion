@@ -3,9 +3,14 @@
   import {
     fetchReleaseManifest,
     resolveReleaseUrl,
-    type ReleaseEntry
+    type ReleaseEntry,
+    type WifiStatus
   } from '../lib/api';
   import { store } from '../lib/store.svelte';
+
+  let wifi = $state<WifiStatus | null>(null);
+  let deviceInstalling = $state<string | null>(null);
+  let deviceProgress   = $state<'starting' | 'fetching' | 'done' | null>(null);
 
   // ---- Tab toggle ------------------------------------------------------
   type Tab = 'releases' | 'upload';
@@ -25,7 +30,36 @@
   let uploadDone = $state(false);
   let uploadProg = $state(0);
 
-  onMount(() => { void reloadReleases(); });
+  onMount(() => {
+    void reloadReleases();
+    void reloadWifi();
+  });
+
+  async function reloadWifi() {
+    if (!store.client) return;
+    try { wifi = await store.client.wifi(); }
+    catch { wifi = null; }
+  }
+
+  async function installViaDevice(r: ReleaseEntry) {
+    if (!store.client || !wifi?.connected) return;
+    if (isCurrent(r)) return;
+    if (!confirm(`Tell the device to download and install ${r.version} itself?`)) return;
+    deviceInstalling = r.version;
+    deviceProgress   = 'starting';
+    releasesErr      = null;
+    try {
+      const url = resolveReleaseUrl(r);
+      deviceProgress = 'fetching';
+      await store.client.otaFromDevice(url);
+      deviceProgress = 'done';
+      setTimeout(() => store.goDashboard(), 6000);
+    } catch (e: any) {
+      releasesErr = e?.message ?? 'install via device failed';
+    } finally {
+      deviceInstalling = null;
+    }
+  }
 
   async function reloadReleases() {
     releasesErr = null;
@@ -153,40 +187,56 @@
              stage === 'done'     ? 'Done — rebooting…' : '…'}
             ({(progress * 100).toFixed(0)}%)
           </p>
+        {:else if deviceInstalling === r.version}
+          <p class="muted small">
+            {deviceProgress === 'starting' ? 'Asking device to fetch…' :
+             deviceProgress === 'fetching' ? 'Device downloading + flashing… (~30-60 s)' :
+             deviceProgress === 'done'     ? 'Done — rebooting…' : '…'}
+          </p>
         {:else}
-          <div class="install-row">
-            <!--
-              Anchor with `download` attribute uses Safari's native download
-              path, which is way more reliable than XHR/fetch from an HTTP
-              origin to an HTTPS cross-origin URL (iOS likes to silently
-              fail those). After Safari saves the .bin to Files, the user
-              jumps to the UPLOAD tab to flash it.
-            -->
-            <a
-              class="btn-link"
-              href={resolveReleaseUrl(r)}
-              download={r.url.split('/').pop()}
-              target="_blank"
-              rel="noopener"
-              class:disabled={isCurrent(r)}
-              aria-disabled={isCurrent(r)}
-            >
-              DOWNLOAD
-            </a>
+          {#if wifi?.connected}
+            <!-- Best path: device pulls firmware over its own WiFi. iOS
+                 Safari is removed from the binary transfer entirely. -->
             <button
               class="primary install"
-              on:click={() => install(r)}
-              disabled={isCurrent(r) || installing !== null}
+              on:click={() => installViaDevice(r)}
+              disabled={isCurrent(r) || deviceInstalling !== null}
             >
               {isCurrent(r) ? 'INSTALLED' : 'INSTALL'}
             </button>
-          </div>
-          {#if !isCurrent(r)}
             <p class="hint">
-              <strong>INSTALL</strong> = one-tap (best on Android / desktop).<br />
-              On iOS Safari: tap <strong>DOWNLOAD</strong>, save to Files, then switch to
-              the <strong>UPLOAD</strong> tab and pick the .bin.
+              Device fetches via its own Wi-Fi ({wifi.ssid}). Most reliable
+              path — works on every browser.
             </p>
+          {:else}
+            <div class="install-row">
+              <!-- Fallbacks when device has no station Wi-Fi configured. -->
+              <a
+                class="btn-link"
+                href={resolveReleaseUrl(r)}
+                download={r.url.split('/').pop()}
+                target="_blank"
+                rel="noopener"
+                class:disabled={isCurrent(r)}
+                aria-disabled={isCurrent(r)}
+              >
+                DOWNLOAD
+              </a>
+              <button
+                class="primary install"
+                on:click={() => install(r)}
+                disabled={isCurrent(r) || installing !== null}
+              >
+                {isCurrent(r) ? 'INSTALLED' : 'INSTALL'}
+              </button>
+            </div>
+            {#if !isCurrent(r)}
+              <p class="hint">
+                Configure home Wi-Fi in <strong>BRAND</strong> for one-tap installs.<br />
+                Until then: <strong>INSTALL</strong> (Android/desktop) or <strong>DOWNLOAD</strong>
+                → UPLOAD tab (iOS Safari).
+              </p>
+            {/if}
           {/if}
         {/if}
       </div>

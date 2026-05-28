@@ -2,6 +2,13 @@
   "_schema": "axis-firmware-manifest/v1",
   "releases": [
     {
+      "version": "v1.1.0",
+      "date": "2026-05-28",
+      "notes": "v1.1.0 — Station-mode OTA. Configure home WiFi in BRAND tab, device joins AP+STA. OTA RELEASES → INSTALL then makes the DEVICE download the .bin via its own WiFi (HTTPClient/TLS), bypassing iOS Safari's cross-origin binary fetch issues entirely.",
+      "url": "firmware/smart_knob_shifter-v1.1.0.bin",
+      "size_bytes": 1614352
+    },
+    {
       "version": "v1.0.6",
       "date": "2026-05-28",
       "notes": "v1.0.6 — Kill DNS hijack entirely. Was breaking OTA fetches by caching the spoofed reply on iOS. Lose: iOS captive-portal auto-popup. Gain: every OTA fetch now reliably reaches github.io. Open Safari manually → 192.168.4.1 (URL shown on APP screen).",

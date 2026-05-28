@@ -1,7 +1,15 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import type { BrandingSnapshot } from '../lib/api';
+  import type { BrandingSnapshot, WifiStatus } from '../lib/api';
   import { store } from '../lib/store.svelte';
+
+  // ---- Home Wi-Fi (for device-side OTA) -------------------------------
+  let wifi       = $state<WifiStatus | null>(null);
+  let wifiSsid   = $state('');
+  let wifiPass   = $state('');
+  let wifiSaving = $state(false);
+  let wifiErr    = $state<string | null>(null);
+  let wifiPoll: number | undefined;
 
   let snap   = $state<BrandingSnapshot | null>(null);
   let name   = $state('');
@@ -27,7 +35,35 @@
     } catch (e: any) {
       err = e?.message ?? 'load failed';
     }
+    await reloadWifi();
+    // Poll WiFi state while on this page so the user can see the device
+    // associate after they save creds.
+    wifiPoll = window.setInterval(reloadWifi, 3000);
+    return () => { if (wifiPoll) window.clearInterval(wifiPoll); };
   });
+
+  async function reloadWifi() {
+    if (!store.client) return;
+    try {
+      wifi = await store.client.wifi();
+      if (wifiSsid === '' && wifi.ssid) wifiSsid = wifi.ssid;
+    } catch {}
+  }
+
+  async function saveWifi() {
+    if (!store.client) return;
+    wifiSaving = true;
+    wifiErr = null;
+    try {
+      await store.client.setWifi(wifiSsid.trim(), wifiPass);
+      wifiPass = '';     // clear pwd field after submit
+      await reloadWifi();
+    } catch (e: any) {
+      wifiErr = e?.message ?? 'save failed';
+    } finally {
+      wifiSaving = false;
+    }
+  }
 
   // Dirty flag derived from current inputs vs. last snapshot.
   let dirty = $derived(!!snap && (name.trim() !== snap.name || color.toUpperCase() !== snap.accent_hex.toUpperCase()));
@@ -242,6 +278,52 @@
       </button>
     </div>
   </div>
+
+  <!-- ---- Home Wi-Fi (for device-side OTA) -------------------------- -->
+  <div class="card">
+    <label>Home Wi-Fi</label>
+    <p class="hint">
+      Let the device join your home Wi-Fi so it can pull firmware updates
+      from the internet itself. This is the most reliable way to OTA on
+      iOS — your phone doesn't have to be the bridge.
+    </p>
+
+    <div class="wifi-status">
+      {#if !wifi}
+        <span class="dot offline"></span> Checking…
+      {:else if wifi.connected}
+        <span class="dot online"></span>
+        <span class="mono">Connected · {wifi.ip}</span>
+        <span class="muted small">RSSI {wifi.rssi} dBm</span>
+      {:else if wifi.configured}
+        <span class="dot error"></span> Saved but not connected (wrong pwd? out of range?)
+      {:else}
+        <span class="dot offline"></span> Not configured
+      {/if}
+    </div>
+
+    <label for="wifi-ssid">SSID</label>
+    <input
+      id="wifi-ssid" type="text"
+      bind:value={wifiSsid}
+      placeholder="MyHomeWiFi"
+      autocomplete="off" autocapitalize="off" spellcheck="false"
+    />
+
+    <label for="wifi-pass">Password</label>
+    <input
+      id="wifi-pass" type="password"
+      bind:value={wifiPass}
+      placeholder={wifi?.configured ? '(unchanged — type to replace)' : ''}
+      autocomplete="off" autocapitalize="off" spellcheck="false"
+    />
+
+    {#if wifiErr}<p class="err">{wifiErr}</p>{/if}
+
+    <button class="primary wifi-save" disabled={wifiSaving || !wifiSsid.trim()} on:click={saveWifi}>
+      {wifiSaving ? 'SAVING…' : 'CONNECT'}
+    </button>
+  </div>
 {/if}
 
 <style>
@@ -323,4 +405,12 @@
   .small { font-size: 13px; }
   .muted { color: var(--muted); }
   .err   { color: var(--danger); margin: var(--s-2) 0 0; font-size: 13px; }
+
+  .wifi-status {
+    display: flex; align-items: center; gap: var(--s-2);
+    margin: var(--s-3) 0;
+    font-size: 14px;
+  }
+  .wifi-save  { width: 100%; margin-top: var(--s-3); }
+  .hint       { color: var(--muted); font-size: 12px; line-height: 1.5; margin: var(--s-1) 0 0; }
 </style>

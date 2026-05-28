@@ -18,9 +18,12 @@ export interface DeviceInfo {
 
 const DEFAULT_TIMEOUT_MS = 4000;
 
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+async function fetchJson<T>(
+  url: string,
+  init?: RequestInit & { timeoutMs?: number }
+): Promise<T> {
   const ctrl = new AbortController();
-  const tid = setTimeout(() => ctrl.abort(), DEFAULT_TIMEOUT_MS);
+  const tid = setTimeout(() => ctrl.abort(), init?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
       ...init,
@@ -55,6 +58,14 @@ export interface TunableEntry {
 }
 
 export type ConfigSnapshot = Record<string, TunableEntry>;
+
+export interface WifiStatus {
+  ssid:       string;
+  configured: boolean;
+  connected:  boolean;
+  ip?:        string;
+  rssi:       number;
+}
 
 export interface BrandingSnapshot {
   name:             string;
@@ -177,6 +188,33 @@ export class DeviceClient {
 
   clearScreensaver(): Promise<{ ok: boolean }> {
     return fetchJson(`${this.base}/api/branding/screensaver/clear`, { method: 'POST' });
+  }
+
+  /** Get device's home-WiFi station status. */
+  wifi(): Promise<WifiStatus> { return fetchJson(`${this.base}/api/wifi`); }
+
+  /** Update home-WiFi creds. Device starts associating immediately. */
+  setWifi(ssid: string, password: string): Promise<{ ok: boolean }> {
+    return fetchJson(`${this.base}/api/wifi`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ssid, password })
+    });
+  }
+
+  /**
+   * Tell the device to download + install a .bin from a URL. The device
+   * fetches via its own station-mode WiFi (HTTPClient/HTTPS), bypassing
+   * iOS Safari's flaky cross-origin binary fetch. Response is sent only
+   * after flash completes; expect 30-60 s for a 1.5 MB firmware.
+   */
+  otaFromDevice(url: string): Promise<{ ok: boolean; written: number; total: number }> {
+    return fetchJson(`${this.base}/api/ota-from-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      timeoutMs: 120000        // 2 min: download + flash on a slow link
+    });
   }
 
   /**
