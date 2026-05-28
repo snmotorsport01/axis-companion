@@ -102,35 +102,10 @@ export interface TelemetryFrame {
   frozen: boolean;
 }
 
-// ----- Firmware release manifest --------------------------------------
-// Hosted on GitHub Pages alongside the PWA itself. The PWA fetches this
-// (over cellular while the phone is also joined to AXIS Wi-Fi) and offers
-// each entry as a one-tap install.
-export interface ReleaseEntry {
-  version:    string;       // e.g. "v0.3.0"
-  date:       string;       // ISO date "2026-05-28"
-  notes:      string;       // user-facing release notes (short)
-  url:        string;       // absolute OR relative to manifest URL
-  size_bytes: number;       // optional, used for progress
-}
-export interface ReleaseManifest {
-  releases: ReleaseEntry[];
-}
-
-export const RELEASE_MANIFEST_URL =
-  'https://snmotorsport01.github.io/axis-companion/firmware/index.json';
-
-/** Fetch the latest release manifest from GitHub Pages. */
-export async function fetchReleaseManifest(): Promise<ReleaseManifest> {
-  const res = await fetch(RELEASE_MANIFEST_URL, { cache: 'no-store' });
-  if (!res.ok) throw new Error(`Manifest HTTP ${res.status}`);
-  return res.json() as Promise<ReleaseManifest>;
-}
-
-/** Resolve a possibly-relative release URL against the manifest's origin. */
-export function resolveReleaseUrl(entry: ReleaseEntry): string {
-  return new URL(entry.url, RELEASE_MANIFEST_URL).href;
-}
+// Firmware release-manifest flow (fetchReleaseManifest / resolveReleaseUrl /
+// otaFromUrl / otaFromDevice) was removed when we moved to USB-flash as the
+// primary install path. The OTA tab is now upload-only — the user picks a
+// local .bin and streams it via DeviceClient.ota() below.
 
 export class DeviceClient {
   constructor(public readonly base: string) {}
@@ -203,65 +178,6 @@ export class DeviceClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ssid, password })
     });
-  }
-
-  /**
-   * Tell the device to download + install a .bin from a URL. The device
-   * fetches via its own station-mode WiFi (HTTPClient/HTTPS), bypassing
-   * iOS Safari's flaky cross-origin binary fetch. Response is sent only
-   * after flash completes; expect 30-60 s for a 1.5 MB firmware.
-   */
-  otaFromDevice(url: string): Promise<{ ok: boolean; written: number; total: number }> {
-    return fetchJson(`${this.base}/api/ota-from-url`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-      timeoutMs: 120000        // 2 min: download + flash on a slow link
-    });
-  }
-
-  /**
-   * Download a firmware .bin from `url` (over the phone's internet
-   * connection), then forward it to the device. Progress callback gets a
-   * stage marker so the UI can show download vs upload phases distinctly.
-   *
-   * Implementation note: we use XMLHttpRequest with responseType='arraybuffer'
-   * rather than fetch()+ReadableStream, because iOS Safari has been observed
-   * to leave response.body null for cross-origin binary fetches — which made
-   * the download error out instantly before showing any progress. XHR is
-   * older but exposes the upload-side progress events reliably and works on
-   * every iOS/Android browser we care about.
-   */
-  async otaFromUrl(
-    url: string,
-    onProgress?: (frac: number, stage: 'download' | 'upload') => void
-  ): Promise<void> {
-    // ---- Download phase --------------------------------------------------
-    const buffer: ArrayBuffer = await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', url);
-      xhr.responseType = 'arraybuffer';
-      xhr.onprogress = e => {
-        if (onProgress && e.lengthComputable) {
-          onProgress(e.loaded / e.total, 'download');
-        }
-      };
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300 && xhr.response) {
-          resolve(xhr.response as ArrayBuffer);
-        } else {
-          reject(new Error(`Download HTTP ${xhr.status}`));
-        }
-      };
-      xhr.onerror = () => reject(new Error('Download network error'));
-      xhr.ontimeout = () => reject(new Error('Download timed out'));
-      xhr.send();
-    });
-
-    // ---- Upload phase ----------------------------------------------------
-    const name = url.split('/').pop() || 'firmware.bin';
-    const file = new File([buffer], name, { type: 'application/octet-stream' });
-    await this.ota(file, p => onProgress?.(p, 'upload'));
   }
 
   /** Stream a firmware .bin to /api/ota. onProgress reports 0..1. */
