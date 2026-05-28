@@ -2,6 +2,13 @@
   "_schema": "axis-firmware-manifest/v1",
   "releases": [
     {
+      "version": "v1.1.6",
+      "date": "2026-05-28",
+      "notes": "v1.1.6 — Fix swapped/teal colours on uploaded screensavers. LovyanGFX's pushImage(uint16_t*) default treats the input buffer as big-endian RGB565, but the PWA writes little-endian (natural ESP32 byte order) — so red pixels were rendering as teal. setSwapBytes(true) around the screensaver blit makes both formats (raw RGB565 stills + AXSV animations) display correctly. No re-upload needed — your existing screensaver fixes itself after OTA.",
+      "url": "firmware/smart_knob_shifter-v1.1.6.bin",
+      "size_bytes": 1620320
+    },
+    {
       "version": "v1.1.5",
       "date": "2026-05-28",
       "notes": "v1.1.5 — Image decoder hardening. PWA now uses createImageBitmap() with explicit sRGB colour-space conversion (was HTMLImageElement which iOS Safari fed wide-gamut/HDR pixels for some AVIFs → shifted colours on device). Better fidelity across formats.",
