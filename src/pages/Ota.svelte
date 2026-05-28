@@ -114,9 +114,15 @@
     <div class="card err">
       Failed to fetch releases: {releasesErr}
       <p class="muted small">
-        The phone needs internet (cellular or another Wi-Fi) to reach
-        github.io. Releases manifest URL:
-        <br /><code>github.io/axis-companion/firmware/index.json</code>
+        <strong>iOS users:</strong> if you're viewing this in the
+        "Captive Wi-Fi" sign-in popup, it can't use cellular data —
+        only the AXIS Wi-Fi (which has no internet). Close the popup,
+        open <strong>Safari</strong>, and go to
+        <code>192.168.4.1</code>. Or add this app to your Home Screen
+        for a standalone PWA that has full network access.
+      </p>
+      <p class="muted small">
+        Manifest URL: <code>github.io/axis-companion/firmware/index.json</code>
       </p>
     </div>
   {:else if !releases}
