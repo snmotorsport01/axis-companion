@@ -2,6 +2,13 @@
   "_schema": "axis-firmware-manifest/v1",
   "releases": [
     {
+      "version": "v1.2.2",
+      "date": "2026-05-28",
+      "notes": "v1.2.2 — Colour slots fully independent + setup-exit shortcut. (1) Every per-element slot (gear, meter, name, fg, muted, warn) is now its own pickable colour with no Linked/inherit toggle — changing Accent doesn't cascade. Sensible defaults seed each slot on first boot. (2) 5-tap on MAIN while in SETUP MODE persists tunables + branding to NVS and tears down the SoftAP, so you can step away from the PWA without rebooting (5-tap outside setup mode still opens the menu).",
+      "url": "firmware/smart_knob_shifter-v1.2.2.bin",
+      "size_bytes": 1628224
+    },
+    {
       "version": "v1.2.1",
       "date": "2026-05-28",
       "notes": "v1.2.1 — Every text on the device is now themeable. Three new semantic-role colour slots: fg (titles + body text — \"APP\", \"MENU\", \"BRIGHTNESS\", SSID, version), muted (hints + secondary info — \"Safari: 192.168.4.1\", footer device name default, \"HOLD TO EXIT\"), and warn (errors + exit prompts — \"HOLD: EXIT\", \"AP FAILED\", \"WAIT - STILL...\"). Each defaults to its current static colour so behaviour matches v1.2.0 until you pick. Brand panel now has 6 slot rows.",

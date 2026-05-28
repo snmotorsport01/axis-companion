@@ -24,21 +24,14 @@
   // user wants the slot to inherit from the main accent — when true the
   // colour picker is grayed out and we send an empty string to the
   // firmware to clear the per-slot override.
+  // All six per-element slots are independent (v1.2.2+). No "Linked"
+  // concept — every slot is editable on its own and persisted as-is.
   let gearColor   = $state('#FFA500');
-  let gearLinked  = $state(true);
   let meterColor  = $state('#FFA500');
-  let meterLinked = $state(true);
   let nameColor   = $state('#BDBDBD');
-  let nameLinked  = $state(true);
-  // Semantic-role slots (v1.2.1+). "Linked" = inherit the static
-  // firmware default (white / muted-grey / red); the colour picker is
-  // only authoritative when its toggle is off.
   let fgColor     = $state('#FFFFFF');
-  let fgLinked    = $state(true);
   let mutedColor  = $state('#BDBDBD');
-  let mutedLinked = $state(true);
   let warnColor   = $state('#F80000');
-  let warnLinked  = $state(true);
   let saving = $state(false);
   let err    = $state<string | null>(null);
   let saved  = $state(false);
@@ -62,17 +55,11 @@
       name  = snap.name;
       color = snap.accent_hex;
       gearColor   = snap.gear_hex;
-      gearLinked  = !snap.gear_custom;
       meterColor  = snap.meter_hex;
-      meterLinked = !snap.meter_custom;
       nameColor   = snap.name_hex;
-      nameLinked  = !snap.name_custom;
       fgColor     = snap.fg_hex;
-      fgLinked    = !snap.fg_custom;
       mutedColor  = snap.muted_hex;
-      mutedLinked = !snap.muted_custom;
       warnColor   = snap.warn_hex;
-      warnLinked  = !snap.warn_custom;
     } catch (e: any) {
       err = e?.message ?? 'load failed';
     }
@@ -109,13 +96,13 @@
   // Dirty flag — any field different from the last snapshot.
   let dirty = $derived(!!snap && (
     name.trim() !== snap.name ||
-    color.toUpperCase() !== snap.accent_hex.toUpperCase() ||
-    (gearLinked   ? snap.gear_custom   : (snap.gear_hex.toUpperCase()   !== gearColor.toUpperCase()))  ||
-    (meterLinked  ? snap.meter_custom  : (snap.meter_hex.toUpperCase()  !== meterColor.toUpperCase())) ||
-    (nameLinked   ? snap.name_custom   : (snap.name_hex.toUpperCase()   !== nameColor.toUpperCase()))  ||
-    (fgLinked     ? snap.fg_custom     : (snap.fg_hex.toUpperCase()     !== fgColor.toUpperCase()))    ||
-    (mutedLinked  ? snap.muted_custom  : (snap.muted_hex.toUpperCase()  !== mutedColor.toUpperCase())) ||
-    (warnLinked   ? snap.warn_custom   : (snap.warn_hex.toUpperCase()   !== warnColor.toUpperCase()))
+    color.toUpperCase()      !== snap.accent_hex.toUpperCase() ||
+    gearColor.toUpperCase()  !== snap.gear_hex.toUpperCase()   ||
+    meterColor.toUpperCase() !== snap.meter_hex.toUpperCase()  ||
+    nameColor.toUpperCase()  !== snap.name_hex.toUpperCase()   ||
+    fgColor.toUpperCase()    !== snap.fg_hex.toUpperCase()     ||
+    mutedColor.toUpperCase() !== snap.muted_hex.toUpperCase()  ||
+    warnColor.toUpperCase()  !== snap.warn_hex.toUpperCase()
   ));
 
   async function save() {
@@ -130,12 +117,12 @@
       await store.client.setBranding({
         name:       name.trim().slice(0, snap.max_name),
         accent_hex: color,
-        gear_hex:   gearLinked  ? '' : gearColor,
-        meter_hex:  meterLinked ? '' : meterColor,
-        name_hex:   nameLinked  ? '' : nameColor,
-        fg_hex:     fgLinked    ? '' : fgColor,
-        muted_hex:  mutedLinked ? '' : mutedColor,
-        warn_hex:   warnLinked  ? '' : warnColor
+        gear_hex:   gearColor,
+        meter_hex:  meterColor,
+        name_hex:   nameColor,
+        fg_hex:     fgColor,
+        muted_hex:  mutedColor,
+        warn_hex:   warnColor
       });
       snap = await store.client.branding();
       saved = true;
@@ -154,12 +141,12 @@
       await store.client.resetBranding();
       snap = await store.client.branding();
       name = snap.name; color = snap.accent_hex;
-      gearColor   = snap.gear_hex;   gearLinked   = !snap.gear_custom;
-      meterColor  = snap.meter_hex;  meterLinked  = !snap.meter_custom;
-      nameColor   = snap.name_hex;   nameLinked   = !snap.name_custom;
-      fgColor     = snap.fg_hex;     fgLinked     = !snap.fg_custom;
-      mutedColor  = snap.muted_hex;  mutedLinked  = !snap.muted_custom;
-      warnColor   = snap.warn_hex;   warnLinked   = !snap.warn_custom;
+      gearColor   = snap.gear_hex;
+      meterColor  = snap.meter_hex;
+      nameColor   = snap.name_hex;
+      fgColor     = snap.fg_hex;
+      mutedColor  = snap.muted_hex;
+      warnColor   = snap.warn_hex;
       try { store.info = await store.client.info(); } catch {}
     } catch (e: any) {
       err = e?.message ?? 'reset failed';
@@ -339,50 +326,29 @@
     <p class="hint">Default for every UI element. Customise per slot below.</p>
   </div>
 
-  <!-- Per-element colour overrides (gear digit, G-meter rings, brand
-       name footer). Each row toggles between "linked to accent" and an
-       independent colour. -->
+  <!-- Per-element colour slots — fully independent (v1.2.2+). Every
+       text/graphic role has its own picker; changing Accent above does
+       not cascade to these. -->
   <div class="card slot-card">
     <label>Per-element colours</label>
-    <p class="hint">Override the accent for specific UI elements.</p>
+    <p class="hint">Each text style is its own colour — picks below override the static defaults completely.</p>
 
     {#each [
-      { key: 'gear',  label: 'Gear digit',     get: () => gearColor,  set: (v: string) => gearColor  = v,
-        linked: () => gearLinked,  setLinked: (v: boolean) => gearLinked  = v,
-        inheritLabel: '↳ accent' },
-      { key: 'meter', label: 'G-meter grid',   get: () => meterColor, set: (v: string) => meterColor = v,
-        linked: () => meterLinked, setLinked: (v: boolean) => meterLinked = v,
-        inheritLabel: '↳ accent' },
-      { key: 'name',  label: 'Name footer',    get: () => nameColor,  set: (v: string) => nameColor  = v,
-        linked: () => nameLinked,  setLinked: (v: boolean) => nameLinked  = v,
-        inheritLabel: '↳ accent' },
-      { key: 'fg',    label: 'Titles + body',  get: () => fgColor,    set: (v: string) => fgColor    = v,
-        linked: () => fgLinked,    setLinked: (v: boolean) => fgLinked    = v,
-        inheritLabel: '↳ default' },
-      { key: 'muted', label: 'Hints / muted',  get: () => mutedColor, set: (v: string) => mutedColor = v,
-        linked: () => mutedLinked, setLinked: (v: boolean) => mutedLinked = v,
-        inheritLabel: '↳ default' },
-      { key: 'warn',  label: 'Warnings',       get: () => warnColor,  set: (v: string) => warnColor  = v,
-        linked: () => warnLinked,  setLinked: (v: boolean) => warnLinked  = v,
-        inheritLabel: '↳ default' }
+      { key: 'gear',  label: 'Gear digit',    get: () => gearColor,  set: (v: string) => gearColor  = v },
+      { key: 'meter', label: 'G-meter grid',  get: () => meterColor, set: (v: string) => meterColor = v },
+      { key: 'name',  label: 'Name footer',   get: () => nameColor,  set: (v: string) => nameColor  = v },
+      { key: 'fg',    label: 'Titles + body', get: () => fgColor,    set: (v: string) => fgColor    = v },
+      { key: 'muted', label: 'Hints / muted', get: () => mutedColor, set: (v: string) => mutedColor = v },
+      { key: 'warn',  label: 'Warnings',      get: () => warnColor,  set: (v: string) => warnColor  = v }
     ] as slot}
       <div class="slot-row">
         <span class="slot-label">{slot.label}</span>
-        <label class="link-toggle">
-          <input
-            type="checkbox"
-            checked={slot.linked()}
-            on:change={(ev) => slot.setLinked((ev.currentTarget as HTMLInputElement).checked)}
-          />
-          <span>Linked</span>
-        </label>
         <input
           type="color"
           value={slot.get()}
           on:input={(ev) => slot.set((ev.currentTarget as HTMLInputElement).value)}
-          disabled={slot.linked()}
         />
-        <span class="mono small">{slot.linked() ? slot.inheritLabel : slot.get().toUpperCase()}</span>
+        <span class="mono small">{slot.get().toUpperCase()}</span>
       </div>
     {/each}
   </div>
@@ -647,23 +613,17 @@
   .wifi-save  { width: 100%; margin-top: var(--s-3); }
   .hint       { color: var(--muted); font-size: 12px; line-height: 1.5; margin: var(--s-1) 0 0; }
 
-  /* Per-element colour slot card */
+  /* Per-element colour slot card — one picker per row, no toggles. */
   .slot-card { padding-top: var(--s-3); }
   .slot-row {
     display: grid;
-    grid-template-columns: 1fr auto 36px 72px;
+    grid-template-columns: 1fr 36px 80px;
     align-items: center;
-    gap: var(--s-2);
+    gap: var(--s-3);
     margin-top: var(--s-2);
   }
   .slot-label { font-size: 14px; }
-  .link-toggle {
-    display: flex; align-items: center; gap: 4px;
-    font-size: 12px; color: var(--muted);
-    margin: 0; cursor: pointer;
-  }
-  .link-toggle input { accent-color: var(--accent); }
-  .slot-row input[type="color"]:disabled { opacity: 0.4; cursor: not-allowed; }
+  .slot-row input[type="color"] { padding: 0; height: 32px; width: 36px; }
 
   /* Frame scrubber under animated-screensaver preview */
   .ss-scrub {

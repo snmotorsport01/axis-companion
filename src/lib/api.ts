@@ -76,24 +76,15 @@ export interface BrandingSnapshot {
   accent565:            number;
   accent_hex:           string;
   max_name:             number;
-  // v1.2+ per-element colour slots. `_hex` is always the effective
-  // colour (falls back to accent on the firmware side); `_custom` is
-  // true only when the user explicitly overrode the slot.
+  // v1.2.2+ per-element colour slots — fully independent. Each is
+  // stored on its own in NVS; the PWA picks an editable colour per
+  // slot without inheritance toggles.
   gear_hex:             string;
-  gear_custom:          boolean;
   meter_hex:            string;
-  meter_custom:         boolean;
   name_hex:             string;
-  name_custom:          boolean;
-  // v1.2.1+ semantic-role slots. Defaults fall back to the static
-  // cfg::COLOR_* (white / muted-grey / red); customising changes every
-  // text in that role across all screens.
   fg_hex:               string;
-  fg_custom:            boolean;
   muted_hex:            string;
-  muted_custom:         boolean;
   warn_hex:             string;
-  warn_custom:          boolean;
   screensaver:          boolean;
   screensaver_w:        number;
   screensaver_h:        number;
