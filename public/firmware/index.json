@@ -2,6 +2,13 @@
   "_schema": "axis-firmware-manifest/v1",
   "releases": [
     {
+      "version": "v1.2.3",
+      "date": "2026-05-28",
+      "notes": "v1.2.3 — Two upgrade-path fixes. (1) Gear / meter / name / fg / muted / warn render as solid BLACK after upgrading from v1.2.1 → v1.2.2. Cause: v1.2.1 stored 0 in NVS to mean 'inherit'; v1.2.2 took 0 literally. Fix: on load, treat 0 the same as 'key missing' and use the slot's seeded default. (2) PWA Brand panel still shows only the old single Accent picker. Cause: service worker cached the v1.2.0 bundle and won't activate the new one until the standalone app is fully killed. Fix: skipWaiting + clientsClaim so the new SW takes over on the next page load.",
+      "url": "firmware/smart_knob_shifter-v1.2.3.bin",
+      "size_bytes": 1628272
+    },
+    {
       "version": "v1.2.2",
       "date": "2026-05-28",
       "notes": "v1.2.2 — Colour slots fully independent + setup-exit shortcut. (1) Every per-element slot (gear, meter, name, fg, muted, warn) is now its own pickable colour with no Linked/inherit toggle — changing Accent doesn't cascade. Sensible defaults seed each slot on first boot. (2) 5-tap on MAIN while in SETUP MODE persists tunables + branding to NVS and tears down the SoftAP, so you can step away from the PWA without rebooting (5-tap outside setup mode still opens the menu).",

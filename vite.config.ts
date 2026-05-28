@@ -49,7 +49,14 @@ export default defineConfig({
         runtimeCaching: [
           { urlPattern: /\/api\//,                handler: 'NetworkOnly' },
           { urlPattern: /^http:\/\/192\.168\.4\.1\//, handler: 'NetworkOnly' }
-        ]
+        ],
+        // Activate the new service worker on the next page load instead of
+        // waiting for every tab/standalone window to close. Necessary
+        // because the PWA gets installed once and lives on the user's home
+        // screen — without this, fresh deployments are invisible until
+        // they fully kill+relaunch the app.
+        skipWaiting: true,
+        clientsClaim: true
       }
     })
   ],
