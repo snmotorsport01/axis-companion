@@ -183,35 +183,43 @@ export class DeviceClient {
    * Download a firmware .bin from `url` (over the phone's internet
    * connection), then forward it to the device. Progress callback gets a
    * stage marker so the UI can show download vs upload phases distinctly.
+   *
+   * Implementation note: we use XMLHttpRequest with responseType='arraybuffer'
+   * rather than fetch()+ReadableStream, because iOS Safari has been observed
+   * to leave response.body null for cross-origin binary fetches — which made
+   * the download error out instantly before showing any progress. XHR is
+   * older but exposes the upload-side progress events reliably and works on
+   * every iOS/Android browser we care about.
    */
   async otaFromUrl(
     url: string,
     onProgress?: (frac: number, stage: 'download' | 'upload') => void
   ): Promise<void> {
     // ---- Download phase --------------------------------------------------
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok || !res.body) {
-      throw new Error(`Download HTTP ${res.status}`);
-    }
-    const total = Number(res.headers.get('content-length') ?? '0');
-    const reader = res.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let received = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        chunks.push(value);
-        received += value.length;
-        if (onProgress && total) onProgress(received / total, 'download');
-      }
-    }
-    // Reassemble into a File and reuse the existing upload path.
-    const blob = new Blob(chunks as BlobPart[], { type: 'application/octet-stream' });
-    const name = url.split('/').pop() || 'firmware.bin';
-    const file = new File([blob], name, { type: 'application/octet-stream' });
+    const buffer: ArrayBuffer = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url);
+      xhr.responseType = 'arraybuffer';
+      xhr.onprogress = e => {
+        if (onProgress && e.lengthComputable) {
+          onProgress(e.loaded / e.total, 'download');
+        }
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300 && xhr.response) {
+          resolve(xhr.response as ArrayBuffer);
+        } else {
+          reject(new Error(`Download HTTP ${xhr.status}`));
+        }
+      };
+      xhr.onerror = () => reject(new Error('Download network error'));
+      xhr.ontimeout = () => reject(new Error('Download timed out'));
+      xhr.send();
+    });
 
     // ---- Upload phase ----------------------------------------------------
+    const name = url.split('/').pop() || 'firmware.bin';
+    const file = new File([buffer], name, { type: 'application/octet-stream' });
     await this.ota(file, p => onProgress?.(p, 'upload'));
   }
 

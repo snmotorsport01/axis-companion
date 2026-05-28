@@ -2,6 +2,13 @@
   "_schema": "axis-firmware-manifest/v1",
   "releases": [
     {
+      "version": "v1.0.2",
+      "date": "2026-05-28",
+      "notes": "v1.0.2 — fix OTA download (Safari ReadableStream → XHR arraybuffer).",
+      "url": "firmware/smart_knob_shifter-v1.0.2.bin",
+      "size_bytes": 1524464
+    },
+    {
       "version": "v1.0.1",
       "date": "2026-05-28",
       "notes": "v1.0.1 — DNS hijack auto-stops after 30s (was preventing OTA from fetching github.io). USB flash this once, then future updates via OTA.",
