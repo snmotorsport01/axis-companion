@@ -2,12 +2,19 @@ import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// GitHub Pages serves this at <user>.github.io/axis-companion, so the
-// build's asset URLs must be prefixed with the repo name.
-const BASE = '/axis-companion/';
+// Two build targets:
+//   - github.io           → base = "/axis-companion/", output dist/
+//   - device (LittleFS)   → base = "/",                output dist-device/
+// Pick via VITE_TARGET=device|pages env var. Default = pages.
+const TARGET = process.env.VITE_TARGET ?? 'pages';
+const DEVICE = TARGET === 'device';
+const BASE   = DEVICE ? '/' : '/axis-companion/';
+const OUTDIR = DEVICE ? 'dist-device' : 'dist';
 
 export default defineConfig({
   base: BASE,
+  build: { outDir: OUTDIR, emptyOutDir: true },
+  define: { __DEVICE_BUILD__: JSON.stringify(DEVICE) },
   plugins: [
     svelte(),
     VitePWA({
@@ -35,14 +42,13 @@ export default defineConfig({
         ]
       },
       workbox: {
-        // The device API is on a different origin (192.168.4.1) — never cache
-        // its responses, always go to the network so we see live data.
+        // Never cache the device JSON API — always go to network so we see
+        // live state. Pattern matches /api/* whether served from device or
+        // a separate origin.
         navigateFallback: BASE + 'index.html',
         runtimeCaching: [
-          {
-            urlPattern: /^http:\/\/192\.168\.4\.1\//,
-            handler: 'NetworkOnly'
-          }
+          { urlPattern: /\/api\//,                handler: 'NetworkOnly' },
+          { urlPattern: /^http:\/\/192\.168\.4\.1\//, handler: 'NetworkOnly' }
         ]
       }
     })

@@ -34,6 +34,10 @@
     store.goConnect();
   }
 
+  // On the device build the Connect screen is skipped — hide the
+  // DISCONNECT button since there's nothing useful to disconnect to.
+  import { IS_DEVICE_BUILD } from '../lib/store.svelte';
+
   function formatUptime(ms: number): string {
     const s = Math.floor(ms / 1000);
     const h = Math.floor(s / 3600);
@@ -91,17 +95,19 @@
 {/if}
 
 <nav class="tile-grid">
-  <button disabled>LIVE</button>
-  <button disabled>TUNE</button>
-  <button disabled>CALIB</button>
-  <button disabled>OTA</button>
+  <button on:click={() => store.page = 'live'}>LIVE</button>
+  <button on:click={() => store.page = 'tune'}>TUNE</button>
+  <button on:click={() => store.page = 'calibrate'}>CALIB</button>
+  <button on:click={() => store.page = 'ota'}>OTA</button>
   <button disabled>BRAND</button>
   <button disabled>SYS</button>
 </nav>
 
-<p class="hint">Other panels arrive in P2–P4. P1 confirms the connection is alive.</p>
+<p class="hint">Brand + Sys panels coming next.</p>
 
-<button class="disconnect" on:click={disconnect}>DISCONNECT</button>
+{#if !IS_DEVICE_BUILD}
+  <button class="disconnect" on:click={disconnect}>DISCONNECT</button>
+{/if}
 
 <style>
   .top {
