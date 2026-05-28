@@ -2,6 +2,13 @@
   "_schema": "axis-firmware-manifest/v1",
   "releases": [
     {
+      "version": "v1.1.7",
+      "date": "2026-05-28",
+      "notes": "v1.1.7 — CRITICAL: fix PSRAM init failure on v1.1.6. v1.1.6 was built with PSRAM=opi (Octal), but the ESP32-S3R2 chip on this board has QSPI (Quad) 2MB PSRAM. Boot logged 'PSRAM chip is not connected, or wrong PSRAM line mode' and bailed → screensaver alloc returned null → image never loaded (logo fell through). Rebuilt with PSRAM=enabled. Re-flash via USB; existing screensaver file on flash will load on first boot.",
+      "url": "firmware/smart_knob_shifter-v1.1.7.bin",
+      "size_bytes": 1618064
+    },
+    {
       "version": "v1.1.6",
       "date": "2026-05-28",
       "notes": "v1.1.6 — Fix swapped/teal colours on uploaded screensavers. LovyanGFX's pushImage(uint16_t*) default treats the input buffer as big-endian RGB565, but the PWA writes little-endian (natural ESP32 byte order) — so red pixels were rendering as teal. setSwapBytes(true) around the screensaver blit makes both formats (raw RGB565 stills + AXSV animations) display correctly. No re-upload needed — your existing screensaver fixes itself after OTA.",
