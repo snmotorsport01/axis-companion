@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import type { BrandingSnapshot } from '../lib/api';
   import { store } from '../lib/store.svelte';
 
@@ -9,6 +9,14 @@
   let saving = $state(false);
   let err    = $state<string | null>(null);
   let saved  = $state(false);
+
+  // ---- Screensaver state ---------------------------------------------
+  let ssFile      = $state<File | null>(null);
+  let ssBytes     = $state<Uint8Array | null>(null);    // converted RGB565
+  let ssBusy      = $state(false);
+  let ssProgress  = $state(0);
+  let ssErr       = $state<string | null>(null);
+  let ssPreviewCanvas: HTMLCanvasElement | null = $state(null);
 
   onMount(async () => {
     if (!store.client) return;
@@ -56,6 +64,82 @@
       try { store.info = await store.client.info(); } catch {}
     } catch (e: any) {
       err = e?.message ?? 'reset failed';
+    }
+  }
+
+  // ---- Screensaver: convert any image to W×H RGB565 little-endian ----
+  async function convertToRgb565(file: File, w: number, h: number): Promise<Uint8Array> {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      await new Promise<void>((res, rej) => {
+        img.onload = () => res(); img.onerror = () => rej(new Error('image decode failed'));
+        img.src = url;
+      });
+      const canvas = ssPreviewCanvas ?? document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d')!;
+      // Cover-fit: scale so the smaller image dimension fills the canvas,
+      // then centre. Matches the device's full-bleed render.
+      const ratio = Math.max(w / img.width, h / img.height);
+      const dw = img.width * ratio, dh = img.height * ratio;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+
+      const pixels = ctx.getImageData(0, 0, w, h).data;
+      const out = new Uint8Array(w * h * 2);
+      for (let i = 0, j = 0; i < pixels.length; i += 4, j += 2) {
+        const r = pixels[i]     >> 3;
+        const g = pixels[i + 1] >> 2;
+        const b = pixels[i + 2] >> 3;
+        const px = (r << 11) | (g << 5) | b;
+        out[j]     =  px        & 0xFF;       // little-endian
+        out[j + 1] = (px >> 8)  & 0xFF;
+      }
+      return out;
+    } finally { URL.revokeObjectURL(url); }
+  }
+
+  async function onPickScreensaver(ev: Event) {
+    const input = ev.currentTarget as HTMLInputElement;
+    const f = input.files?.[0];
+    ssErr = null;
+    ssBytes = null;
+    ssFile = f ?? null;
+    if (!f || !snap) return;
+    try {
+      await tick();   // ensure ssPreviewCanvas is mounted
+      ssBytes = await convertToRgb565(f, snap.screensaver_w, snap.screensaver_h);
+    } catch (e: any) {
+      ssErr = e?.message ?? 'image conversion failed';
+    }
+  }
+
+  async function uploadScreensaver() {
+    if (!ssBytes || !store.client) return;
+    ssBusy = true;
+    ssErr = null;
+    ssProgress = 0;
+    try {
+      await store.client.uploadScreensaver(ssBytes, p => { ssProgress = p; });
+      snap = await store.client.branding();
+      ssFile = null; ssBytes = null;
+    } catch (e: any) {
+      ssErr = e?.message ?? 'upload failed';
+    } finally {
+      ssBusy = false;
+    }
+  }
+
+  async function clearScreensaver() {
+    if (!store.client || !snap?.screensaver) return;
+    if (!confirm('Remove the custom screensaver?')) return;
+    try {
+      await store.client.clearScreensaver();
+      snap = await store.client.branding();
+    } catch (e: any) {
+      ssErr = e?.message ?? 'clear failed';
     }
   }
 </script>
@@ -106,6 +190,58 @@
       {saving ? 'SAVING…' : saved && !dirty ? 'SAVED' : 'APPLY'}
     </button>
   </div>
+
+  <!-- ---- Screensaver section ---------------------------------------- -->
+  <div class="card">
+    <label>Screensaver image</label>
+    <p class="hint">
+      Shown when the device is idle. Any image — it'll be cropped to fill
+      a 240×240 round screen. Stored on the device's filesystem.
+    </p>
+
+    <div class="ss-row">
+      <canvas
+        bind:this={ssPreviewCanvas}
+        width={snap.screensaver_w}
+        height={snap.screensaver_h}
+        class="ss-preview"
+        class:ss-empty={!ssBytes && !snap.screensaver}
+      ></canvas>
+      <div class="ss-info">
+        {#if ssBytes}
+          <strong>Ready to upload</strong>
+          <p class="muted mono small">{(ssBytes.length / 1024).toFixed(1)} KB</p>
+        {:else if snap.screensaver}
+          <strong>Custom image installed</strong>
+          <p class="muted small">Tap below to replace or clear.</p>
+        {:else}
+          <strong>Using AXIS logo</strong>
+          <p class="muted small">Pick an image to override.</p>
+        {/if}
+      </div>
+    </div>
+
+    <label class="file">
+      <input type="file" accept="image/*" on:change={onPickScreensaver} disabled={ssBusy} />
+      <span>{ssFile ? ssFile.name : 'Choose image (PNG/JPG)'}</span>
+    </label>
+
+    {#if ssErr}<p class="err">{ssErr}</p>{/if}
+
+    {#if ssBusy || ssProgress > 0}
+      <div class="bar-bg">
+        <div class="bar-fill" style="width: {(ssProgress * 100).toFixed(1)}%"></div>
+      </div>
+      <p class="muted small mono">{(ssProgress * 100).toFixed(0)}%</p>
+    {/if}
+
+    <div class="actions">
+      <button on:click={clearScreensaver} disabled={!snap.screensaver || ssBusy}>CLEAR</button>
+      <button class="primary" disabled={!ssBytes || ssBusy} on:click={uploadScreensaver}>
+        {ssBusy ? 'UPLOADING…' : 'UPLOAD'}
+      </button>
+    </div>
+  </div>
 {/if}
 
 <style>
@@ -149,4 +285,42 @@
     margin-top: var(--s-3);
   }
   .hot { box-shadow: 0 0 0 2px var(--accent); }
+
+  /* ---- Screensaver section --------------------------------- */
+  .ss-row {
+    display: flex; align-items: center; gap: var(--s-3);
+    margin: var(--s-3) 0;
+  }
+  .ss-preview {
+    width: 120px; height: 120px;
+    border-radius: 50%;       /* round to match device LCD shape */
+    border: 1px solid var(--border);
+    background: #000;
+    image-rendering: pixelated;
+  }
+  .ss-preview.ss-empty { opacity: 0.4; }
+  .ss-info { flex: 1; }
+  .ss-info strong { display: block; }
+
+  .file {
+    display: block;
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: var(--r-1);
+    padding: var(--s-3);
+    text-align: center;
+    cursor: pointer;
+    margin: var(--s-3) 0 var(--s-2);
+  }
+  .file input { display: none; }
+
+  .bar-bg {
+    height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden;
+    margin: var(--s-2) 0 var(--s-1);
+  }
+  .bar-fill { height: 100%; background: var(--accent); transition: width 120ms linear; }
+
+  .small { font-size: 13px; }
+  .muted { color: var(--muted); }
+  .err   { color: var(--danger); margin: var(--s-2) 0 0; font-size: 13px; }
 </style>

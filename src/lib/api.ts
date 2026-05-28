@@ -57,10 +57,14 @@ export interface TunableEntry {
 export type ConfigSnapshot = Record<string, TunableEntry>;
 
 export interface BrandingSnapshot {
-  name:       string;
-  accent565:  number;
-  accent_hex: string;
-  max_name:   number;
+  name:             string;
+  accent565:        number;
+  accent_hex:       string;
+  max_name:         number;
+  screensaver:      boolean;
+  screensaver_w:    number;
+  screensaver_h:    number;
+  screensaver_size: number;        // expected raw bytes (W*H*2)
 }
 
 export interface CalibSnapshot {
@@ -146,6 +150,33 @@ export class DeviceClient {
   }
   resetBranding(): Promise<{ ok: boolean }> {
     return fetchJson(`${this.base}/api/branding/reset`, { method: 'POST' });
+  }
+
+  /** Upload raw RGB565 little-endian pixels (W*H*2 bytes) as the screensaver. */
+  async uploadScreensaver(
+    bytes: Uint8Array,
+    onProgress?: (frac: number) => void
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.base}/api/branding/screensaver`);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.upload.onprogress = e => {
+        if (onProgress && e.lengthComputable) onProgress(e.loaded / e.total);
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error(`HTTP ${xhr.status} ${xhr.responseText}`));
+      };
+      xhr.onerror = () => reject(new Error('upload network error'));
+      // Send as ArrayBuffer (BodyInit) to keep multipart frames out of the
+      // body — the firmware just memcpy's the raw stream.
+      xhr.send(bytes.buffer as ArrayBuffer);
+    });
+  }
+
+  clearScreensaver(): Promise<{ ok: boolean }> {
+    return fetchJson(`${this.base}/api/branding/screensaver/clear`, { method: 'POST' });
   }
 
   /**
