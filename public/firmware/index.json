@@ -4,9 +4,9 @@
     {
       "version": "v1.0.0",
       "date": "2026-05-28",
-      "notes": "v1.0.0 — Stable baseline. P1 pairing + captive portal · P2 tune · P3 calibrate viewer · P4 30Hz telemetry · P5 brand · P6 screensaver. Digit-only WiFi pwd. iOS: open in Safari (not Captive Wi-Fi popup) for OTA to work.",
+      "notes": "v1.0.0 — Stable baseline. P1 pairing + captive portal · P2 tune · P3 calibrate · P4 telemetry · P5 brand · P6 screensaver. Digit-only WiFi pwd. iOS: open in Safari for OTA (not Captive Wi-Fi popup).",
       "url": "firmware/smart_knob_shifter-v1.0.0.bin",
-      "size_bytes": 1524320
+      "size_bytes": 1524352
     }
   ]
 }

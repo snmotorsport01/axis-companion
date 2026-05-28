@@ -39,13 +39,22 @@ const MIME = {
 
 const SKIP_EXTS = ['.map'];              // sourcemaps inflate flash for zero gain
 
+// Folders under dist-device/ that should NEVER end up embedded — they exist
+// only for the GitHub Pages mirror of the PWA. firmware/ holds OTA .bin files
+// (1.5 MB each) which would otherwise blow past the device's flash budget.
+const SKIP_DIRS = new Set(['firmware']);
+
 /** Walk a directory, return absolute paths to every file. */
-async function walk(dir) {
+async function walk(dir, relPrefix = '') {
   const out = [];
   for (const ent of await fs.readdir(dir, { withFileTypes: true })) {
+    if (SKIP_DIRS.has(ent.name) && relPrefix === '') continue;   // top-level only
     const full = join(dir, ent.name);
-    if (ent.isDirectory()) out.push(...(await walk(full)));
-    else out.push(full);
+    if (ent.isDirectory()) {
+      out.push(...(await walk(full, relPrefix + ent.name + '/')));
+    } else {
+      out.push(full);
+    }
   }
   return out;
 }
