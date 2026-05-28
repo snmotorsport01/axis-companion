@@ -153,32 +153,56 @@ function sample(rgba: Uint8ClampedArray, n = 5000): RGB[] {
  * byte count and uses it directly — full 16-bit colour, no palette
  * quantization. Way better fidelity for photos than the indexed AXSV
  * format we have to use for animations.
+ *
+ * Decoding via `createImageBitmap()` instead of HTMLImageElement: more
+ * reliable across formats (AVIF, HEIC, WEBP) and lets us pin colour-space
+ * conversion to default sRGB. iOS Safari has been observed to leak
+ * wide-gamut / HDR pixel values out of an Image element for some AVIFs,
+ * causing wildly-shifted colours on the device.
  */
 export async function encodeImage(file: File): Promise<Uint8Array> {
-  const url = URL.createObjectURL(file);
+  // Try createImageBitmap with explicit options first; fall back to the
+  // old Image-element path for browsers that don't support all the option
+  // names (older iOS Safari).
+  let bitmap: ImageBitmap | null = null;
   try {
-    const img = new Image();
-    await new Promise<void>((ok, fail) => {
-      img.onload  = () => ok();
-      img.onerror = () => fail(new Error('image decode failed'));
-      img.src     = url;
+    bitmap = await createImageBitmap(file, {
+      colorSpaceConversion: 'default',     // tone-map HDR → sRGB
+      imageOrientation:     'from-image',  // honour EXIF rotation
+      premultiplyAlpha:     'none'
     });
-    const cv = document.createElement('canvas');
-    cv.width = AXSV_W; cv.height = AXSV_H;
-    const ctx = cv.getContext('2d')!;
-    drawCoverFit(ctx, img, img.naturalWidth, img.naturalHeight);
-    const data = ctx.getImageData(0, 0, AXSV_W, AXSV_H).data;
-    const out  = new Uint8Array(AXSV_W * AXSV_H * 2);
-    for (let i = 0, j = 0; i < data.length; i += 4, j += 2) {
-      const r = data[i]     >> 3;       // 5 bits
-      const g = data[i + 1] >> 2;       // 6 bits
-      const b = data[i + 2] >> 3;       // 5 bits
-      const px = (r << 11) | (g << 5) | b;
-      out[j]     =  px        & 0xFF;   // little-endian
-      out[j + 1] = (px >> 8)  & 0xFF;
-    }
-    return out;
-  } finally { URL.revokeObjectURL(url); }
+  } catch {
+    // Older Safari or unsupported source — fall back.
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      await new Promise<void>((ok, fail) => {
+        img.onload  = () => ok();
+        img.onerror = () => fail(new Error('image decode failed'));
+        img.src     = url;
+      });
+      bitmap = await createImageBitmap(img);
+    } finally { URL.revokeObjectURL(url); }
+  }
+  if (!bitmap) throw new Error('image decode failed');
+
+  const cv = document.createElement('canvas');
+  cv.width = AXSV_W; cv.height = AXSV_H;
+  const ctx = cv.getContext('2d', { colorSpace: 'srgb' })!;
+  drawCoverFit(ctx, bitmap, bitmap.width, bitmap.height);
+  bitmap.close?.();
+
+  const data = ctx.getImageData(0, 0, AXSV_W, AXSV_H, { colorSpace: 'srgb' } as any).data;
+  const out  = new Uint8Array(AXSV_W * AXSV_H * 2);
+  for (let i = 0, j = 0; i < data.length; i += 4, j += 2) {
+    const r = data[i]     >> 3;       // 5 bits R
+    const g = data[i + 1] >> 2;       // 6 bits G
+    const b = data[i + 2] >> 3;       // 5 bits B
+    const px = (r << 11) | (g << 5) | b;
+    out[j]     =  px        & 0xFF;   // little-endian
+    out[j + 1] = (px >> 8)  & 0xFF;
+  }
+  return out;
 }
 
 export interface EncodeVideoOpts {

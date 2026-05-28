@@ -2,6 +2,13 @@
   "_schema": "axis-firmware-manifest/v1",
   "releases": [
     {
+      "version": "v1.1.5",
+      "date": "2026-05-28",
+      "notes": "v1.1.5 — Image decoder hardening. PWA now uses createImageBitmap() with explicit sRGB colour-space conversion (was HTMLImageElement which iOS Safari fed wide-gamut/HDR pixels for some AVIFs → shifted colours on device). Better fidelity across formats.",
+      "url": "firmware/smart_knob_shifter-v1.1.5.bin",
+      "size_bytes": 1618080
+    },
+    {
       "version": "v1.1.4",
       "date": "2026-05-28",
       "notes": "v1.1.4 — Free FS space BEFORE accepting screensaver upload. Was leaving the existing 115 KB screensaver in place while writing a 115 KB tmp, overflowing the 128 KB partition users get when v1.1.1 was OTA-installed instead of USB-flashed. Now removes the old file + reports free space first.",
