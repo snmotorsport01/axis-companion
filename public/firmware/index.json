@@ -2,6 +2,13 @@
   "_schema": "axis-firmware-manifest/v1",
   "releases": [
     {
+      "version": "v1.0.6",
+      "date": "2026-05-28",
+      "notes": "v1.0.6 — Kill DNS hijack entirely. Was breaking OTA fetches by caching the spoofed reply on iOS. Lose: iOS captive-portal auto-popup. Gain: every OTA fetch now reliably reaches github.io. Open Safari manually → 192.168.4.1 (URL shown on APP screen).",
+      "url": "firmware/smart_knob_shifter-v1.0.6.bin",
+      "size_bytes": 1522432
+    },
+    {
       "version": "v1.0.5",
       "date": "2026-05-28",
       "notes": "v1.0.5 — OTA fallback: each release has a DOWNLOAD link (Safari native) alongside INSTALL. iOS Safari silently blocks XHR cross-origin binary fetches from HTTP origin; the link bypasses that, save to Files, UPLOAD tab to flash. Also includes v1.0.4 Main screen polish.",
