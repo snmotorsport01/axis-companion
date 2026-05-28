@@ -2,6 +2,13 @@
   "_schema": "axis-firmware-manifest/v1",
   "releases": [
     {
+      "version": "v1.1.4",
+      "date": "2026-05-28",
+      "notes": "v1.1.4 — Free FS space BEFORE accepting screensaver upload. Was leaving the existing 115 KB screensaver in place while writing a 115 KB tmp, overflowing the 128 KB partition users get when v1.1.1 was OTA-installed instead of USB-flashed. Now removes the old file + reports free space first.",
+      "url": "firmware/smart_knob_shifter-v1.1.4.bin",
+      "size_bytes": 1617968
+    },
+    {
       "version": "v1.1.3",
       "date": "2026-05-28",
       "notes": "v1.1.3 — Screensaver upload tolerance. Disk write now decoupled from PSRAM reload: HTTP 200 returned as soon as the file is on flash, even if the in-memory reload fails (image still shows on next reboot). Serial.printf at every failure point so 400s become diagnosable. Response now includes frames/fps/animated.",
