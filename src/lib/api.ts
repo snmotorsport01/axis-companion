@@ -56,6 +56,13 @@ export interface TunableEntry {
 
 export type ConfigSnapshot = Record<string, TunableEntry>;
 
+export interface BrandingSnapshot {
+  name:       string;
+  accent565:  number;
+  accent_hex: string;
+  max_name:   number;
+}
+
 export interface CalibSnapshot {
   mode_id:     number;
   mode_name:   string;
@@ -127,6 +134,18 @@ export class DeviceClient {
   calibration(): Promise<CalibSnapshot>   { return fetchJson(`${this.base}/api/calibration`); }
   resetCalibration(): Promise<{ ok: boolean }> {
     return fetchJson(`${this.base}/api/calibration/reset`, { method: 'POST' });
+  }
+
+  branding(): Promise<BrandingSnapshot>   { return fetchJson(`${this.base}/api/branding`); }
+  setBranding(patch: { name?: string; accent_hex?: string }): Promise<{ ok: boolean }> {
+    return fetchJson(`${this.base}/api/branding`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch)
+    });
+  }
+  resetBranding(): Promise<{ ok: boolean }> {
+    return fetchJson(`${this.base}/api/branding/reset`, { method: 'POST' });
   }
 
   /**

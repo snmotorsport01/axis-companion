@@ -8,6 +8,7 @@
   import Ota       from './pages/Ota.svelte';
   import Calibrate from './pages/Calibrate.svelte';
   import Live      from './pages/Live.svelte';
+  import Brand     from './pages/Brand.svelte';
 
   // Device build: the PWA is hosted by the firmware itself, so /api/info is
   // served from window.location.origin. Wire up a client immediately so the
@@ -32,6 +33,8 @@
     <Calibrate />
   {:else if store.page === 'live'}
     <Live />
+  {:else if store.page === 'brand'}
+    <Brand />
   {/if}
 </main>
 
