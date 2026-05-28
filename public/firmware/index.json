@@ -2,6 +2,13 @@
   "_schema": "axis-firmware-manifest/v1",
   "releases": [
     {
+      "version": "v1.1.3",
+      "date": "2026-05-28",
+      "notes": "v1.1.3 — Screensaver upload tolerance. Disk write now decoupled from PSRAM reload: HTTP 200 returned as soon as the file is on flash, even if the in-memory reload fails (image still shows on next reboot). Serial.printf at every failure point so 400s become diagnosable. Response now includes frames/fps/animated.",
+      "url": "firmware/smart_knob_shifter-v1.1.3.bin",
+      "size_bytes": 1617632
+    },
+    {
       "version": "v1.1.2",
       "date": "2026-05-28",
       "notes": "v1.1.2 — Fix funky static-image colours. Stills now go through the legacy raw RGB565 path (full 16-bit colour, no palette quantization). Animations still use AXSV/16-colour (necessary to fit ~20 frames in FS). PWA preview shows decoded result before upload.",
