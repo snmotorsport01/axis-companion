@@ -2,6 +2,13 @@
   "_schema": "axis-firmware-manifest/v1",
   "releases": [
     {
+      "version": "v1.0.3",
+      "date": "2026-05-28",
+      "notes": "v1.0.3 — DNS hijack TTL 60s → 1s. Was caching bogus reply on iOS, blocking github.io fetch for ~1 min after hijack window closed. Also added 'Safari: 192.168.4.1' hint on APP screen.",
+      "url": "firmware/smart_knob_shifter-v1.0.3.bin",
+      "size_bytes": 1524528
+    },
+    {
       "version": "v1.0.2",
       "date": "2026-05-28",
       "notes": "v1.0.2 — fix OTA download (Safari ReadableStream → XHR arraybuffer).",
