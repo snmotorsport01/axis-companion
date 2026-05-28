@@ -1,4 +1,12 @@
 {
   "_schema": "axis-firmware-manifest/v1",
-  "releases": []
+  "releases": [
+    {
+      "version": "v1.0.0",
+      "date": "2026-05-28",
+      "notes": "v1.0.0 — Stable baseline. P1 pairing + captive portal · P2 tune (10 NVS-backed params) · P3 calibrate viewer · P4 30Hz telemetry · P5 brand (name + accent color) · P6 screensaver image upload (LittleFS). Digit-only WiFi password. Future updates flow via OTA.",
+      "url": "firmware/smart_knob_shifter-v1.0.0.bin",
+      "size_bytes": 1524320
+    }
+  ]
 }
