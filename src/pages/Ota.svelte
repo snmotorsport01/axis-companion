@@ -154,13 +154,40 @@
             ({(progress * 100).toFixed(0)}%)
           </p>
         {:else}
-          <button
-            class="primary install"
-            on:click={() => install(r)}
-            disabled={isCurrent(r) || installing !== null}
-          >
-            {isCurrent(r) ? 'INSTALLED' : 'INSTALL'}
-          </button>
+          <div class="install-row">
+            <!--
+              Anchor with `download` attribute uses Safari's native download
+              path, which is way more reliable than XHR/fetch from an HTTP
+              origin to an HTTPS cross-origin URL (iOS likes to silently
+              fail those). After Safari saves the .bin to Files, the user
+              jumps to the UPLOAD tab to flash it.
+            -->
+            <a
+              class="btn-link"
+              href={resolveReleaseUrl(r)}
+              download={r.url.split('/').pop()}
+              target="_blank"
+              rel="noopener"
+              class:disabled={isCurrent(r)}
+              aria-disabled={isCurrent(r)}
+            >
+              DOWNLOAD
+            </a>
+            <button
+              class="primary install"
+              on:click={() => install(r)}
+              disabled={isCurrent(r) || installing !== null}
+            >
+              {isCurrent(r) ? 'INSTALLED' : 'INSTALL'}
+            </button>
+          </div>
+          {#if !isCurrent(r)}
+            <p class="hint">
+              <strong>INSTALL</strong> = one-tap (best on Android / desktop).<br />
+              On iOS Safari: tap <strong>DOWNLOAD</strong>, save to Files, then switch to
+              the <strong>UPLOAD</strong> tab and pick the .bin.
+            </p>
+          {/if}
         {/if}
       </div>
     {/each}
@@ -261,4 +288,37 @@
     height: 100%; background: var(--accent); transition: width 120ms linear;
   }
   .install { width: 100%; margin-top: var(--s-3); }
+
+  .install-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--s-2);
+    margin-top: var(--s-3);
+  }
+  .install-row .install { width: 100%; margin-top: 0; }
+
+  .btn-link {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 44px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--fg);
+    text-decoration: none;
+    border-radius: var(--r-1);
+    font-weight: 600;
+    font-size: 16px;
+    letter-spacing: 0.04em;
+  }
+  .btn-link:hover { background: var(--surface-2); }
+  .btn-link.disabled,
+  .btn-link[aria-disabled="true"] {
+    opacity: 0.5; pointer-events: none;
+  }
+  .hint {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+    margin: var(--s-2) 0 0;
+  }
+  .hint strong { color: var(--fg); }
 </style>
