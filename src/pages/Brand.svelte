@@ -30,6 +30,15 @@
   let meterLinked = $state(true);
   let nameColor   = $state('#BDBDBD');
   let nameLinked  = $state(true);
+  // Semantic-role slots (v1.2.1+). "Linked" = inherit the static
+  // firmware default (white / muted-grey / red); the colour picker is
+  // only authoritative when its toggle is off.
+  let fgColor     = $state('#FFFFFF');
+  let fgLinked    = $state(true);
+  let mutedColor  = $state('#BDBDBD');
+  let mutedLinked = $state(true);
+  let warnColor   = $state('#F80000');
+  let warnLinked  = $state(true);
   let saving = $state(false);
   let err    = $state<string | null>(null);
   let saved  = $state(false);
@@ -58,6 +67,12 @@
       meterLinked = !snap.meter_custom;
       nameColor   = snap.name_hex;
       nameLinked  = !snap.name_custom;
+      fgColor     = snap.fg_hex;
+      fgLinked    = !snap.fg_custom;
+      mutedColor  = snap.muted_hex;
+      mutedLinked = !snap.muted_custom;
+      warnColor   = snap.warn_hex;
+      warnLinked  = !snap.warn_custom;
     } catch (e: any) {
       err = e?.message ?? 'load failed';
     }
@@ -95,9 +110,12 @@
   let dirty = $derived(!!snap && (
     name.trim() !== snap.name ||
     color.toUpperCase() !== snap.accent_hex.toUpperCase() ||
-    (gearLinked  ? snap.gear_custom  : (snap.gear_hex.toUpperCase()  !== gearColor.toUpperCase())) ||
-    (meterLinked ? snap.meter_custom : (snap.meter_hex.toUpperCase() !== meterColor.toUpperCase())) ||
-    (nameLinked  ? snap.name_custom  : (snap.name_hex.toUpperCase()  !== nameColor.toUpperCase()))
+    (gearLinked   ? snap.gear_custom   : (snap.gear_hex.toUpperCase()   !== gearColor.toUpperCase()))  ||
+    (meterLinked  ? snap.meter_custom  : (snap.meter_hex.toUpperCase()  !== meterColor.toUpperCase())) ||
+    (nameLinked   ? snap.name_custom   : (snap.name_hex.toUpperCase()   !== nameColor.toUpperCase()))  ||
+    (fgLinked     ? snap.fg_custom     : (snap.fg_hex.toUpperCase()     !== fgColor.toUpperCase()))    ||
+    (mutedLinked  ? snap.muted_custom  : (snap.muted_hex.toUpperCase()  !== mutedColor.toUpperCase())) ||
+    (warnLinked   ? snap.warn_custom   : (snap.warn_hex.toUpperCase()   !== warnColor.toUpperCase()))
   ));
 
   async function save() {
@@ -114,7 +132,10 @@
         accent_hex: color,
         gear_hex:   gearLinked  ? '' : gearColor,
         meter_hex:  meterLinked ? '' : meterColor,
-        name_hex:   nameLinked  ? '' : nameColor
+        name_hex:   nameLinked  ? '' : nameColor,
+        fg_hex:     fgLinked    ? '' : fgColor,
+        muted_hex:  mutedLinked ? '' : mutedColor,
+        warn_hex:   warnLinked  ? '' : warnColor
       });
       snap = await store.client.branding();
       saved = true;
@@ -133,9 +154,12 @@
       await store.client.resetBranding();
       snap = await store.client.branding();
       name = snap.name; color = snap.accent_hex;
-      gearColor   = snap.gear_hex;  gearLinked  = !snap.gear_custom;
-      meterColor  = snap.meter_hex; meterLinked = !snap.meter_custom;
-      nameColor   = snap.name_hex;  nameLinked  = !snap.name_custom;
+      gearColor   = snap.gear_hex;   gearLinked   = !snap.gear_custom;
+      meterColor  = snap.meter_hex;  meterLinked  = !snap.meter_custom;
+      nameColor   = snap.name_hex;   nameLinked   = !snap.name_custom;
+      fgColor     = snap.fg_hex;     fgLinked     = !snap.fg_custom;
+      mutedColor  = snap.muted_hex;  mutedLinked  = !snap.muted_custom;
+      warnColor   = snap.warn_hex;   warnLinked   = !snap.warn_custom;
       try { store.info = await store.client.info(); } catch {}
     } catch (e: any) {
       err = e?.message ?? 'reset failed';
@@ -324,11 +348,23 @@
 
     {#each [
       { key: 'gear',  label: 'Gear digit',     get: () => gearColor,  set: (v: string) => gearColor  = v,
-        linked: () => gearLinked,  setLinked: (v: boolean) => gearLinked  = v },
+        linked: () => gearLinked,  setLinked: (v: boolean) => gearLinked  = v,
+        inheritLabel: '↳ accent' },
       { key: 'meter', label: 'G-meter grid',   get: () => meterColor, set: (v: string) => meterColor = v,
-        linked: () => meterLinked, setLinked: (v: boolean) => meterLinked = v },
+        linked: () => meterLinked, setLinked: (v: boolean) => meterLinked = v,
+        inheritLabel: '↳ accent' },
       { key: 'name',  label: 'Name footer',    get: () => nameColor,  set: (v: string) => nameColor  = v,
-        linked: () => nameLinked,  setLinked: (v: boolean) => nameLinked  = v }
+        linked: () => nameLinked,  setLinked: (v: boolean) => nameLinked  = v,
+        inheritLabel: '↳ accent' },
+      { key: 'fg',    label: 'Titles + body',  get: () => fgColor,    set: (v: string) => fgColor    = v,
+        linked: () => fgLinked,    setLinked: (v: boolean) => fgLinked    = v,
+        inheritLabel: '↳ default' },
+      { key: 'muted', label: 'Hints / muted',  get: () => mutedColor, set: (v: string) => mutedColor = v,
+        linked: () => mutedLinked, setLinked: (v: boolean) => mutedLinked = v,
+        inheritLabel: '↳ default' },
+      { key: 'warn',  label: 'Warnings',       get: () => warnColor,  set: (v: string) => warnColor  = v,
+        linked: () => warnLinked,  setLinked: (v: boolean) => warnLinked  = v,
+        inheritLabel: '↳ default' }
     ] as slot}
       <div class="slot-row">
         <span class="slot-label">{slot.label}</span>
@@ -346,7 +382,7 @@
           on:input={(ev) => slot.set((ev.currentTarget as HTMLInputElement).value)}
           disabled={slot.linked()}
         />
-        <span class="mono small">{slot.linked() ? '↳ accent' : slot.get().toUpperCase()}</span>
+        <span class="mono small">{slot.linked() ? slot.inheritLabel : slot.get().toUpperCase()}</span>
       </div>
     {/each}
   </div>

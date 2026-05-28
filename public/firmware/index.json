@@ -2,6 +2,13 @@
   "_schema": "axis-firmware-manifest/v1",
   "releases": [
     {
+      "version": "v1.2.1",
+      "date": "2026-05-28",
+      "notes": "v1.2.1 — Every text on the device is now themeable. Three new semantic-role colour slots: fg (titles + body text — \"APP\", \"MENU\", \"BRIGHTNESS\", SSID, version), muted (hints + secondary info — \"Safari: 192.168.4.1\", footer device name default, \"HOLD TO EXIT\"), and warn (errors + exit prompts — \"HOLD: EXIT\", \"AP FAILED\", \"WAIT - STILL...\"). Each defaults to its current static colour so behaviour matches v1.2.0 until you pick. Brand panel now has 6 slot rows.",
+      "url": "firmware/smart_knob_shifter-v1.2.1.bin",
+      "size_bytes": 1628560
+    },
+    {
       "version": "v1.2.0",
       "date": "2026-05-28",
       "notes": "v1.2.0 — Five PWA-driven customisation features. (1) APP screen auto-collapses to MAIN once the PWA actually pairs; MAIN shows a small SETUP MODE tag while the SoftAP is still up. (2) Per-element colours: gear digit, G-meter grid, and brand name footer each get their own colour slot (defaults inherit from accent). (3) Page transitions: pick between Fade-to-black (default), Iris zoom, and Instant in TUNE. (4) Gear digit animations: None / Slide / Fade. (5) Media preview now scrubs through every quantised frame of an animated screensaver before upload.",

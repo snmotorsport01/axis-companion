@@ -85,6 +85,15 @@ export interface BrandingSnapshot {
   meter_custom:         boolean;
   name_hex:             string;
   name_custom:          boolean;
+  // v1.2.1+ semantic-role slots. Defaults fall back to the static
+  // cfg::COLOR_* (white / muted-grey / red); customising changes every
+  // text in that role across all screens.
+  fg_hex:               string;
+  fg_custom:            boolean;
+  muted_hex:            string;
+  muted_custom:         boolean;
+  warn_hex:             string;
+  warn_custom:          boolean;
   screensaver:          boolean;
   screensaver_w:        number;
   screensaver_h:        number;
@@ -154,6 +163,9 @@ export class DeviceClient {
     gear_hex?:   string;
     meter_hex?:  string;
     name_hex?:   string;
+    fg_hex?:     string;
+    muted_hex?:  string;
+    warn_hex?:   string;
   }): Promise<{ ok: boolean }> {
     return fetchJson(`${this.base}/api/branding`, {
       method: 'POST',
