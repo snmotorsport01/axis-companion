@@ -68,14 +68,17 @@ export interface WifiStatus {
 }
 
 export interface BrandingSnapshot {
-  name:             string;
-  accent565:        number;
-  accent_hex:       string;
-  max_name:         number;
-  screensaver:      boolean;
-  screensaver_w:    number;
-  screensaver_h:    number;
-  screensaver_size: number;        // expected raw bytes (W*H*2)
+  name:                 string;
+  accent565:            number;
+  accent_hex:           string;
+  max_name:             number;
+  screensaver:          boolean;
+  screensaver_w:        number;
+  screensaver_h:        number;
+  screensaver_size:     number;     // expected raw bytes (W*H*2) for legacy
+  screensaver_frames:   number;
+  screensaver_fps:      number;
+  screensaver_animated: boolean;
 }
 
 export interface CalibSnapshot {

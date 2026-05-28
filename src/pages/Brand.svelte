@@ -1,7 +1,13 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import type { BrandingSnapshot, WifiStatus } from '../lib/api';
+  import { encodeImage, encodeVideo, AXSV_W, AXSV_H } from '../lib/axsv';
   import { store } from '../lib/store.svelte';
+
+  // ---- Animation settings (when uploading video) ----------------------
+  let ssAnimFrames = $state(16);
+  let ssAnimFps    = $state(8);
+  let ssEncodeMsg  = $state<string | null>(null);
 
   // ---- Home Wi-Fi (for device-side OTA) -------------------------------
   let wifi       = $state<WifiStatus | null>(null);
@@ -103,53 +109,70 @@
     }
   }
 
-  // ---- Screensaver: convert any image to W×H RGB565 little-endian ----
-  async function convertToRgb565(file: File, w: number, h: number): Promise<Uint8Array> {
-    const url = URL.createObjectURL(file);
-    try {
-      const img = new Image();
-      await new Promise<void>((res, rej) => {
-        img.onload = () => res(); img.onerror = () => rej(new Error('image decode failed'));
-        img.src = url;
-      });
-      const canvas = ssPreviewCanvas ?? document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      const ctx = canvas.getContext('2d')!;
-      // Cover-fit: scale so the smaller image dimension fills the canvas,
-      // then centre. Matches the device's full-bleed render.
-      const ratio = Math.max(w / img.width, h / img.height);
-      const dw = img.width * ratio, dh = img.height * ratio;
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, w, h);
-      ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
-
-      const pixels = ctx.getImageData(0, 0, w, h).data;
-      const out = new Uint8Array(w * h * 2);
-      for (let i = 0, j = 0; i < pixels.length; i += 4, j += 2) {
-        const r = pixels[i]     >> 3;
-        const g = pixels[i + 1] >> 2;
-        const b = pixels[i + 2] >> 3;
-        const px = (r << 11) | (g << 5) | b;
-        out[j]     =  px        & 0xFF;       // little-endian
-        out[j + 1] = (px >> 8)  & 0xFF;
-      }
-      return out;
-    } finally { URL.revokeObjectURL(url); }
-  }
-
   async function onPickScreensaver(ev: Event) {
     const input = ev.currentTarget as HTMLInputElement;
     const f = input.files?.[0];
     ssErr = null;
     ssBytes = null;
+    ssEncodeMsg = null;
     ssFile = f ?? null;
     if (!f || !snap) return;
     try {
       await tick();   // ensure ssPreviewCanvas is mounted
-      ssBytes = await convertToRgb565(f, snap.screensaver_w, snap.screensaver_h);
+      const isVideo = f.type.startsWith('video/');
+      if (isVideo) {
+        ssEncodeMsg = 'Extracting frames…';
+        ssBytes = await encodeVideo(f, {
+          frames: ssAnimFrames,
+          fps:    ssAnimFps,
+          onProgress: (_frac, msg) => { ssEncodeMsg = msg; }
+        });
+      } else {
+        ssEncodeMsg = 'Quantising colours…';
+        ssBytes = await encodeImage(f);
+      }
+      // Render the first frame into the preview canvas so the user sees
+      // exactly what the device will show (post-quantization, post-crop).
+      await renderPreview();
+      ssEncodeMsg = `${(ssBytes.length / 1024).toFixed(1)} KB · ${isVideo ? `${ssAnimFrames} frames @ ${ssAnimFps} fps` : '1 frame'}`;
     } catch (e: any) {
-      ssErr = e?.message ?? 'image conversion failed';
+      ssErr = e?.message ?? 'conversion failed';
+      ssBytes = null;
+      ssEncodeMsg = null;
     }
+  }
+
+  // Decode our own AXSV blob's first frame back to RGBA for the preview.
+  async function renderPreview() {
+    if (!ssBytes || !ssPreviewCanvas) return;
+    const dv = new DataView(ssBytes.buffer, ssBytes.byteOffset);
+    const w  = dv.getUint16(6,  true);
+    const h  = dv.getUint16(8,  true);
+    // Palette: 16 × uint16 RGB565 starting at byte 16
+    const palette: [number,number,number][] = [];
+    for (let i = 0; i < 16; ++i) {
+      const px = dv.getUint16(16 + i * 2, true);
+      const r = ((px >> 11) & 0x1F) << 3;
+      const g = ((px >>  5) & 0x3F) << 2;
+      const b = ( px        & 0x1F) << 3;
+      palette.push([r | (r >> 5), g | (g >> 6), b | (b >> 5)]);
+    }
+    const frameBytes = (w * h) / 2;
+    const frame0     = ssBytes.subarray(48, 48 + frameBytes);
+
+    ssPreviewCanvas.width  = w;
+    ssPreviewCanvas.height = h;
+    const ctx = ssPreviewCanvas.getContext('2d')!;
+    const img = ctx.createImageData(w, h);
+    for (let i = 0, p = 0; i < frame0.length; ++i) {
+      const hi = (frame0[i] >> 4) & 0x0F;
+      const lo =  frame0[i]       & 0x0F;
+      img.data[p++] = palette[hi][0]; img.data[p++] = palette[hi][1];
+      img.data[p++] = palette[hi][2]; img.data[p++] = 255;
+      img.data[p++] = palette[lo][0]; img.data[p++] = palette[lo][1];
+      img.data[p++] = palette[lo][2]; img.data[p++] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
   }
 
   async function uploadScreensaver() {
@@ -246,20 +269,53 @@
       <div class="ss-info">
         {#if ssBytes}
           <strong>Ready to upload</strong>
-          <p class="muted mono small">{(ssBytes.length / 1024).toFixed(1)} KB</p>
+          <p class="muted mono small">{ssEncodeMsg ?? `${(ssBytes.length / 1024).toFixed(1)} KB`}</p>
         {:else if snap.screensaver}
-          <strong>Custom image installed</strong>
+          <strong>
+            {snap.screensaver_animated
+              ? `Animation · ${snap.screensaver_frames} frames @ ${snap.screensaver_fps} fps`
+              : 'Custom image installed'}
+          </strong>
           <p class="muted small">Tap below to replace or clear.</p>
         {:else}
           <strong>Using AXIS logo</strong>
-          <p class="muted small">Pick an image to override.</p>
+          <p class="muted small">Pick an image or short video.</p>
         {/if}
       </div>
     </div>
 
+    <!-- Animation settings (only relevant for video; harmless for images). -->
+    <div class="ss-anim">
+      <div class="ss-anim-row">
+        <label for="ss-frames">Frames</label>
+        <input
+          id="ss-frames" type="range"
+          min="4" max="32" step="1"
+          bind:value={ssAnimFrames}
+          disabled={ssBusy}
+        />
+        <span class="mono small">{ssAnimFrames}</span>
+      </div>
+      <div class="ss-anim-row">
+        <label for="ss-fps">FPS</label>
+        <input
+          id="ss-fps" type="range"
+          min="2" max="20" step="1"
+          bind:value={ssAnimFps}
+          disabled={ssBusy}
+        />
+        <span class="mono small">{ssAnimFps}</span>
+      </div>
+      <p class="hint">
+        Loop length: {(ssAnimFrames / ssAnimFps).toFixed(1)} s.
+        Estimated size: {((ssAnimFrames * AXSV_W * AXSV_H / 2 + 48) / 1024).toFixed(0)} KB
+        (max ~600 KB).
+      </p>
+    </div>
+
     <label class="file">
-      <input type="file" accept="image/*" on:change={onPickScreensaver} disabled={ssBusy} />
-      <span>{ssFile ? ssFile.name : 'Choose image (PNG/JPG)'}</span>
+      <input type="file" accept="image/*,video/*" on:change={onPickScreensaver} disabled={ssBusy} />
+      <span>{ssFile ? ssFile.name : 'Choose image or video'}</span>
     </label>
 
     {#if ssErr}<p class="err">{ssErr}</p>{/if}
@@ -383,6 +439,22 @@
   .ss-preview.ss-empty { opacity: 0.4; }
   .ss-info { flex: 1; }
   .ss-info strong { display: block; }
+
+  .ss-anim {
+    background: var(--surface-2);
+    border-radius: var(--r-1);
+    padding: var(--s-3);
+    margin: var(--s-3) 0 var(--s-2);
+  }
+  .ss-anim-row {
+    display: grid;
+    grid-template-columns: 60px 1fr 36px;
+    align-items: center;
+    gap: var(--s-2);
+    margin-bottom: var(--s-1);
+  }
+  .ss-anim-row label { margin: 0; }
+  .ss-anim-row input[type="range"] { accent-color: var(--accent); }
 
   .file {
     display: block;
