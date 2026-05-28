@@ -22,7 +22,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm ci
+      # No package-lock.json committed, so use install (lockfile is generated
+      # locally on first `npm install` and ignored from git). Switch back to
+      # `npm ci` once we commit a lockfile.
+      - run: npm install --no-audit --no-fund
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
