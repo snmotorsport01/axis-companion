@@ -94,6 +94,29 @@ export interface BrandingSnapshot {
   screensaver_animated: boolean;
 }
 
+/** Detailed system snapshot for the SYS panel (see /api/sys). */
+export interface SysSnapshot {
+  version:        string;
+  uptime_ms:      number;
+  free_heap:      number;
+  min_heap:       number;
+  heap_size:      number;
+  psram_size:     number;
+  psram_free:     number;
+  flash_size:     number;
+  cpu_mhz:        number;
+  mac:            string;
+  ap_ssid?:       string;
+  ap_ip?:         string;
+  ap_clients?:    number;
+  sta_connected:  boolean;
+  sta_ssid?:      string;
+  sta_ip?:        string;
+  sta_rssi?:      number;
+  mode_name?:     string;
+  gear_count?:    number;
+}
+
 export interface CalibSnapshot {
   mode_id:     number;
   mode_name:   string;
@@ -124,6 +147,10 @@ export class DeviceClient {
   constructor(public readonly base: string) {}
 
   info(): Promise<DeviceInfo>            { return fetchJson(`${this.base}/api/info`); }
+  sys():  Promise<SysSnapshot>           { return fetchJson(`${this.base}/api/sys`);  }
+  reboot():       Promise<{ ok: boolean }> { return fetchJson(`${this.base}/api/reboot`,        { method: 'POST' }); }
+  factoryReset(): Promise<{ ok: boolean }> { return fetchJson(`${this.base}/api/factory-reset`, { method: 'POST' }); }
+
   config(): Promise<ConfigSnapshot>      { return fetchJson(`${this.base}/api/config`); }
 
   patchConfig(patch: Record<string, number>): Promise<{ ok: boolean }> {

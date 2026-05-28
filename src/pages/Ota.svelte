@@ -1,12 +1,9 @@
 <script lang="ts">
   import { store } from '../lib/store.svelte';
 
-  // Upload-only firmware install. The releases-manifest workflow was
-  // removed: end-to-end OTA over iOS Safari proved fragile (cross-origin
-  // binary fetch, captive-portal popup quirks, partition mismatches),
-  // and we now USB-flash the device for primary firmware moves. This
-  // page is the WiFi fallback — pick a local .bin and stream it to the
-  // device. Less moving parts, much more reliable.
+  // Upload a signed firmware image to the device over Wi-Fi. The file
+  // streams straight to the device's update partition and the device
+  // reboots into the new image when the transfer completes.
 
   let file       = $state<File | null>(null);
   let uploading  = $state(false);
@@ -56,11 +53,11 @@
 </div>
 
 <div class="card">
-  <h3>Upload .bin</h3>
+  <h3>Install firmware</h3>
   <p class="muted small">
-    Pick a firmware <code>.bin</code> built locally (Arduino IDE → Sketch
-    → Export Compiled Binary). The file streams to the device over Wi-Fi
-    and the device reboots into the new image automatically.
+    Pick an AXIS firmware file (<code>.bin</code>) and tap UPLOAD. The
+    device will reboot into the new firmware once the transfer is
+    complete.
   </p>
 
   <label class="file">
@@ -86,8 +83,9 @@
 
 <div class="card muted small">
   <strong>Heads up:</strong> don't power-cycle the device during upload.
-  If something goes wrong, hold the BOOT button while plugging USB and
-  re-flash from Arduino IDE.
+  If the transfer is interrupted, just open this screen again and
+  re-upload — the device falls back to the previous firmware on
+  failure.
 </div>
 
 <style>

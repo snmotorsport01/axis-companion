@@ -100,10 +100,8 @@
   <button on:click={() => store.page = 'calibrate'}>CALIB</button>
   <button on:click={() => store.page = 'ota'}>OTA</button>
   <button on:click={() => store.page = 'brand'}>BRAND</button>
-  <button disabled>SYS</button>
+  <button on:click={() => store.page = 'sys'}>SYS</button>
 </nav>
-
-<p class="hint">Brand + Sys panels coming next.</p>
 
 {#if !IS_DEVICE_BUILD}
   <button class="disconnect" on:click={disconnect}>DISCONNECT</button>

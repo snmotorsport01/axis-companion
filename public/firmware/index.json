@@ -2,6 +2,13 @@
   "_schema": "axis-firmware-manifest/v1",
   "releases": [
     {
+      "version": "AXIS V1.0.0",
+      "date": "2026-05-28",
+      "notes": "AXIS V1.0.0 — Public release. SYS panel is now wired up (live device stats, RESTART, FACTORY RESET). Companion-app copy reworked to be customer-facing only: no Arduino IDE / BOOT-button / Sketch references anywhere. Firmware label rebranded from dev tags to 'AXIS V1.0.0' on the device INFO screen and across the API.",
+      "url": "firmware/AXIS_V1.0.0.bin",
+      "size_bytes": 1631456
+    },
+    {
       "version": "v1.2.4",
       "date": "2026-05-28",
       "notes": "v1.2.4 — Re-embed PWA into firmware. The device's bundled PWA hadn't been re-baked since v1.1.x, so opening the companion at 192.168.4.1 (or via captive portal on an AXIS-XXXX-only connection) showed the old single-Accent Brand panel even after the firmware itself was upgraded. Re-ran npm run build:device + embed so the on-device PWA matches the github.io one (per-element colour slots, frame scrubber, transition + gear-anim dropdowns).",
