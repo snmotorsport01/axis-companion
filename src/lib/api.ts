@@ -54,7 +54,11 @@ export interface TunableEntry {
   min:  number;
   max:  number;
   def:  number;
-  unit: string;
+  unit: string;        // "ms" | "g" | "dps" | "deg" | "" | "enum"
+  // Only present when unit === "enum": display strings indexed by v.
+  // The firmware uses underscored helper-array keys ("__transitionNames",
+  // "__gearAnimNames") to ship these; they get attached here as `names`.
+  names?: string[];
 }
 
 export type ConfigSnapshot = Record<string, TunableEntry>;
@@ -72,6 +76,15 @@ export interface BrandingSnapshot {
   accent565:            number;
   accent_hex:           string;
   max_name:             number;
+  // v1.2+ per-element colour slots. `_hex` is always the effective
+  // colour (falls back to accent on the firmware side); `_custom` is
+  // true only when the user explicitly overrode the slot.
+  gear_hex:             string;
+  gear_custom:          boolean;
+  meter_hex:            string;
+  meter_custom:         boolean;
+  name_hex:             string;
+  name_custom:          boolean;
   screensaver:          boolean;
   screensaver_w:        number;
   screensaver_h:        number;
@@ -130,7 +143,18 @@ export class DeviceClient {
   }
 
   branding(): Promise<BrandingSnapshot>   { return fetchJson(`${this.base}/api/branding`); }
-  setBranding(patch: { name?: string; accent_hex?: string }): Promise<{ ok: boolean }> {
+  /**
+   * Mutate branding. Any field can be omitted. Per-element slot hexes
+   * (gear_hex/meter_hex/name_hex) accept "" to clear the override and
+   * re-inherit from accent.
+   */
+  setBranding(patch: {
+    name?:       string;
+    accent_hex?: string;
+    gear_hex?:   string;
+    meter_hex?:  string;
+    name_hex?:   string;
+  }): Promise<{ ok: boolean }> {
     return fetchJson(`${this.base}/api/branding`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -20,9 +20,23 @@
   let snap   = $state<BrandingSnapshot | null>(null);
   let name   = $state('');
   let color  = $state('#FFA500');
+  // Per-element colour overrides (v1.2+). `*Linked` reflects whether the
+  // user wants the slot to inherit from the main accent — when true the
+  // colour picker is grayed out and we send an empty string to the
+  // firmware to clear the per-slot override.
+  let gearColor   = $state('#FFA500');
+  let gearLinked  = $state(true);
+  let meterColor  = $state('#FFA500');
+  let meterLinked = $state(true);
+  let nameColor   = $state('#BDBDBD');
+  let nameLinked  = $state(true);
   let saving = $state(false);
   let err    = $state<string | null>(null);
   let saved  = $state(false);
+
+  // Animated-screensaver preview frame index — when the encoded payload
+  // is AXSV the user can scrub through frames before uploading.
+  let ssPreviewFrame = $state(0);
 
   // ---- Screensaver state ---------------------------------------------
   let ssFile      = $state<File | null>(null);
@@ -38,6 +52,12 @@
       snap  = await store.client.branding();
       name  = snap.name;
       color = snap.accent_hex;
+      gearColor   = snap.gear_hex;
+      gearLinked  = !snap.gear_custom;
+      meterColor  = snap.meter_hex;
+      meterLinked = !snap.meter_custom;
+      nameColor   = snap.name_hex;
+      nameLinked  = !snap.name_custom;
     } catch (e: any) {
       err = e?.message ?? 'load failed';
     }
@@ -71,8 +91,14 @@
     }
   }
 
-  // Dirty flag derived from current inputs vs. last snapshot.
-  let dirty = $derived(!!snap && (name.trim() !== snap.name || color.toUpperCase() !== snap.accent_hex.toUpperCase()));
+  // Dirty flag — any field different from the last snapshot.
+  let dirty = $derived(!!snap && (
+    name.trim() !== snap.name ||
+    color.toUpperCase() !== snap.accent_hex.toUpperCase() ||
+    (gearLinked  ? snap.gear_custom  : (snap.gear_hex.toUpperCase()  !== gearColor.toUpperCase())) ||
+    (meterLinked ? snap.meter_custom : (snap.meter_hex.toUpperCase() !== meterColor.toUpperCase())) ||
+    (nameLinked  ? snap.name_custom  : (snap.name_hex.toUpperCase()  !== nameColor.toUpperCase()))
+  ));
 
   async function save() {
     if (!store.client || !snap) return;
@@ -80,14 +106,18 @@
     err = null;
     saved = false;
     try {
+      // Each slot is sent as either "" (clear / inherit) or the hex.
+      // Empty-string clearance is how the firmware tells "link to accent"
+      // apart from an actual user override.
       await store.client.setBranding({
         name:       name.trim().slice(0, snap.max_name),
-        accent_hex: color
+        accent_hex: color,
+        gear_hex:   gearLinked  ? '' : gearColor,
+        meter_hex:  meterLinked ? '' : meterColor,
+        name_hex:   nameLinked  ? '' : nameColor
       });
-      // Re-fetch so the badge updates and dirty flag clears.
       snap = await store.client.branding();
       saved = true;
-      // Also refresh /api/info so Dashboard shows the new device name.
       try { store.info = await store.client.info(); } catch {}
     } catch (e: any) {
       err = e?.message ?? 'save failed';
@@ -98,11 +128,14 @@
 
   async function reset() {
     if (!store.client || !snap) return;
-    if (!confirm('Reset device name and accent colour to factory defaults?')) return;
+    if (!confirm('Reset device name and all colours to factory defaults?')) return;
     try {
       await store.client.resetBranding();
       snap = await store.client.branding();
       name = snap.name; color = snap.accent_hex;
+      gearColor   = snap.gear_hex;  gearLinked  = !snap.gear_custom;
+      meterColor  = snap.meter_hex; meterLinked = !snap.meter_custom;
+      nameColor   = snap.name_hex;  nameLinked  = !snap.name_custom;
       try { store.info = await store.client.info(); } catch {}
     } catch (e: any) {
       err = e?.message ?? 'reset failed';
@@ -144,11 +177,22 @@
     }
   }
 
-  // Render the first frame of the encoded screensaver to the preview canvas.
-  // Supports two on-the-wire formats: legacy raw RGB565 (~115 KB, used for
-  // single still images, exact byte count = W*H*2) and AXSV (header + indexed
-  // palette + 4-bit frames, used for animations).
-  async function renderPreview() {
+  // Total frames in the currently-staged AXSV payload (0 for a still
+  // image). Used to gate the frame-scrubber UI in the preview card.
+  let ssTotalFrames = $derived.by(() => {
+    if (!ssBytes || !snap) return 0;
+    const W = snap.screensaver_w, H = snap.screensaver_h;
+    if (ssBytes.length === W * H * 2) return 0;     // raw single still
+    const dv = new DataView(ssBytes.buffer, ssBytes.byteOffset);
+    return dv.getUint16(10, true);
+  });
+
+  // Render one frame of the encoded screensaver to the preview canvas.
+  // Supports two on-the-wire formats: legacy raw RGB565 (~115 KB, used
+  // for single still images, exact byte count = W*H*2) and AXSV (header
+  // + indexed palette + 4-bit frames, used for animations).
+  // When called with no `frame` argument, uses ssPreviewFrame.
+  async function renderPreview(frame: number = ssPreviewFrame) {
     if (!ssBytes || !ssPreviewCanvas || !snap) return;
     const W = snap.screensaver_w, H = snap.screensaver_h;
     ssPreviewCanvas.width = W; ssPreviewCanvas.height = H;
@@ -173,6 +217,8 @@
 
     // ---- AXSV path (multi-frame indexed) -----------------------------
     const dv = new DataView(ssBytes.buffer, ssBytes.byteOffset);
+    const totalFrames = dv.getUint16(10, true);
+    const fi = Math.max(0, Math.min(totalFrames - 1, frame));
     const palette: [number,number,number][] = [];
     for (let i = 0; i < 16; ++i) {
       const px = dv.getUint16(16 + i * 2, true);
@@ -182,16 +228,23 @@
       palette.push([r | (r >> 5), g | (g >> 6), b | (b >> 5)]);
     }
     const frameBytes = (W * H) / 2;
-    const frame0     = ssBytes.subarray(48, 48 + frameBytes);
-    for (let i = 0, p = 0; i < frame0.length; ++i) {
-      const hi = (frame0[i] >> 4) & 0x0F;
-      const lo =  frame0[i]       & 0x0F;
+    const frameN     = ssBytes.subarray(48 + fi * frameBytes,
+                                        48 + (fi + 1) * frameBytes);
+    for (let i = 0, p = 0; i < frameN.length; ++i) {
+      const hi = (frameN[i] >> 4) & 0x0F;
+      const lo =  frameN[i]       & 0x0F;
       img.data[p++] = palette[hi][0]; img.data[p++] = palette[hi][1];
       img.data[p++] = palette[hi][2]; img.data[p++] = 255;
       img.data[p++] = palette[lo][0]; img.data[p++] = palette[lo][1];
       img.data[p++] = palette[lo][2]; img.data[p++] = 255;
     }
     ctx.putImageData(img, 0, 0);
+  }
+
+  // React to slider changes: rerender preview when the user scrubs.
+  function onScrubPreview(ev: Event) {
+    ssPreviewFrame = +((ev.currentTarget as HTMLInputElement).value);
+    void renderPreview(ssPreviewFrame);
   }
 
   async function uploadScreensaver() {
@@ -259,7 +312,43 @@
       <input id="color" type="color" bind:value={color} />
       <span class="mono hex">{color.toUpperCase()}</span>
     </div>
-    <p class="hint">Used by every highlighted element across the device UI.</p>
+    <p class="hint">Default for every UI element. Customise per slot below.</p>
+  </div>
+
+  <!-- Per-element colour overrides (gear digit, G-meter rings, brand
+       name footer). Each row toggles between "linked to accent" and an
+       independent colour. -->
+  <div class="card slot-card">
+    <label>Per-element colours</label>
+    <p class="hint">Override the accent for specific UI elements.</p>
+
+    {#each [
+      { key: 'gear',  label: 'Gear digit',     get: () => gearColor,  set: (v: string) => gearColor  = v,
+        linked: () => gearLinked,  setLinked: (v: boolean) => gearLinked  = v },
+      { key: 'meter', label: 'G-meter grid',   get: () => meterColor, set: (v: string) => meterColor = v,
+        linked: () => meterLinked, setLinked: (v: boolean) => meterLinked = v },
+      { key: 'name',  label: 'Name footer',    get: () => nameColor,  set: (v: string) => nameColor  = v,
+        linked: () => nameLinked,  setLinked: (v: boolean) => nameLinked  = v }
+    ] as slot}
+      <div class="slot-row">
+        <span class="slot-label">{slot.label}</span>
+        <label class="link-toggle">
+          <input
+            type="checkbox"
+            checked={slot.linked()}
+            on:change={(ev) => slot.setLinked((ev.currentTarget as HTMLInputElement).checked)}
+          />
+          <span>Linked</span>
+        </label>
+        <input
+          type="color"
+          value={slot.get()}
+          on:input={(ev) => slot.set((ev.currentTarget as HTMLInputElement).value)}
+          disabled={slot.linked()}
+        />
+        <span class="mono small">{slot.linked() ? '↳ accent' : slot.get().toUpperCase()}</span>
+      </div>
+    {/each}
   </div>
 
   <div class="actions">
@@ -302,6 +391,23 @@
         {/if}
       </div>
     </div>
+
+    <!-- Frame scrubber: only shown when the staged payload is animated.
+         Lets the user preview each quantised frame before committing. -->
+    {#if ssBytes && ssTotalFrames > 1}
+      <div class="ss-scrub">
+        <input
+          type="range"
+          min="0"
+          max={ssTotalFrames - 1}
+          step="1"
+          value={ssPreviewFrame}
+          on:input={onScrubPreview}
+          disabled={ssBusy}
+        />
+        <span class="mono small">{ssPreviewFrame + 1} / {ssTotalFrames}</span>
+      </div>
+    {/if}
 
     <!-- Animation settings (only relevant for video; harmless for images). -->
     <div class="ss-anim">
@@ -504,4 +610,35 @@
   }
   .wifi-save  { width: 100%; margin-top: var(--s-3); }
   .hint       { color: var(--muted); font-size: 12px; line-height: 1.5; margin: var(--s-1) 0 0; }
+
+  /* Per-element colour slot card */
+  .slot-card { padding-top: var(--s-3); }
+  .slot-row {
+    display: grid;
+    grid-template-columns: 1fr auto 36px 72px;
+    align-items: center;
+    gap: var(--s-2);
+    margin-top: var(--s-2);
+  }
+  .slot-label { font-size: 14px; }
+  .link-toggle {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 12px; color: var(--muted);
+    margin: 0; cursor: pointer;
+  }
+  .link-toggle input { accent-color: var(--accent); }
+  .slot-row input[type="color"]:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Frame scrubber under animated-screensaver preview */
+  .ss-scrub {
+    display: grid;
+    grid-template-columns: 1fr 64px;
+    align-items: center;
+    gap: var(--s-2);
+    margin-top: var(--s-2);
+  }
+  .ss-scrub input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+  }
 </style>

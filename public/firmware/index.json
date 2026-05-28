@@ -2,6 +2,13 @@
   "_schema": "axis-firmware-manifest/v1",
   "releases": [
     {
+      "version": "v1.2.0",
+      "date": "2026-05-28",
+      "notes": "v1.2.0 — Five PWA-driven customisation features. (1) APP screen auto-collapses to MAIN once the PWA actually pairs; MAIN shows a small SETUP MODE tag while the SoftAP is still up. (2) Per-element colours: gear digit, G-meter grid, and brand name footer each get their own colour slot (defaults inherit from accent). (3) Page transitions: pick between Fade-to-black (default), Iris zoom, and Instant in TUNE. (4) Gear digit animations: None / Slide / Fade. (5) Media preview now scrubs through every quantised frame of an animated screensaver before upload.",
+      "url": "firmware/smart_knob_shifter-v1.2.0.bin",
+      "size_bytes": 1627936
+    },
+    {
       "version": "v1.1.8",
       "date": "2026-05-28",
       "notes": "v1.1.8 — Live setting feedback. When the PWA mutates anything (TUNE slider drags, BRAND colour/name, screensaver upload, WIFI), the knob screen pops a 2.5 s toast banner at the bottom edge so you actually see your edit landing on the device. Toast renders over every screen via a Display::push() overlay hook — no per-screen wiring. brightFull/brightDim now re-push to the backlight immediately after patch (previously you had to wait for an FSM transition for the new value to land).",
