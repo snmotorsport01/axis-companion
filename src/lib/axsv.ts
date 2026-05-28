@@ -147,7 +147,13 @@ function sample(rgba: Uint8ClampedArray, n = 5000): RGB[] {
 
 // ---- Public API -----------------------------------------------------
 
-/** Encode a static image as a 1-frame AXSV blob. */
+/**
+ * Encode a static image as raw 240×240 RGB565 little-endian (115,200 bytes,
+ * no header). The firmware's loadFile_() recognises this layout by exact
+ * byte count and uses it directly — full 16-bit colour, no palette
+ * quantization. Way better fidelity for photos than the indexed AXSV
+ * format we have to use for animations.
+ */
 export async function encodeImage(file: File): Promise<Uint8Array> {
   const url = URL.createObjectURL(file);
   try {
@@ -162,8 +168,16 @@ export async function encodeImage(file: File): Promise<Uint8Array> {
     const ctx = cv.getContext('2d')!;
     drawCoverFit(ctx, img, img.naturalWidth, img.naturalHeight);
     const data = ctx.getImageData(0, 0, AXSV_W, AXSV_H).data;
-    const palette = medianCut(sample(data, 5000), 16);
-    return buildAxsv(palette, [packIndices(data, palette)], 1);
+    const out  = new Uint8Array(AXSV_W * AXSV_H * 2);
+    for (let i = 0, j = 0; i < data.length; i += 4, j += 2) {
+      const r = data[i]     >> 3;       // 5 bits
+      const g = data[i + 1] >> 2;       // 6 bits
+      const b = data[i + 2] >> 3;       // 5 bits
+      const px = (r << 11) | (g << 5) | b;
+      out[j]     =  px        & 0xFF;   // little-endian
+      out[j + 1] = (px >> 8)  & 0xFF;
+    }
+    return out;
   } finally { URL.revokeObjectURL(url); }
 }
 

@@ -2,6 +2,13 @@
   "_schema": "axis-firmware-manifest/v1",
   "releases": [
     {
+      "version": "v1.1.2",
+      "date": "2026-05-28",
+      "notes": "v1.1.2 — Fix funky static-image colours. Stills now go through the legacy raw RGB565 path (full 16-bit colour, no palette quantization). Animations still use AXSV/16-colour (necessary to fit ~20 frames in FS). PWA preview shows decoded result before upload.",
+      "url": "firmware/smart_knob_shifter-v1.1.2.bin",
+      "size_bytes": 1616896
+    },
+    {
       "version": "v1.1.1",
       "date": "2026-05-28",
       "notes": "v1.1.1 — Animation screensaver (AXSV format). Custom partition: 640 KB LittleFS (was 128 KB), 1664 KB app slots. Upload video/GIF/image via BRAND → Screensaver; PWA quantises to 16 colours + 4-bit indexed format. Up to ~22 frames @ 240×240, configurable FPS. ⚠ ONE-TIME USB FLASH — partition table change cannot OTA. After this install, OTA continues normally.",

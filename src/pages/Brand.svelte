@@ -134,7 +134,9 @@
       // Render the first frame into the preview canvas so the user sees
       // exactly what the device will show (post-quantization, post-crop).
       await renderPreview();
-      ssEncodeMsg = `${(ssBytes.length / 1024).toFixed(1)} KB · ${isVideo ? `${ssAnimFrames} frames @ ${ssAnimFps} fps` : '1 frame'}`;
+      ssEncodeMsg = isVideo
+        ? `${(ssBytes.length / 1024).toFixed(0)} KB · ${ssAnimFrames} frames @ ${ssAnimFps} fps · 16-colour palette`
+        : `${(ssBytes.length / 1024).toFixed(0)} KB · still image · full 16-bit colour`;
     } catch (e: any) {
       ssErr = e?.message ?? 'conversion failed';
       ssBytes = null;
@@ -142,13 +144,35 @@
     }
   }
 
-  // Decode our own AXSV blob's first frame back to RGBA for the preview.
+  // Render the first frame of the encoded screensaver to the preview canvas.
+  // Supports two on-the-wire formats: legacy raw RGB565 (~115 KB, used for
+  // single still images, exact byte count = W*H*2) and AXSV (header + indexed
+  // palette + 4-bit frames, used for animations).
   async function renderPreview() {
-    if (!ssBytes || !ssPreviewCanvas) return;
+    if (!ssBytes || !ssPreviewCanvas || !snap) return;
+    const W = snap.screensaver_w, H = snap.screensaver_h;
+    ssPreviewCanvas.width = W; ssPreviewCanvas.height = H;
+    const ctx = ssPreviewCanvas.getContext('2d')!;
+    const img = ctx.createImageData(W, H);
+
+    // ---- Raw RGB565 path (full-colour static image) ------------------
+    if (ssBytes.length === W * H * 2) {
+      for (let i = 0, p = 0; i < ssBytes.length; i += 2, p += 4) {
+        const px = ssBytes[i] | (ssBytes[i + 1] << 8);   // little-endian
+        const r = ((px >> 11) & 0x1F) << 3;
+        const g = ((px >>  5) & 0x3F) << 2;
+        const b = ( px        & 0x1F) << 3;
+        img.data[p    ] = r | (r >> 5);
+        img.data[p + 1] = g | (g >> 6);
+        img.data[p + 2] = b | (b >> 5);
+        img.data[p + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+      return;
+    }
+
+    // ---- AXSV path (multi-frame indexed) -----------------------------
     const dv = new DataView(ssBytes.buffer, ssBytes.byteOffset);
-    const w  = dv.getUint16(6,  true);
-    const h  = dv.getUint16(8,  true);
-    // Palette: 16 × uint16 RGB565 starting at byte 16
     const palette: [number,number,number][] = [];
     for (let i = 0; i < 16; ++i) {
       const px = dv.getUint16(16 + i * 2, true);
@@ -157,13 +181,8 @@
       const b = ( px        & 0x1F) << 3;
       palette.push([r | (r >> 5), g | (g >> 6), b | (b >> 5)]);
     }
-    const frameBytes = (w * h) / 2;
+    const frameBytes = (W * H) / 2;
     const frame0     = ssBytes.subarray(48, 48 + frameBytes);
-
-    ssPreviewCanvas.width  = w;
-    ssPreviewCanvas.height = h;
-    const ctx = ssPreviewCanvas.getContext('2d')!;
-    const img = ctx.createImageData(w, h);
     for (let i = 0, p = 0; i < frame0.length; ++i) {
       const hi = (frame0[i] >> 4) & 0x0F;
       const lo =  frame0[i]       & 0x0F;
