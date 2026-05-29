@@ -1,12 +1,16 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import type { BrandingSnapshot, WifiStatus } from '../lib/api';
-  import { encodeImage, encodeVideo, AXSV_W, AXSV_H } from '../lib/axsv';
+  import { encodeImage, encodeVideo } from '../lib/axsv';
   import { store } from '../lib/store.svelte';
 
   // ---- Animation settings (when uploading video) ----------------------
-  let ssAnimFrames = $state(6);
-  let ssAnimFps    = $state(8);
+  // v1.9: chosen automatically — user just picks a file, the encoder
+  // hands them 24 frames at 8 fps (3-second loop). These values came
+  // out of testing as the sweet spot between perceived smoothness and
+  // PSRAM budget on the device after the dual-buffer crossfade work.
+  const SS_FRAMES = 24;
+  const SS_FPS    = 8;
   let ssEncodeMsg  = $state<string | null>(null);
 
   // ---- Home Wi-Fi (for device-side OTA) -------------------------------
@@ -183,8 +187,8 @@
       if (isVideo) {
         ssEncodeMsg = 'Extracting frames…';
         ssBytes = await encodeVideo(f, {
-          frames: ssAnimFrames,
-          fps:    ssAnimFps,
+          frames: SS_FRAMES,
+          fps:    SS_FPS,
           onProgress: (_frac, msg) => { ssEncodeMsg = msg; }
         });
       } else {
@@ -195,7 +199,7 @@
       // exactly what the device will show (post-quantization, post-crop).
       await renderPreview();
       ssEncodeMsg = isVideo
-        ? `${(ssBytes.length / 1024).toFixed(0)} KB · ${ssAnimFrames} frames @ ${ssAnimFps} fps · 16-colour palette`
+        ? `${(ssBytes.length / 1024).toFixed(0)} KB · ${SS_FRAMES} frames @ ${SS_FPS} fps`
         : `${(ssBytes.length / 1024).toFixed(0)} KB · still image · full 16-bit colour`;
     } catch (e: any) {
       // Most decoder failures on iOS while offline trace back to the
@@ -440,34 +444,11 @@
       </div>
     {/if}
 
-    <!-- Animation settings (only relevant for video; harmless for images). -->
-    <div class="ss-anim">
-      <div class="ss-anim-row">
-        <label for="ss-frames">Frames</label>
-        <input
-          id="ss-frames" type="range"
-          min="2" max="32" step="1"
-          bind:value={ssAnimFrames}
-          disabled={ssBusy}
-        />
-        <span class="mono small">{ssAnimFrames}</span>
-      </div>
-      <div class="ss-anim-row">
-        <label for="ss-fps">FPS</label>
-        <input
-          id="ss-fps" type="range"
-          min="2" max="20" step="1"
-          bind:value={ssAnimFps}
-          disabled={ssBusy}
-        />
-        <span class="mono small">{ssAnimFps}</span>
-      </div>
-      <p class="hint">
-        Loop length: {(ssAnimFrames / ssAnimFps).toFixed(1)} s.
-        Estimated size: {((ssAnimFrames * AXSV_W * AXSV_H / 2 + 48) / 1024).toFixed(0)} KB
-        (max ~600 KB).
-      </p>
-    </div>
+    <!--
+      v1.9: removed manual Frames/FPS sliders. The encoder fixes both
+      to 24 frames @ 8 fps which produces a 3-second loop that fits in
+      the device's PSRAM budget alongside the dual crossfade buffers.
+    -->
 
     <label class="file">
       <input type="file" accept="image/*,video/*" on:change={onPickScreensaver} disabled={ssBusy} />
