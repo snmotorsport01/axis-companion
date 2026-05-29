@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import type { BrandingSnapshot, WifiStatus } from '../lib/api';
-  import { encodeImage, encodeVideo, encodeGif } from '../lib/axsv';
+  import { encodeImage, encodeVideo, encodeGif, videoToGifBlob } from '../lib/axsv';
   import { store } from '../lib/store.svelte';
 
   // ---- Animation settings (when uploading video) ----------------------
@@ -309,6 +309,52 @@
     }
   }
 
+  // ---- "Save as GIF" — converts the video upload into a downloadable
+  // .gif file using the same frames + loop-blend that the AXSV encoder
+  // used. Lets the user keep a polished copy of the animation for use
+  // outside the device. Lazy-imports gifenc so the encoder code only
+  // enters the bundle when the user actually asks for it.
+  async function saveAsGif() {
+    if (!ssFile) return;
+    const isGif = ssFile.type === 'image/gif' || /\.gif$/i.test(ssFile.name);
+    const isVid = ssFile.type.startsWith('video/');
+    if (isGif) {
+      // Already a GIF — just give the user the original back.
+      triggerDownload(ssFile, ssFile.name);
+      return;
+    }
+    if (!isVid) {
+      ssErr = 'Save as GIF only works for video sources.';
+      return;
+    }
+    ssBusy = true;
+    ssErr = null;
+    try {
+      ssEncodeMsg = 'Encoding GIF…';
+      const blob = await videoToGifBlob(ssFile, SS_FRAMES, SS_FPS,
+                                        (_f, m) => { ssEncodeMsg = m; });
+      const stem = ssFile.name.replace(/\.[^.]+$/, '') || 'screensaver';
+      triggerDownload(blob, `${stem}.gif`);
+      ssEncodeMsg = `${(blob.size / 1024).toFixed(0)} KB · downloaded`;
+    } catch (e: any) {
+      ssErr = e?.message ?? 'GIF export failed';
+    } finally {
+      ssBusy = false;
+    }
+  }
+
+  function triggerDownload(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Give the browser a moment to start the download before revoking.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   async function clearScreensaver() {
     if (!store.client || !snap?.screensaver) return;
     if (!confirm('Remove the custom screensaver?')) return;
@@ -473,6 +519,15 @@
 
     <div class="actions">
       <button on:click={clearScreensaver} disabled={!snap.screensaver || ssBusy}>CLEAR</button>
+      <!--
+        Save as GIF: video uploads only. Lets the user keep a polished
+        copy of the processed animation (with the v1.9.3 loop-blend
+        applied) outside the device. Disabled for stills and when the
+        encoder hasn't produced a result yet.
+      -->
+      {#if ssFile && (ssFile.type.startsWith('video/') || /\.gif$/i.test(ssFile.name))}
+        <button disabled={!ssBytes || ssBusy} on:click={saveAsGif}>SAVE GIF</button>
+      {/if}
       <button class="primary" disabled={!ssBytes || ssBusy} on:click={uploadScreensaver}>
         {ssBusy ? 'UPLOADING…' : 'UPLOAD'}
       </button>

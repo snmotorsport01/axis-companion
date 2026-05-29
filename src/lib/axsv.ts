@@ -185,15 +185,52 @@ function sample(rgba: Uint8ClampedArray, n = 5000): RGB[] {
 }
 
 /**
+ * Append 3 RGBA frames at the loop boundary that linearly blend the
+ * last unique frame back to the first. Combined with the device's
+ * 100 ms per-transition crossfade, the wrap-point becomes a ~400 ms
+ * gradual fade instead of a hard cut between two arbitrarily-different
+ * frames.
+ *
+ * Caller should already have decided the source is animated (frames
+ * length >= 2). Mutates the array in place.
+ */
+function appendLoopBlend(rgbaFrames: Uint8ClampedArray[]): void {
+  if (rgbaFrames.length < 2) return;
+  const first = rgbaFrames[0];
+  const last  = rgbaFrames[rgbaFrames.length - 1];
+  const N = first.length;
+  if (last.length !== N) return;
+  // Blend at t = 0.25, 0.5, 0.75 — the wrap then crossfades over
+  // three discrete steps. The device's per-transition blend smooths
+  // the gaps between those steps too, so the eye sees a single
+  // continuous fade.
+  for (const t of [0.25, 0.5, 0.75]) {
+    const blended = new Uint8ClampedArray(N);
+    const w2 = Math.round(t * 256);
+    const w1 = 256 - w2;
+    for (let i = 0; i < N; i += 4) {
+      blended[i]     = (last[i]     * w1 + first[i]     * w2) >> 8;
+      blended[i + 1] = (last[i + 1] * w1 + first[i + 1] * w2) >> 8;
+      blended[i + 2] = (last[i + 2] * w1 + first[i + 2] * w2) >> 8;
+      blended[i + 3] = 255;
+    }
+    rgbaFrames.push(blended);
+  }
+}
+
+/**
  * Shared back-end for any "I have N RGBA frames and want AXSV bytes"
- * caller. Builds a 128-colour median-cut palette from samples across
- * every frame, 7-bit indexes each frame, and packs the result.
+ * caller. Auto-inserts 3 loop-blend frames at the tail so the wrap
+ * from last to first closes smoothly. Builds a 128-colour median-cut
+ * palette from samples across every frame (incl. the blended ones),
+ * 7-bit indexes each frame, and packs the result.
  */
 async function encodeAnimation(
   rgbaFrames: Uint8ClampedArray[],
   fps: number,
   onProgress?: (frac: number, msg: string) => void
 ): Promise<Uint8Array> {
+  appendLoopBlend(rgbaFrames);
   const samples: RGB[] = [];
   for (const f of rgbaFrames) samples.push(...sample(f, Math.ceil(8000 / rgbaFrames.length)));
   const palette = medianCut(samples, PAL128_ENTRIES);
@@ -267,8 +304,19 @@ export interface EncodeVideoOpts {
  * video. File grows ~75 % vs 16-colour but stays well inside the
  * device's flash + PSRAM budget for typical 20–35 frame loops.
  */
-export async function encodeVideo(file: File, opts: EncodeVideoOpts): Promise<Uint8Array> {
-  const { frames, fps, onProgress } = opts;
+/**
+ * Sample `frames` RGBA frames from a video file at evenly-spaced
+ * timestamps inside the safe interior (skip first/last 5 % to dodge
+ * the H.264 black-leader and fade-out endings). Returns the frames in
+ * playback order; caller decides whether to encode as AXSV, encode as
+ * GIF, or both.
+ */
+async function extractVideoFrames(
+  file: File,
+  frames: number,
+  fps: number,
+  onProgress?: (frac: number, msg: string) => void
+): Promise<Uint8ClampedArray[]> {
   const url = URL.createObjectURL(file);
   const v = document.createElement('video');
   v.src = url;
@@ -285,15 +333,6 @@ export async function encodeVideo(file: File, opts: EncodeVideoOpts): Promise<Ui
     cv.width = AXSV_W; cv.height = AXSV_H;
     const ctx = cv.getContext('2d')!;
 
-    // Pass 1 — extract every frame as RGBA. Sampling strategy:
-    //  • Skip the first and last 5 % of the video (or 100 ms,
-    //    whichever is larger). H.264 streams routinely render the
-    //    initial few frames as black or partial because the decoder
-    //    hasn't fully resolved keyframe state yet; the tail is
-    //    similarly unreliable for "fade out" endings.
-    //  • Within the trimmed window, sample at the centre of each
-    //    evenly-divided slice. Centre-of-slice keeps each capture
-    //    representative of its region and never lands on a boundary.
     const headroom = Math.max(0.1, duration * 0.05);
     const winStart = Math.min(headroom, duration / 4);
     const winLen   = Math.max(0.001, duration - winStart * 2);
@@ -309,13 +348,76 @@ export async function encodeVideo(file: File, opts: EncodeVideoOpts): Promise<Ui
       rgbaFrames.push(ctx.getImageData(0, 0, AXSV_W, AXSV_H).data);
       onProgress?.((i + 1) / (frames * 2), `Capturing frame ${i + 1}/${frames}`);
     }
-
-    return await encodeAnimation(rgbaFrames, fps, onProgress);
+    return rgbaFrames;
   } finally {
     URL.revokeObjectURL(url);
     v.removeAttribute('src');
     v.load();
   }
+}
+
+export async function encodeVideo(file: File, opts: EncodeVideoOpts): Promise<Uint8Array> {
+  const { frames, fps, onProgress } = opts;
+  const rgbaFrames = await extractVideoFrames(file, frames, fps, onProgress);
+  return encodeAnimation(rgbaFrames, fps, onProgress);
+}
+
+/**
+ * Re-encode a video file as a downloadable GIF (instead of AXSV). Used
+ * by the "Save as GIF" button so users can keep a copy of the
+ * processed animation outside the device. The same loop-blend frames
+ * the AXSV encoder appends are included here too, so the downloaded
+ * GIF loops as smoothly as the on-device version.
+ *
+ * gifenc is lazy-imported so the GIF encoder code only enters the PWA
+ * bundle when the user actually clicks "Save as GIF".
+ */
+export async function videoToGifBlob(
+  file: File,
+  frames: number,
+  fps: number,
+  onProgress?: (frac: number, msg: string) => void
+): Promise<Blob> {
+  const rgbaFrames = await extractVideoFrames(file, frames, fps, onProgress);
+  appendLoopBlend(rgbaFrames);
+  return rgbaFramesToGifBlob(rgbaFrames, fps, onProgress);
+}
+
+/**
+ * Pack the same RGBA frames the AXSV encoder uses into a real GIF89a
+ * file. The shared palette across all frames keeps the GIF compact
+ * and looking consistent across the loop.
+ */
+async function rgbaFramesToGifBlob(
+  frames: Uint8ClampedArray[],
+  fps: number,
+  onProgress?: (frac: number, msg: string) => void
+): Promise<Blob> {
+  const { GIFEncoder, quantize, applyPalette } = await import('gifenc');
+  // Build one shared 256-colour palette from a slice of every frame —
+  // gifenc.quantize wants a flat Uint8Array of RGBA, so concatenate.
+  const stride = AXSV_W * AXSV_H * 4;
+  const merged = new Uint8Array(stride * frames.length);
+  for (let i = 0; i < frames.length; ++i) {
+    merged.set(frames[i], i * stride);
+  }
+  const palette = quantize(merged, 256);
+  const gif = GIFEncoder();
+  const delayMs = Math.max(20, Math.round(1000 / fps));
+  for (let i = 0; i < frames.length; ++i) {
+    const f = frames[i];
+    const flat = new Uint8Array(f.buffer, f.byteOffset, f.byteLength);
+    const index = applyPalette(flat, palette);
+    gif.writeFrame(index, AXSV_W, AXSV_H, {
+      palette,
+      delay: delayMs,
+      // loop forever (NETSCAPE 2.0 extension)
+      repeat: 0
+    } as any);
+    onProgress?.((i + 1) / frames.length, `Writing GIF ${i + 1}/${frames.length}`);
+  }
+  gif.finish();
+  return new Blob([gif.bytes()], { type: 'image/gif' });
 }
 
 /**
