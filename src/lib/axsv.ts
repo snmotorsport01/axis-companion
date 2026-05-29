@@ -200,11 +200,12 @@ function appendLoopBlend(rgbaFrames: Uint8ClampedArray[]): void {
   const last  = rgbaFrames[rgbaFrames.length - 1];
   const N = first.length;
   if (last.length !== N) return;
-  // Blend at t = 0.25, 0.5, 0.75 — the wrap then crossfades over
-  // three discrete steps. The device's per-transition blend smooths
-  // the gaps between those steps too, so the eye sees a single
-  // continuous fade.
-  for (const t of [0.25, 0.5, 0.75]) {
+  // v1.9.4: trimmed from 3 → 2 blend frames at t = 1/3, 2/3. Combined
+  // with the device's now-40 ms per-transition crossfade the wrap
+  // closes in ~330 ms (2 × 125 ms frame + 40 ms blend) — snappy enough
+  // not to feel like a deliberate fade, smooth enough that the
+  // content jump isn't visible. Saves 50 KB per upload too.
+  for (const t of [1 / 3, 2 / 3]) {
     const blended = new Uint8ClampedArray(N);
     const w2 = Math.round(t * 256);
     const w1 = 256 - w2;
