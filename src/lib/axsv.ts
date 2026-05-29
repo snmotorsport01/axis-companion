@@ -184,6 +184,28 @@ function sample(rgba: Uint8ClampedArray, n = 5000): RGB[] {
   return out;
 }
 
+/**
+ * Shared back-end for any "I have N RGBA frames and want AXSV bytes"
+ * caller. Builds a 128-colour median-cut palette from samples across
+ * every frame, 7-bit indexes each frame, and packs the result.
+ */
+async function encodeAnimation(
+  rgbaFrames: Uint8ClampedArray[],
+  fps: number,
+  onProgress?: (frac: number, msg: string) => void
+): Promise<Uint8Array> {
+  const samples: RGB[] = [];
+  for (const f of rgbaFrames) samples.push(...sample(f, Math.ceil(8000 / rgbaFrames.length)));
+  const palette = medianCut(samples, PAL128_ENTRIES);
+  const packed: Uint8Array[] = [];
+  for (let i = 0; i < rgbaFrames.length; ++i) {
+    packed.push(pack7bitFrame(rgbaFrames[i], palette));
+    onProgress?.(0.5 + (i + 1) / (rgbaFrames.length * 2),
+                 `Encoding ${i + 1}/${rgbaFrames.length}`);
+  }
+  return buildAxsv128(palette, packed, fps);
+}
+
 // ---- Public API -----------------------------------------------------
 
 /**
@@ -288,22 +310,85 @@ export async function encodeVideo(file: File, opts: EncodeVideoOpts): Promise<Ui
       onProgress?.((i + 1) / (frames * 2), `Capturing frame ${i + 1}/${frames}`);
     }
 
-    // Pass 2 — shared 128-colour palette built from samples across all
-    // frames, then 7-bit index each.
-    const samples: RGB[] = [];
-    for (const f of rgbaFrames) samples.push(...sample(f, Math.ceil(8000 / frames)));
-    const palette = medianCut(samples, PAL128_ENTRIES);
-    const packed: Uint8Array[] = [];
-    for (let i = 0; i < rgbaFrames.length; ++i) {
-      packed.push(pack7bitFrame(rgbaFrames[i], palette));
-      onProgress?.(0.5 + (i + 1) / (frames * 2), `Encoding ${i + 1}/${frames}`);
-    }
-    return buildAxsv128(palette, packed, fps);
+    return await encodeAnimation(rgbaFrames, fps, onProgress);
   } finally {
     URL.revokeObjectURL(url);
     v.removeAttribute('src');
     v.load();
   }
+}
+
+/**
+ * Encode an animated GIF as AXSV. GIFs are a much better source than
+ * video for screensaver loops:
+ *
+ *   • They already loop seamlessly by design — the last-frame to
+ *     first-frame transition was authored, so the crossfade on the
+ *     device just smooths what was already smooth.
+ *   • They're pre-quantised (typically ≤256 colours) so our 128-colour
+ *     palette can usually reproduce the GIF near-perfectly.
+ *   • Frame timings live in the file — no need to guess FPS.
+ *
+ * Decoding uses the WebCodecs `ImageDecoder` API which iOS Safari has
+ * supported since 17.0 and Chrome / Edge since 94. If the user's
+ * browser doesn't expose it we throw a friendly error so the PWA can
+ * surface guidance.
+ */
+export async function encodeGif(
+  file: File,
+  onProgress?: (frac: number, msg: string) => void
+): Promise<Uint8Array> {
+  const Decoder: any = (typeof window !== 'undefined') ? (window as any).ImageDecoder : undefined;
+  if (!Decoder) {
+    throw new Error('Animated GIF needs iOS 17+ / Chrome 94+');
+  }
+
+  const decoder = new Decoder({ data: file.stream(), type: 'image/gif' });
+  await decoder.completed;
+  const track = decoder.tracks.selectedTrack;
+  if (!track) throw new Error('GIF has no decodable track');
+  const sourceCount = track.frameCount;
+  if (sourceCount < 1) throw new Error('GIF has zero frames');
+
+  // Cap at 24 frames to stay inside the device's PSRAM budget after
+  // the dual-buffer crossfade allocation (v1.9). If the GIF has more,
+  // sample evenly across its duration so loop integrity is preserved.
+  const targetCount = Math.min(24, sourceCount);
+
+  const cv = document.createElement('canvas');
+  cv.width = AXSV_W; cv.height = AXSV_H;
+  const ctx = cv.getContext('2d', { colorSpace: 'srgb' } as any)!;
+
+  const rgbaFrames: Uint8ClampedArray[] = [];
+  let totalDurationUs = 0;
+  for (let i = 0; i < targetCount; ++i) {
+    // Map output index → source index, evenly spaced.
+    const srcIdx = sourceCount <= targetCount
+      ? i
+      : Math.floor(((i + 0.5) / targetCount) * sourceCount);
+    const result = await decoder.decode({ frameIndex: srcIdx });
+    const vf = result.image;            // VideoFrame
+    const w = vf.displayWidth || vf.codedWidth || AXSV_W;
+    const h = vf.displayHeight || vf.codedHeight || AXSV_H;
+    drawCoverFit(ctx, vf as any, w, h);
+    rgbaFrames.push(ctx.getImageData(0, 0, AXSV_W, AXSV_H).data);
+    if (typeof vf.duration === 'number') totalDurationUs += vf.duration;
+    vf.close();
+    onProgress?.((i + 1) / (targetCount * 2),
+                 `Decoding GIF ${i + 1}/${targetCount}`);
+  }
+
+  // Derive FPS from the GIF's natural cadence. WebCodecs gives durations
+  // in microseconds. If none are present (some GIFs do that) fall back
+  // to a reasonable default.
+  let fps = 10;
+  if (totalDurationUs > 0) {
+    const loopSec = totalDurationUs / 1_000_000;
+    fps = Math.round(targetCount / loopSec);
+  }
+  fps = Math.max(2, Math.min(20, fps));
+
+  return encodeAnimation(rgbaFrames, fps, onProgress);
 }
 
 /** Decode an AXSV header for preview rendering. Handles both formats. */

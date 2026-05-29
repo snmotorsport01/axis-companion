@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import type { BrandingSnapshot, WifiStatus } from '../lib/api';
-  import { encodeImage, encodeVideo } from '../lib/axsv';
+  import { encodeImage, encodeVideo, encodeGif } from '../lib/axsv';
   import { store } from '../lib/store.svelte';
 
   // ---- Animation settings (when uploading video) ----------------------
@@ -184,7 +184,12 @@
     try {
       await tick();   // ensure ssPreviewCanvas is mounted
       const isVideo = f.type.startsWith('video/');
-      if (isVideo) {
+      const isGif   = f.type === 'image/gif' ||
+                      /\.gif$/i.test(f.name);
+      if (isGif) {
+        ssEncodeMsg = 'Decoding GIF…';
+        ssBytes = await encodeGif(f, (_frac, msg) => { ssEncodeMsg = msg; });
+      } else if (isVideo) {
         ssEncodeMsg = 'Extracting frames…';
         ssBytes = await encodeVideo(f, {
           frames: SS_FRAMES,
@@ -198,9 +203,11 @@
       // Render the first frame into the preview canvas so the user sees
       // exactly what the device will show (post-quantization, post-crop).
       await renderPreview();
-      ssEncodeMsg = isVideo
-        ? `${(ssBytes.length / 1024).toFixed(0)} KB · ${SS_FRAMES} frames @ ${SS_FPS} fps`
-        : `${(ssBytes.length / 1024).toFixed(0)} KB · still image · full 16-bit colour`;
+      ssEncodeMsg = isGif
+        ? `${(ssBytes.length / 1024).toFixed(0)} KB · animated GIF (seamless loop)`
+        : isVideo
+          ? `${(ssBytes.length / 1024).toFixed(0)} KB · ${SS_FRAMES} frames @ ${SS_FPS} fps`
+          : `${(ssBytes.length / 1024).toFixed(0)} KB · still image · full 16-bit colour`;
     } catch (e: any) {
       // Most decoder failures on iOS while offline trace back to the
       // same root cause — the File object exists but its bytes never
