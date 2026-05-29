@@ -153,6 +153,54 @@
     </dl>
   </div>
 
+  <!-- Battery -->
+  {#if snap.battery && snap.battery.present}
+    <div class="card">
+      <h3>Battery</h3>
+      <dl>
+        <dt>State</dt>
+        <dd class="mono">
+          {snap.battery.percent}%
+          {#if snap.battery.charging}
+            <span class="badge ok">CHARGING</span>
+          {:else if snap.battery.low}
+            <span class="badge danger">LOW</span>
+          {/if}
+        </dd>
+        <dt>Voltage</dt>
+        <dd class="mono">{snap.battery.volts.toFixed(2)} V</dd>
+      </dl>
+      <div class="bar-bg">
+        <div class="bar-fill"
+             style="width: {snap.battery.percent}%;
+                    background: {snap.battery.low ? 'var(--danger)' : 'var(--accent)'};"></div>
+      </div>
+    </div>
+  {:else}
+    <div class="card muted small">No battery detected — running on USB.</div>
+  {/if}
+
+  <!-- IMU (3-axis raw) -->
+  {#if snap.imu}
+    <div class="card">
+      <h3>IMU (raw)</h3>
+      <dl>
+        <dt>Accel</dt>
+        <dd class="mono small">
+          x {snap.imu.ax.toFixed(2)}g · y {snap.imu.ay.toFixed(2)}g · z {snap.imu.az.toFixed(2)}g
+        </dd>
+        <dt>Gyro</dt>
+        <dd class="mono small">
+          x {snap.imu.gx.toFixed(0)}° · y {snap.imu.gy.toFixed(0)}° · z {snap.imu.gz.toFixed(0)}° /s
+        </dd>
+        <dt>Tilt</dt>
+        <dd class="mono small">
+          roll {snap.imu.roll.toFixed(1)}° · pitch {snap.imu.pitch.toFixed(1)}°
+        </dd>
+      </dl>
+    </div>
+  {/if}
+
   <!-- Active mode -->
   {#if snap.mode_name}
     <div class="card">
@@ -210,6 +258,19 @@
     border-color: rgba(255, 59, 59, 0.4);
   }
   .actions .danger:hover { background: rgba(255, 59, 59, 0.28); }
+
+  /* Status badges next to the % readout */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    margin-left: var(--s-2);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    border-radius: var(--r-1);
+    vertical-align: 2px;
+  }
+  .badge.ok     { background: rgba(7, 192, 96, 0.20); color: var(--success); }
+  .badge.danger { background: rgba(255, 59, 59, 0.20); color: var(--danger); }
 
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
   .dot.online  { background: var(--success); }

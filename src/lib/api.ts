@@ -115,6 +115,18 @@ export interface SysSnapshot {
   sta_rssi?:      number;
   mode_name?:     string;
   gear_count?:    number;
+  imu?: {
+    ax: number; ay: number; az: number;
+    gx: number; gy: number; gz: number;
+    roll: number; pitch: number;
+  };
+  battery?: {
+    volts:    number;
+    percent:  number;
+    present:  boolean;
+    charging: boolean;
+    low:      boolean;
+  };
 }
 
 export interface CalibSnapshot {

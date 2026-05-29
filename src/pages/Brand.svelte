@@ -446,7 +446,7 @@
         <label for="ss-frames">Frames</label>
         <input
           id="ss-frames" type="range"
-          min="2" max="7" step="1"
+          min="2" max="32" step="1"
           bind:value={ssAnimFrames}
           disabled={ssBusy}
         />
