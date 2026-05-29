@@ -5,12 +5,15 @@
   import { store } from '../lib/store.svelte';
 
   // ---- Animation settings (when uploading video) ----------------------
-  // v1.9: chosen automatically — user just picks a file, the encoder
-  // hands them 24 frames at 8 fps (3-second loop). These values came
-  // out of testing as the sweet spot between perceived smoothness and
-  // PSRAM budget on the device after the dual-buffer crossfade work.
-  const SS_FRAMES = 24;
-  const SS_FPS    = 8;
+  // v1.9.5: dropped to 12 frames @ 6 fps (2-second loop, 167 ms per
+  // frame). User noted the original v1.1.x loops felt smoother than
+  // v1.9's defaults — the original PWA had manual sliders and they
+  // were using fewer frames + lower FPS, which let each frame hold
+  // long enough that the wrap jump read as a single slow change
+  // rather than a beat in fast motion. 12 @ 6 mimics that feel while
+  // still fitting inside the device's PSRAM + crossfade budget.
+  const SS_FRAMES = 12;
+  const SS_FPS    = 6;
   let ssEncodeMsg  = $state<string | null>(null);
 
   // ---- Home Wi-Fi (for device-side OTA) -------------------------------
