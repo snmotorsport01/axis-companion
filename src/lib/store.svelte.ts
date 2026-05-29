@@ -7,7 +7,8 @@ import type { DeviceClient, DeviceInfo } from './api';
 
 const LS_HOST_KEY = 'axis.host';
 
-export type Page = 'connect' | 'dashboard' | 'tune' | 'ota' | 'calibrate' | 'live' | 'brand' | 'sys';
+export type Page = 'connect' | 'dashboard' | 'tune' | 'ota' | 'calibrate'
+                 | 'live' | 'brand' | 'sys' | 'screensaver';
 
 /**
  * True when the PWA is being served from the AXIS device itself (LittleFS via

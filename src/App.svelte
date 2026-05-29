@@ -9,6 +9,7 @@
   import Calibrate from './pages/Calibrate.svelte';
   import Live      from './pages/Live.svelte';
   import Brand     from './pages/Brand.svelte';
+  import Screensaver from './pages/Screensaver.svelte';
   import Sys       from './pages/Sys.svelte';
 
   // Device build: the PWA is hosted by the firmware itself, so /api/info is
@@ -36,6 +37,8 @@
     <Live />
   {:else if store.page === 'brand'}
     <Brand />
+  {:else if store.page === 'screensaver'}
+    <Screensaver />
   {:else if store.page === 'sys'}
     <Sys />
   {/if}

@@ -386,39 +386,59 @@ export async function videoToGifBlob(
 
 /**
  * Pack the same RGBA frames the AXSV encoder uses into a real GIF89a
- * file. The shared palette across all frames keeps the GIF compact
- * and looking consistent across the loop.
+ * file. v1.9.7 rewrite: the earlier multi-frame merged-quantize path
+ * was producing an all-black GIF; suspect the giant merged Uint8Array
+ * confused gifenc's internal Uint32 view, or quantize collapsed to a
+ * single-colour palette. Switched to:
+ *
+ *   • Build palette from ONE representative frame (middle of the loop)
+ *     — gifenc's documented usage pattern.
+ *   • Explicit `format: "rgb565"` on both quantize + applyPalette so
+ *     there's zero chance of mismatch.
+ *   • Pass `palette` only on the FIRST writeFrame call (global colour
+ *     table); subsequent frames inherit it.
+ *   • console.log diagnostics — visible in the browser dev console so
+ *     the failure mode is observable if it ever regresses.
  */
 async function rgbaFramesToGifBlob(
   frames: Uint8ClampedArray[],
   fps: number,
   onProgress?: (frac: number, msg: string) => void
 ): Promise<Blob> {
+  if (frames.length === 0) throw new Error('GIF: no frames to encode');
+
   const { GIFEncoder, quantize, applyPalette } = await import('gifenc');
-  // Build one shared 256-colour palette from a slice of every frame —
-  // gifenc.quantize wants a flat Uint8Array of RGBA, so concatenate.
-  const stride = AXSV_W * AXSV_H * 4;
-  const merged = new Uint8Array(stride * frames.length);
-  for (let i = 0; i < frames.length; ++i) {
-    merged.set(frames[i], i * stride);
-  }
-  const palette = quantize(merged, 256);
+  const format = 'rgb565';
+
+  // Quantise from the middle frame — most representative of the loop.
+  const sampleIdx = Math.floor(frames.length / 2);
+  const sampleFrame = frames[sampleIdx];
+  const palette = quantize(sampleFrame, 256, { format });
+  // eslint-disable-next-line no-console
+  console.log(`[GIF] palette: ${palette.length} colours from frame ${sampleIdx}, sample bytes`,
+              Array.from(sampleFrame.slice(0, 8)));
+
   const gif = GIFEncoder();
   const delayMs = Math.max(20, Math.round(1000 / fps));
+
   for (let i = 0; i < frames.length; ++i) {
     const f = frames[i];
-    const flat = new Uint8Array(f.buffer, f.byteOffset, f.byteLength);
-    const index = applyPalette(flat, palette);
-    gif.writeFrame(index, AXSV_W, AXSV_H, {
-      palette,
-      delay: delayMs,
-      // loop forever (NETSCAPE 2.0 extension)
-      repeat: 0
-    } as any);
+    const index = applyPalette(f, palette, format);
+    const opts: any = { delay: delayMs };
+    if (i === 0) {
+      // First frame carries the global colour table + NETSCAPE 2.0
+      // loop-forever extension. Subsequent frames inherit the table.
+      opts.palette = palette;
+      opts.repeat  = 0;
+    }
+    gif.writeFrame(index, AXSV_W, AXSV_H, opts);
     onProgress?.((i + 1) / frames.length, `Writing GIF ${i + 1}/${frames.length}`);
   }
   gif.finish();
-  return new Blob([gif.bytes()], { type: 'image/gif' });
+  const out = gif.bytes();
+  // eslint-disable-next-line no-console
+  console.log(`[GIF] wrote ${frames.length} frames → ${out.length} bytes`);
+  return new Blob([out], { type: 'image/gif' });
 }
 
 /**

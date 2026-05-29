@@ -1,20 +1,9 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import type { BrandingSnapshot, WifiStatus } from '../lib/api';
-  import { encodeImage, encodeVideo, encodeGif, videoToGifBlob } from '../lib/axsv';
   import { store } from '../lib/store.svelte';
 
-  // ---- Animation settings (when uploading video) ----------------------
-  // v1.9.5: dropped to 12 frames @ 6 fps (2-second loop, 167 ms per
-  // frame). User noted the original v1.1.x loops felt smoother than
-  // v1.9's defaults — the original PWA had manual sliders and they
-  // were using fewer frames + lower FPS, which let each frame hold
-  // long enough that the wrap jump read as a single slow change
-  // rather than a beat in fast motion. 12 @ 6 mimics that feel while
-  // still fitting inside the device's PSRAM + crossfade budget.
-  const SS_FRAMES = 12;
-  const SS_FPS    = 6;
-  let ssEncodeMsg  = $state<string | null>(null);
+  // v2.0: screensaver upload moved to its own page — see Screensaver.svelte.
 
   // ---- Home Wi-Fi (for device-side OTA) -------------------------------
   let wifi       = $state<WifiStatus | null>(null);
@@ -42,18 +31,6 @@
   let saving = $state(false);
   let err    = $state<string | null>(null);
   let saved  = $state(false);
-
-  // Animated-screensaver preview frame index — when the encoded payload
-  // is AXSV the user can scrub through frames before uploading.
-  let ssPreviewFrame = $state(0);
-
-  // ---- Screensaver state ---------------------------------------------
-  let ssFile      = $state<File | null>(null);
-  let ssBytes     = $state<Uint8Array | null>(null);    // converted RGB565
-  let ssBusy      = $state(false);
-  let ssProgress  = $state(0);
-  let ssErr       = $state<string | null>(null);
-  let ssPreviewCanvas: HTMLCanvasElement | null = $state(null);
 
   onMount(async () => {
     if (!store.client) return;
@@ -160,214 +137,6 @@
     }
   }
 
-  async function onPickScreensaver(ev: Event) {
-    const input = ev.currentTarget as HTMLInputElement;
-    const f = input.files?.[0];
-    ssErr = null;
-    ssBytes = null;
-    ssEncodeMsg = null;
-    ssFile = f ?? null;
-    if (!f || !snap) return;
-
-    // iCloud-only photo path: iOS hands the input a placeholder File
-    // that's 0 bytes when it can't reach iCloud to fetch the original.
-    // Detect this so the user gets a clear hint instead of a cryptic
-    // decoder error 30 seconds later. (The AXIS Wi-Fi is intentionally
-    // internet-less, so this happens a lot during SETUP.)
-    if (f.size === 0) {
-      ssErr =
-        'Photo not available offline.\n' +
-        'It looks like this picture is stored in iCloud — your phone ' +
-        'needs to download it before AXIS can read it. Either pick ' +
-        'a photo with no iCloud ⬇ arrow, or temporarily switch to ' +
-        'your home Wi-Fi to let iOS download it first.';
-      return;
-    }
-
-    try {
-      await tick();   // ensure ssPreviewCanvas is mounted
-      const isVideo = f.type.startsWith('video/');
-      const isGif   = f.type === 'image/gif' ||
-                      /\.gif$/i.test(f.name);
-      if (isGif) {
-        ssEncodeMsg = 'Decoding GIF…';
-        ssBytes = await encodeGif(f, (_frac, msg) => { ssEncodeMsg = msg; });
-      } else if (isVideo) {
-        ssEncodeMsg = 'Extracting frames…';
-        ssBytes = await encodeVideo(f, {
-          frames: SS_FRAMES,
-          fps:    SS_FPS,
-          onProgress: (_frac, msg) => { ssEncodeMsg = msg; }
-        });
-      } else {
-        ssEncodeMsg = 'Quantising colours…';
-        ssBytes = await encodeImage(f);
-      }
-      // Render the first frame into the preview canvas so the user sees
-      // exactly what the device will show (post-quantization, post-crop).
-      await renderPreview();
-      ssEncodeMsg = isGif
-        ? `${(ssBytes.length / 1024).toFixed(0)} KB · animated GIF (seamless loop)`
-        : isVideo
-          ? `${(ssBytes.length / 1024).toFixed(0)} KB · ${SS_FRAMES} frames @ ${SS_FPS} fps`
-          : `${(ssBytes.length / 1024).toFixed(0)} KB · still image · full 16-bit colour`;
-    } catch (e: any) {
-      // Most decoder failures on iOS while offline trace back to the
-      // same root cause — the File object exists but its bytes never
-      // arrived from iCloud. Surface the same hint as the 0-byte path
-      // so the user knows what to try.
-      const msg = e?.message ?? 'conversion failed';
-      ssErr = /decode|read|fetch/i.test(msg)
-        ? msg + '\n\nIf this photo has an iCloud ⬇ arrow, your phone ' +
-          'needs internet to download it before AXIS can read it.'
-        : msg;
-      ssBytes = null;
-      ssEncodeMsg = null;
-    }
-  }
-
-  // Total frames in the currently-staged AXSV payload (0 for a still
-  // image). Used to gate the frame-scrubber UI in the preview card.
-  let ssTotalFrames = $derived.by(() => {
-    if (!ssBytes || !snap) return 0;
-    const W = snap.screensaver_w, H = snap.screensaver_h;
-    if (ssBytes.length === W * H * 2) return 0;     // raw single still
-    const dv = new DataView(ssBytes.buffer, ssBytes.byteOffset);
-    return dv.getUint16(10, true);
-  });
-
-  // Render one frame of the encoded screensaver to the preview canvas.
-  // Supports two on-the-wire formats: legacy raw RGB565 (~115 KB, used
-  // for single still images, exact byte count = W*H*2) and AXSV (header
-  // + indexed palette + 4-bit frames, used for animations).
-  // When called with no `frame` argument, uses ssPreviewFrame.
-  async function renderPreview(frame: number = ssPreviewFrame) {
-    if (!ssBytes || !ssPreviewCanvas || !snap) return;
-    const W = snap.screensaver_w, H = snap.screensaver_h;
-    ssPreviewCanvas.width = W; ssPreviewCanvas.height = H;
-    const ctx = ssPreviewCanvas.getContext('2d')!;
-    const img = ctx.createImageData(W, H);
-
-    // ---- Raw RGB565 path (full-colour static image) ------------------
-    if (ssBytes.length === W * H * 2) {
-      for (let i = 0, p = 0; i < ssBytes.length; i += 2, p += 4) {
-        const px = ssBytes[i] | (ssBytes[i + 1] << 8);   // little-endian
-        const r = ((px >> 11) & 0x1F) << 3;
-        const g = ((px >>  5) & 0x3F) << 2;
-        const b = ( px        & 0x1F) << 3;
-        img.data[p    ] = r | (r >> 5);
-        img.data[p + 1] = g | (g >> 6);
-        img.data[p + 2] = b | (b >> 5);
-        img.data[p + 3] = 255;
-      }
-      ctx.putImageData(img, 0, 0);
-      return;
-    }
-
-    // ---- AXSV path (multi-frame indexed) -----------------------------
-    const dv = new DataView(ssBytes.buffer, ssBytes.byteOffset);
-    const totalFrames = dv.getUint16(10, true);
-    const fi = Math.max(0, Math.min(totalFrames - 1, frame));
-    const palette: [number,number,number][] = [];
-    for (let i = 0; i < 16; ++i) {
-      const px = dv.getUint16(16 + i * 2, true);
-      const r = ((px >> 11) & 0x1F) << 3;
-      const g = ((px >>  5) & 0x3F) << 2;
-      const b = ( px        & 0x1F) << 3;
-      palette.push([r | (r >> 5), g | (g >> 6), b | (b >> 5)]);
-    }
-    const frameBytes = (W * H) / 2;
-    const frameN     = ssBytes.subarray(48 + fi * frameBytes,
-                                        48 + (fi + 1) * frameBytes);
-    for (let i = 0, p = 0; i < frameN.length; ++i) {
-      const hi = (frameN[i] >> 4) & 0x0F;
-      const lo =  frameN[i]       & 0x0F;
-      img.data[p++] = palette[hi][0]; img.data[p++] = palette[hi][1];
-      img.data[p++] = palette[hi][2]; img.data[p++] = 255;
-      img.data[p++] = palette[lo][0]; img.data[p++] = palette[lo][1];
-      img.data[p++] = palette[lo][2]; img.data[p++] = 255;
-    }
-    ctx.putImageData(img, 0, 0);
-  }
-
-  // React to slider changes: rerender preview when the user scrubs.
-  function onScrubPreview(ev: Event) {
-    ssPreviewFrame = +((ev.currentTarget as HTMLInputElement).value);
-    void renderPreview(ssPreviewFrame);
-  }
-
-  async function uploadScreensaver() {
-    if (!ssBytes || !store.client) return;
-    ssBusy = true;
-    ssErr = null;
-    ssProgress = 0;
-    try {
-      await store.client.uploadScreensaver(ssBytes, p => { ssProgress = p; });
-      snap = await store.client.branding();
-      ssFile = null; ssBytes = null;
-    } catch (e: any) {
-      ssErr = e?.message ?? 'upload failed';
-    } finally {
-      ssBusy = false;
-    }
-  }
-
-  // ---- "Save as GIF" — converts the video upload into a downloadable
-  // .gif file using the same frames + loop-blend that the AXSV encoder
-  // used. Lets the user keep a polished copy of the animation for use
-  // outside the device. Lazy-imports gifenc so the encoder code only
-  // enters the bundle when the user actually asks for it.
-  async function saveAsGif() {
-    if (!ssFile) return;
-    const isGif = ssFile.type === 'image/gif' || /\.gif$/i.test(ssFile.name);
-    const isVid = ssFile.type.startsWith('video/');
-    if (isGif) {
-      // Already a GIF — just give the user the original back.
-      triggerDownload(ssFile, ssFile.name);
-      return;
-    }
-    if (!isVid) {
-      ssErr = 'Save as GIF only works for video sources.';
-      return;
-    }
-    ssBusy = true;
-    ssErr = null;
-    try {
-      ssEncodeMsg = 'Encoding GIF…';
-      const blob = await videoToGifBlob(ssFile, SS_FRAMES, SS_FPS,
-                                        (_f, m) => { ssEncodeMsg = m; });
-      const stem = ssFile.name.replace(/\.[^.]+$/, '') || 'screensaver';
-      triggerDownload(blob, `${stem}.gif`);
-      ssEncodeMsg = `${(blob.size / 1024).toFixed(0)} KB · downloaded`;
-    } catch (e: any) {
-      ssErr = e?.message ?? 'GIF export failed';
-    } finally {
-      ssBusy = false;
-    }
-  }
-
-  function triggerDownload(blob: Blob, filename: string) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    // Give the browser a moment to start the download before revoking.
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  async function clearScreensaver() {
-    if (!store.client || !snap?.screensaver) return;
-    if (!confirm('Remove the custom screensaver?')) return;
-    try {
-      await store.client.clearScreensaver();
-      snap = await store.client.branding();
-    } catch (e: any) {
-      ssErr = e?.message ?? 'clear failed';
-    }
-  }
 </script>
 
 <header class="bar">
@@ -444,95 +213,22 @@
     </button>
   </div>
 
-  <!-- ---- Screensaver section ---------------------------------------- -->
+  <!-- v2.0: screensaver upload moved to its own page. Brand stays focused
+       on identity (colours + device name). -->
   <div class="card">
-    <label>Screensaver image</label>
+    <label>Screensaver</label>
     <p class="hint">
-      Shown when the device is idle. Any image — it'll be cropped to fill
-      a 240×240 round screen. Stored on the device's filesystem.
-    </p>
-    <p class="hint warn-hint">
-      💡 Photos with an iCloud ⬇ arrow can't be read while you're on the
-      SETUP Wi-Fi (no internet). Pick a photo that's fully downloaded to
-      your phone.
-    </p>
-
-    <div class="ss-row">
-      <canvas
-        bind:this={ssPreviewCanvas}
-        width={snap.screensaver_w}
-        height={snap.screensaver_h}
-        class="ss-preview"
-        class:ss-empty={!ssBytes && !snap.screensaver}
-      ></canvas>
-      <div class="ss-info">
-        {#if ssBytes}
-          <strong>Ready to upload</strong>
-          <p class="muted mono small">{ssEncodeMsg ?? `${(ssBytes.length / 1024).toFixed(1)} KB`}</p>
-        {:else if snap.screensaver}
-          <strong>
-            {snap.screensaver_animated
-              ? `Animation · ${snap.screensaver_frames} frames @ ${snap.screensaver_fps} fps`
-              : 'Custom image installed'}
-          </strong>
-          <p class="muted small">Tap below to replace or clear.</p>
-        {:else}
-          <strong>Using AXIS logo</strong>
-          <p class="muted small">Pick an image or short video.</p>
-        {/if}
-      </div>
-    </div>
-
-    <!-- Frame scrubber: only shown when the staged payload is animated.
-         Lets the user preview each quantised frame before committing. -->
-    {#if ssBytes && ssTotalFrames > 1}
-      <div class="ss-scrub">
-        <input
-          type="range"
-          min="0"
-          max={ssTotalFrames - 1}
-          step="1"
-          value={ssPreviewFrame}
-          on:input={onScrubPreview}
-          disabled={ssBusy}
-        />
-        <span class="mono small">{ssPreviewFrame + 1} / {ssTotalFrames}</span>
-      </div>
-    {/if}
-
-    <!--
-      v1.9: removed manual Frames/FPS sliders. The encoder fixes both
-      to 24 frames @ 8 fps which produces a 3-second loop that fits in
-      the device's PSRAM budget alongside the dual crossfade buffers.
-    -->
-
-    <label class="file">
-      <input type="file" accept="image/*,video/*" on:change={onPickScreensaver} disabled={ssBusy} />
-      <span>{ssFile ? ssFile.name : 'Choose image or video'}</span>
-    </label>
-
-    {#if ssErr}<p class="err multiline">{ssErr}</p>{/if}
-
-    {#if ssBusy || ssProgress > 0}
-      <div class="bar-bg">
-        <div class="bar-fill" style="width: {(ssProgress * 100).toFixed(1)}%"></div>
-      </div>
-      <p class="muted small mono">{(ssProgress * 100).toFixed(0)}%</p>
-    {/if}
-
-    <div class="actions">
-      <button on:click={clearScreensaver} disabled={!snap.screensaver || ssBusy}>CLEAR</button>
-      <!--
-        Save as GIF: video uploads only. Lets the user keep a polished
-        copy of the processed animation (with the v1.9.3 loop-blend
-        applied) outside the device. Disabled for stills and when the
-        encoder hasn't produced a result yet.
-      -->
-      {#if ssFile && (ssFile.type.startsWith('video/') || /\.gif$/i.test(ssFile.name))}
-        <button disabled={!ssBytes || ssBusy} on:click={saveAsGif}>SAVE GIF</button>
+      {#if snap.screensaver_animated}
+        Animation · {snap.screensaver_frames} frames @ {snap.screensaver_fps} fps installed.
+      {:else if snap.screensaver}
+        Custom still image installed.
+      {:else}
+        Using the AXIS logo.
       {/if}
-      <button class="primary" disabled={!ssBytes || ssBusy} on:click={uploadScreensaver}>
-        {ssBusy ? 'UPLOADING…' : 'UPLOAD'}
+    </p>
+    <div class="actions">
+      <button class="primary" on:click={() => store.page = 'screensaver'}>
+        OPEN SCREENSAVER →
       </button>
     </div>
   </div>
