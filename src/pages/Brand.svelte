@@ -5,7 +5,7 @@
   import { store } from '../lib/store.svelte';
 
   // ---- Animation settings (when uploading video) ----------------------
-  let ssAnimFrames = $state(16);
+  let ssAnimFrames = $state(6);
   let ssAnimFps    = $state(8);
   let ssEncodeMsg  = $state<string | null>(null);
 
@@ -446,7 +446,7 @@
         <label for="ss-frames">Frames</label>
         <input
           id="ss-frames" type="range"
-          min="4" max="32" step="1"
+          min="2" max="7" step="1"
           bind:value={ssAnimFrames}
           disabled={ssBusy}
         />
