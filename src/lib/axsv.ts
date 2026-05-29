@@ -263,12 +263,21 @@ export async function encodeVideo(file: File, opts: EncodeVideoOpts): Promise<Ui
     cv.width = AXSV_W; cv.height = AXSV_H;
     const ctx = cv.getContext('2d')!;
 
-    // Pass 1 — extract every frame as RGBA, sampled at the centre of
-    // each evenly-divided time slice so we never catch a black-leader
-    // warmup frame at t=0.
+    // Pass 1 — extract every frame as RGBA. Sampling strategy:
+    //  • Skip the first and last 5 % of the video (or 100 ms,
+    //    whichever is larger). H.264 streams routinely render the
+    //    initial few frames as black or partial because the decoder
+    //    hasn't fully resolved keyframe state yet; the tail is
+    //    similarly unreliable for "fade out" endings.
+    //  • Within the trimmed window, sample at the centre of each
+    //    evenly-divided slice. Centre-of-slice keeps each capture
+    //    representative of its region and never lands on a boundary.
+    const headroom = Math.max(0.1, duration * 0.05);
+    const winStart = Math.min(headroom, duration / 4);
+    const winLen   = Math.max(0.001, duration - winStart * 2);
     const rgbaFrames: Uint8ClampedArray[] = [];
     for (let i = 0; i < frames; ++i) {
-      const t = ((i + 0.5) / frames) * duration;
+      const t = winStart + ((i + 0.5) / frames) * winLen;
       await new Promise<void>((ok) => {
         const onSeeked = () => { v.removeEventListener('seeked', onSeeked); ok(); };
         v.addEventListener('seeked', onSeeked);
