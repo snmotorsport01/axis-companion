@@ -161,6 +161,22 @@
     ssEncodeMsg = null;
     ssFile = f ?? null;
     if (!f || !snap) return;
+
+    // iCloud-only photo path: iOS hands the input a placeholder File
+    // that's 0 bytes when it can't reach iCloud to fetch the original.
+    // Detect this so the user gets a clear hint instead of a cryptic
+    // decoder error 30 seconds later. (The AXIS Wi-Fi is intentionally
+    // internet-less, so this happens a lot during SETUP.)
+    if (f.size === 0) {
+      ssErr =
+        'Photo not available offline.\n' +
+        'It looks like this picture is stored in iCloud — your phone ' +
+        'needs to download it before AXIS can read it. Either pick ' +
+        'a photo with no iCloud ⬇ arrow, or temporarily switch to ' +
+        'your home Wi-Fi to let iOS download it first.';
+      return;
+    }
+
     try {
       await tick();   // ensure ssPreviewCanvas is mounted
       const isVideo = f.type.startsWith('video/');
@@ -182,7 +198,15 @@
         ? `${(ssBytes.length / 1024).toFixed(0)} KB · ${ssAnimFrames} frames @ ${ssAnimFps} fps · 16-colour palette`
         : `${(ssBytes.length / 1024).toFixed(0)} KB · still image · full 16-bit colour`;
     } catch (e: any) {
-      ssErr = e?.message ?? 'conversion failed';
+      // Most decoder failures on iOS while offline trace back to the
+      // same root cause — the File object exists but its bytes never
+      // arrived from iCloud. Surface the same hint as the 0-byte path
+      // so the user knows what to try.
+      const msg = e?.message ?? 'conversion failed';
+      ssErr = /decode|read|fetch/i.test(msg)
+        ? msg + '\n\nIf this photo has an iCloud ⬇ arrow, your phone ' +
+          'needs internet to download it before AXIS can read it.'
+        : msg;
       ssBytes = null;
       ssEncodeMsg = null;
     }
@@ -367,6 +391,11 @@
       Shown when the device is idle. Any image — it'll be cropped to fill
       a 240×240 round screen. Stored on the device's filesystem.
     </p>
+    <p class="hint warn-hint">
+      💡 Photos with an iCloud ⬇ arrow can't be read while you're on the
+      SETUP Wi-Fi (no internet). Pick a photo that's fully downloaded to
+      your phone.
+    </p>
 
     <div class="ss-row">
       <canvas
@@ -445,7 +474,7 @@
       <span>{ssFile ? ssFile.name : 'Choose image or video'}</span>
     </label>
 
-    {#if ssErr}<p class="err">{ssErr}</p>{/if}
+    {#if ssErr}<p class="err multiline">{ssErr}</p>{/if}
 
     {#if ssBusy || ssProgress > 0}
       <div class="bar-bg">
@@ -604,6 +633,14 @@
   .small { font-size: 13px; }
   .muted { color: var(--muted); }
   .err   { color: var(--danger); margin: var(--s-2) 0 0; font-size: 13px; }
+  .err.multiline { white-space: pre-line; line-height: 1.45; }
+  .warn-hint {
+    color: var(--accent);
+    background: rgba(255, 165, 0, 0.08);
+    border-radius: var(--r-1);
+    padding: var(--s-2) var(--s-3);
+    margin-top: var(--s-2);
+  }
 
   .wifi-status {
     display: flex; align-items: center; gap: var(--s-2);
