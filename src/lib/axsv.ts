@@ -237,7 +237,15 @@ export async function encodeVideo(file: File, opts: EncodeVideoOpts): Promise<Ui
     // Pass 1 — extract every frame as RGBA.
     const rgbaFrames: Uint8ClampedArray[] = [];
     for (let i = 0; i < frames; ++i) {
-      const t = (i / Math.max(1, frames - 1)) * duration * 0.999;
+      // Sample at the CENTER of each evenly-divided time slice, not at
+      // its boundary. The old `i / (frames - 1)` started at t = 0 which
+      // routinely caught the black leader frame that MP4/H.264 decoders
+      // emit before the first keyframe is fully resolved — users were
+      // seeing 1-3 black frames at the start of the screensaver loop.
+      // Center-of-slice gives frame 0 a small offset (duration / 2N)
+      // that's past the warm-up but still representative, and keeps the
+      // last frame off the trailing edge of the video too.
+      const t = ((i + 0.5) / frames) * duration;
       await new Promise<void>((ok) => {
         const onSeeked = () => { v.removeEventListener('seeked', onSeeked); ok(); };
         v.addEventListener('seeked', onSeeked);
