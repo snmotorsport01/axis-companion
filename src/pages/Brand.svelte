@@ -141,7 +141,7 @@
 
 <header class="bar">
   <button class="back" on:click={() => store.goDashboard()}>‹ DASHBOARD</button>
-  <h1>BRAND</h1>
+  <h1>DISPLAY CUSTOM</h1>
 </header>
 
 {#if err}<div class="card err">{err}</div>{/if}

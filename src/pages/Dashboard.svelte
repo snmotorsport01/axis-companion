@@ -99,7 +99,7 @@
   <button on:click={() => store.page = 'tune'}>TUNE</button>
   <button on:click={() => store.page = 'calibrate'}>CALIB</button>
   <button on:click={() => store.page = 'ota'}>OTA</button>
-  <button on:click={() => store.page = 'brand'}>BRAND</button>
+  <button on:click={() => store.page = 'brand'}>DISPLAY&shy;CUSTOM</button>
   <button on:click={() => store.page = 'screensaver'}>SCREEN&shy;SAVER</button>
   <button on:click={() => store.page = 'sys'}>SYS</button>
 </nav>

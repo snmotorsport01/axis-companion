@@ -11,7 +11,8 @@
   // Tune labels — kept here so we can ship UI-only changes without touching
   // the firmware's /api/config schema.
   const PRETTY: Record<string, string> = {
-    gearDwellMs:     'Gear dwell',
+    gearDwellMs:     'Gear dwell (engine)',
+    patternChaseMs:  'Pattern chase speed',
     motionAccelDead: 'Motion accel threshold',
     motionGyroDead:  'Motion gyro threshold',
     lpAlphaRp:       'Roll/pitch filter alpha',
