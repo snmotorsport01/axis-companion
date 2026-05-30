@@ -334,9 +334,36 @@ async function extractVideoFrames(
     cv.width = AXSV_W; cv.height = AXSV_H;
     const ctx = cv.getContext('2d')!;
 
+    // v2.0.4 — wait until the video element actually has a decoded
+    // frame in its buffer before we start the sampling loop. After
+    // `loadedmetadata` the element knows dimensions + duration but
+    // hasn't decoded any pixels yet, so the first seek-then-drawImage
+    // landed on an empty buffer and produced a black frame. The
+    // `readyState >= HAVE_CURRENT_DATA` (2) gate plus an explicit
+    // warmup seek to the first sample point + small settle delay
+    // gives the decoder time to fill its frame queue.
+    await new Promise<void>((ok, fail) => {
+      if (v.readyState >= 2) { ok(); return; }
+      v.onloadeddata = () => ok();
+      v.onerror      = () => fail(new Error('video data load failed'));
+    });
+
     const headroom = Math.max(0.1, duration * 0.05);
     const winStart = Math.min(headroom, duration / 4);
     const winLen   = Math.max(0.001, duration - winStart * 2);
+
+    // Throwaway warmup seek. Land on the same timestamp the first real
+    // sample will use, wait for `seeked`, then idle 100 ms so the
+    // codec has actually rendered into the frame buffer (just because
+    // seeked fired doesn't mean drawImage has pixels yet).
+    const warmupT = winStart + (0.5 / frames) * winLen;
+    await new Promise<void>((ok) => {
+      const fn = () => { v.removeEventListener('seeked', fn); ok(); };
+      v.addEventListener('seeked', fn);
+      v.currentTime = warmupT;
+    });
+    await new Promise<void>(r => setTimeout(r, 100));
+
     const rgbaFrames: Uint8ClampedArray[] = [];
     for (let i = 0; i < frames; ++i) {
       const t = winStart + ((i + 0.5) / frames) * winLen;
@@ -345,6 +372,11 @@ async function extractVideoFrames(
         v.addEventListener('seeked', onSeeked);
         v.currentTime = t;
       });
+      // Small extra delay AFTER seeked for the codec to actually
+      // render the seeked-to frame. 20 ms is barely perceptible in
+      // the overall encode time but kills the "first frame black"
+      // race in practice.
+      await new Promise<void>(r => setTimeout(r, 20));
       drawCoverFit(ctx, v, v.videoWidth, v.videoHeight);
       rgbaFrames.push(ctx.getImageData(0, 0, AXSV_W, AXSV_H).data);
       onProgress?.((i + 1) / (frames * 2), `Capturing frame ${i + 1}/${frames}`);
