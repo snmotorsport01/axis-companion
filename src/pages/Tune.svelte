@@ -8,23 +8,76 @@
   let dirty  = $state(false);
   let saving = $state(false);
 
-  // Tune labels — kept here so we can ship UI-only changes without touching
-  // the firmware's /api/config schema.
-  const PRETTY: Record<string, string> = {
-    gearDwellMs:     'Gear dwell (engine)',
-    patternChaseMs:  'Pattern chase speed',
-    motionAccelDead: 'Motion accel threshold',
-    motionGyroDead:  'Motion gyro threshold',
-    lpAlphaRp:       'Roll/pitch filter alpha',
-    seqTriggerDeg:   'SEQ trigger angle',
-    seqRearmDeg:     'SEQ re-arm angle',
-    seqCooldownMs:   'SEQ cooldown',
-    brightFull:      'Brightness — active',
-    brightDim:       'Brightness — idle',
-    sleepAfterMs:    'Sleep timeout',
-    transitionStyle: 'Page transition',
-    gearAnimStyle:   'Gear change animation'
+  // Human-friendly labels + 1-line explanations for each tunable.
+  // Lives in the PWA (not firmware) so we can ship copy edits without
+  // re-flashing. Keep the `help` text short — readable next to the
+  // slider on a phone screen.
+  type LabelInfo = { label: string; help: string };
+  const PRETTY: Record<string, LabelInfo> = {
+    gearDwellMs: {
+      label: 'Gear shift delay',
+      help:  'How long to wait before locking in a new gear. Lower = faster reaction. Higher = harder to trigger by mistake.',
+    },
+    patternChaseMs: {
+      label: 'Pattern Effect speed',
+      help:  'How fast the glowing light runs through the gears on the H-pattern screen.',
+    },
+    intentGyroDps: {
+      label: 'Gear sensitive',
+      help:  'How sharp a knob movement is needed to register as a shift. Higher = ignores more car bumps and brake dive.',
+    },
+    intentWindowMs: {
+      label: 'Gear threshold',
+      help:  'After moving the knob, how long the device keeps accepting the new gear before timing out.',
+    },
+    motionAccelDead: {
+      label: 'Driving detect (shake)',
+      help:  'How much vibration counts as the car moving. Above this, shifts freeze to prevent road bumps from triggering them.',
+    },
+    motionGyroDead: {
+      label: 'Driving detect (turn)',
+      help:  'How much turning counts as the car moving. Above this, shifts freeze for the same reason.',
+    },
+    lpAlphaRp: {
+      label: 'Tilt response',
+      help:  'Lower = smoother but laggy. Higher = snappy but more jittery.',
+    },
+    seqTriggerDeg: {
+      label: 'Sequential — shift angle',
+      help:  'Sequential mode only. How far to tilt the knob to count as an up/down shift.',
+    },
+    seqRearmDeg: {
+      label: 'Sequential — return angle',
+      help:  'Sequential mode only. Knob must come back to within this angle before another shift can register.',
+    },
+    seqCooldownMs: {
+      label: 'Sequential — shift gap',
+      help:  'Sequential mode only. Shortest time allowed between two consecutive shifts.',
+    },
+    brightFull: {
+      label: 'Brightness while in use',
+      help:  'Screen brightness when you are actively using the device.',
+    },
+    brightDim: {
+      label: 'Brightness when idle',
+      help:  'Screen brightness after a few seconds without interaction.',
+    },
+    sleepAfterMs: {
+      label: 'Screensaver delay',
+      help:  'How long without input before the screensaver image / animation kicks in.',
+    },
+    transitionStyle: {
+      label: 'Screen change effect',
+      help:  'How pages animate when switching from one to another.',
+    },
+    gearAnimStyle: {
+      label: 'Gear letter effect',
+      help:  'How the big gear letter appears when you shift on the main screen.',
+    },
   };
+
+  function labelOf(key: string): string  { return PRETTY[key]?.label ?? key; }
+  function helpOf (key: string): string  { return PRETTY[key]?.help  ?? '';  }
 
   // Firmware ships enum option labels as auxiliary "__transitionNames" /
   // "__gearAnimNames" entries in the config doc. Re-attach them to the
@@ -136,11 +189,14 @@
   {#each Object.entries(config) as [key, e]}
     <div class="card">
       <div class="row">
-        <label for={key}>{PRETTY[key] ?? key}</label>
+        <label for={key}>{labelOf(key)}</label>
         <span class="mono v">
           {e.unit === 'enum' && e.names ? (e.names[e.v] ?? e.v) : fmt(key, e.v)}
         </span>
       </div>
+      {#if helpOf(key)}
+        <p class="help">{helpOf(key)}</p>
+      {/if}
       {#if e.unit === 'enum' && e.names}
         <select
           id={key}
@@ -187,6 +243,12 @@
   label   { margin: 0; }
   .row    { display: flex; justify-content: space-between; align-items: baseline; }
   .v      { color: var(--accent); font-size: 18px; font-weight: 700; }
+  .help   {
+    margin: var(--s-1) 0 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.4;
+  }
   input[type="range"] {
     width: 100%;
     accent-color: var(--accent);
