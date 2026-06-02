@@ -186,7 +186,11 @@
 {#if !config}
   <div class="card muted">Loading…</div>
 {:else}
-  {#each Object.entries(config) as [key, e]}
+  <!-- Keys hoisted onto the CUSTOM page (Brand.svelte's "Animation &
+       feel" card). They still come back from /api/config — we just
+       don't render them here to avoid showing the same control twice. -->
+  {@const MOVED_TO_BRAND = new Set(['gearDwellMs', 'gearAnimStyle', 'transitionStyle'])}
+  {#each Object.entries(config).filter(([k]) => !MOVED_TO_BRAND.has(k)) as [key, e]}
     <div class="card">
       <div class="row">
         <label for={key}>{labelOf(key)}</label>

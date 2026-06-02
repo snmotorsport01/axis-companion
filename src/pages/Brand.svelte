@@ -1,8 +1,35 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { BrandingSnapshot, WifiStatus } from '../lib/api';
+  import type { BrandingSnapshot, ConfigSnapshot, WifiStatus } from '../lib/api';
   import { store } from '../lib/store.svelte';
   import DevicePreview from '../lib/DevicePreview.svelte';
+
+  // ============================================================
+  //  "Animation & feel" — three tunables that used to live on the
+  //  Tune page but really belong here because they're about how the
+  //  device LOOKS, not how it behaves under the hood. Keys handled:
+  //
+  //    gearDwellMs       — slider, how long a new gear must hold
+  //                        before committing (min 120 enforced by
+  //                        firmware schema as of v2.5.11)
+  //    gearAnimStyle     — enum, gear-digit animation when shifting
+  //    transitionStyle   — enum, page transition style
+  //
+  //  Tune.svelte filters these three keys out of its render so we
+  //  don't show the same control in two places.
+  // ============================================================
+  const FEEL_KEYS = ['gearDwellMs', 'gearAnimStyle', 'transitionStyle'] as const;
+  type FeelKey = typeof FEEL_KEYS[number];
+  const FEEL_LABEL: Record<FeelKey, string> = {
+    gearDwellMs:     'Gear shift delay',
+    gearAnimStyle:   'Gear letter effect',
+    transitionStyle: 'Screen change effect'
+  };
+  const FEEL_HELP: Record<FeelKey, string> = {
+    gearDwellMs:     'How long the new position must stay still before locking in. Lower = faster reaction. Going under ~120 ms is unreliable — small jitters slip through and the gear bounces back and forth.',
+    gearAnimStyle:   'How the big gear letter appears when you shift on the main screen.',
+    transitionStyle: 'How pages animate when switching from one to another.'
+  };
 
   // v2.0: screensaver upload moved to its own page — see Screensaver.svelte.
 
@@ -33,6 +60,11 @@
   let err    = $state<string | null>(null);
   let saved  = $state(false);
 
+  // Tunables snapshot — holds the 3 feel keys (and any other entries
+  // we don't surface here; they round-trip untouched on save).
+  let feel = $state<ConfigSnapshot | null>(null);
+  let feelToast = $state<string | null>(null);
+
   onMount(async () => {
     if (!store.client) return;
     try {
@@ -48,6 +80,18 @@
     } catch (e: any) {
       err = e?.message ?? 'load failed';
     }
+    try {
+      const raw = await store.client.config();
+      // Same enum-name re-attach trick Tune.svelte uses so dropdowns
+      // can render human labels rather than raw integers.
+      if ((raw as any).__transitionNames && raw.transitionStyle) {
+        raw.transitionStyle = { ...raw.transitionStyle, names: (raw as any).__transitionNames };
+      }
+      if ((raw as any).__gearAnimNames && raw.gearAnimStyle) {
+        raw.gearAnimStyle = { ...raw.gearAnimStyle, names: (raw as any).__gearAnimNames };
+      }
+      feel = raw;
+    } catch {/* tunables optional on this page */}
     await reloadWifi();
     // Poll WiFi state while on this page so the user can see the device
     // associate after they save creds.
@@ -119,6 +163,27 @@
     }
   }
 
+  // Live-apply + auto-save a feel-tunable change. Debounced so a slider
+  // drag doesn't hammer the device; saveConfig writes to NVS after the
+  // last patch lands. Toast "saved" briefly for feedback.
+  let feelTimer: number | undefined;
+  function patchFeel(key: FeelKey, value: number) {
+    if (!feel) return;
+    feel[key].v = value;
+    clearTimeout(feelTimer);
+    feelTimer = window.setTimeout(async () => {
+      if (!store.client) return;
+      try {
+        await store.client.patchConfig({ [key]: value });
+        await store.client.saveConfig();
+        feelToast = 'saved';
+        setTimeout(() => { if (feelToast === 'saved') feelToast = null; }, 1500);
+      } catch (e: any) {
+        feelToast = e?.message ?? 'save failed';
+      }
+    }, 120);
+  }
+
   async function reset() {
     if (!store.client || !snap) return;
     if (!confirm('Reset device name and all colours to factory defaults?')) return;
@@ -167,6 +232,62 @@
       warnColor={warnColor}
     />
   </div>
+
+  <!-- Animation & feel — three tunables moved from the TUNE tab so
+       they live alongside the colour/identity controls they shape.
+       Each one auto-saves (debounced patchConfig + saveConfig) so the
+       device picks the change up immediately, no APPLY needed. -->
+  {#if feel && (feel.gearDwellMs || feel.gearAnimStyle || feel.transitionStyle)}
+    <div class="card">
+      <div class="row">
+        <h3 class="feel-title">Animation &amp; feel</h3>
+        {#if feelToast}
+          <span class="feel-toast" class:err={feelToast !== 'saved'}>{feelToast}</span>
+        {/if}
+      </div>
+
+      {#each FEEL_KEYS as key (key)}
+        {#if feel[key]}
+          {@const e = feel[key]}
+          <div class="feel-block">
+            <div class="row">
+              <label for={'feel-' + key}>{FEEL_LABEL[key]}</label>
+              <span class="mono v">
+                {e.unit === 'enum' && e.names ? (e.names[e.v] ?? e.v) : (e.v + (e.unit === 'ms' ? ' ms' : ''))}
+              </span>
+            </div>
+            <p class="hint">{FEEL_HELP[key]}</p>
+            {#if e.unit === 'enum' && e.names}
+              <select
+                id={'feel-' + key}
+                value={e.v}
+                on:change={(ev) => patchFeel(key, +(ev.currentTarget as HTMLSelectElement).value)}
+              >
+                {#each e.names as opt, i}
+                  <option value={i}>{opt}</option>
+                {/each}
+              </select>
+            {:else}
+              <input
+                id={'feel-' + key}
+                type="range"
+                min={e.min}
+                max={e.max}
+                step={e.unit === 'ms' ? 10 : 1}
+                value={e.v}
+                on:input={(ev) => patchFeel(key, +ev.currentTarget.value)}
+              />
+              <div class="range-meta mono">
+                <span>{e.min}{e.unit === 'ms' ? ' ms' : ''}</span>
+                <span class="default">def {e.def}{e.unit === 'ms' ? ' ms' : ''}</span>
+                <span>{e.max}{e.unit === 'ms' ? ' ms' : ''}</span>
+              </div>
+            {/if}
+          </div>
+        {/if}
+      {/each}
+    </div>
+  {/if}
 
   <div class="card">
     <label for="name">Device name</label>
@@ -309,6 +430,37 @@
     font-size: 11px;
     letter-spacing: 1.5px;
     text-align: center;
+  }
+
+  /* Animation & feel — three Tune keys hoisted onto this page. */
+  .feel-title { margin: 0; flex: 1; }
+  .row        { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s-2); }
+  .v          { color: var(--accent); font-size: 16px; font-weight: 700; }
+  .feel-block { margin-top: var(--s-4); }
+  .feel-block:first-of-type { margin-top: var(--s-3); }
+  .feel-toast {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--success);
+  }
+  .feel-toast.err { color: var(--danger); }
+  input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+    margin: var(--s-2) 0 var(--s-1);
+  }
+  .range-meta { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
+  .default    { color: var(--border); }
+  select {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    padding: var(--s-2) var(--s-3);
+    border-radius: var(--r-1);
+    font-size: 14px;
+    margin: var(--s-2) 0;
   }
 
   .color-row { display: flex; align-items: center; gap: var(--s-3); margin-top: var(--s-2); }
