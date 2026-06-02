@@ -232,11 +232,18 @@
   // outer ring = ±30°). Demo mode falls back to the synthesised
   // circular sweep so the preview never goes static. Scale factor
   // matches the firmware's kBeamRout / 30° → ~2.5 px/° at 240×240.
+  //
+  // Roll axis is INVERTED here so the preview matches what the device
+  // actually renders. The firmware applies GMETER_FLIP_X=true locally
+  // (so a left-bank tilt pushes the dot RIGHT on the round LCD); the
+  // BLE telemetry transmits the raw signed roll, so the PWA has to do
+  // the same flip itself or the preview mirrors what the user sees on
+  // the device.
   let dot = $derived.by(() => {
     if (liveRoll != null && livePitch != null) {
       const k = 2.5;   // px per degree
-      const x = 120 + Math.max(-90, Math.min(90, liveRoll  * k));
-      const y = 120 + Math.max(-90, Math.min(90, livePitch * k));
+      const x = 120 + Math.max(-90, Math.min(90, -liveRoll * k));
+      const y = 120 + Math.max(-90, Math.min(90,  livePitch * k));
       return { x, y };
     }
     return {

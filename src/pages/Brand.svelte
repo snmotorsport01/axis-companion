@@ -40,20 +40,23 @@
   //  don't show the same control in two places.
   // ============================================================
   const FEEL_KEYS = [
-    'gearDwellMs', 'gearAnimStyle', 'transitionStyle', 'patternChaseMs'
+    'gearDwellMs', 'gearAnimStyle', 'transitionStyle', 'patternChaseMs',
+    'ssWakeOnMotion'
   ] as const;
   type FeelKey = typeof FEEL_KEYS[number];
   const FEEL_LABEL: Record<FeelKey, string> = {
     gearDwellMs:     'Gear shift delay',
     gearAnimStyle:   'Gear letter effect',
     transitionStyle: 'Screen change effect',
-    patternChaseMs:  'Pattern effect speed'
+    patternChaseMs:  'Pattern effect speed',
+    ssWakeOnMotion:  'Wake screensaver on motion'
   };
   const FEEL_HELP: Record<FeelKey, string> = {
     gearDwellMs:     'How long the new position must stay still before locking in. Lower = faster reaction. Below ~80 ms is unreliable — small jitters slip through and the gear bounces back and forth.',
     gearAnimStyle:   'How the big gear letter appears when you shift on the main screen.',
     transitionStyle: 'How pages animate when switching from one to another.',
-    patternChaseMs:  'How fast the glowing light runs through the gears on the H-pattern screen.'
+    patternChaseMs:  'How fast the glowing light runs through the gears on the H-pattern screen.',
+    ssWakeOnMotion:  'When the logo screensaver is on, a firm wiggle of the knob exits it back to the last gear screen. Off by default — road vibration on rough roads can occasionally cross the wake threshold.'
   };
 
   // v2.0: screensaver upload moved to its own page — see Screensaver.svelte.

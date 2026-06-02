@@ -73,6 +73,15 @@ body {
            env(safe-area-inset-bottom) env(safe-area-inset-left);
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  /* Kill the iOS double-tap-to-zoom AND the 300 ms tap-delay it implies.
+     `manipulation` keeps single tap, pan, and scroll working — only
+     pinch-zoom + double-tap-zoom are dropped. Pairs with the viewport
+     meta's user-scalable=no so neither path can zoom the layout. */
+  touch-action: manipulation;
+  /* Belt-and-braces on iOS WKWebView: prevents the user-agent stylesheet
+     from re-enabling text-size auto-scaling when rotated. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 #app {

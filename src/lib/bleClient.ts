@@ -240,7 +240,12 @@ export class BleClient extends DeviceClient {
       brightDim:       { def: 40,     unit: ''    },
       sleepAfterMs:    { def: 120000, unit: 'ms'  },
       transitionStyle: { def: 0,      unit: 'enum', names: ['Fade to black', 'Iris zoom', 'Instant'] },
-      gearAnimStyle:   { def: 0,      unit: 'enum', names: ['None', 'Slide', 'Fade'] }
+      gearAnimStyle:   { def: 0,      unit: 'enum', names: ['None', 'Slide', 'Fade'] },
+      // v2.5.29 — screensaver gyro-wake. Firmware sends min=0 max=1
+      // v=0|1; tagged as unit:'enum' with two names so Brand.svelte's
+      // existing enum-render branch draws an Off/On dropdown without
+      // needing a separate boolean control.
+      ssWakeOnMotion:  { def: 0,      unit: 'enum', names: ['Off', 'On'] }
     };
     const out: ConfigSnapshot = {};
     for (const [k, entry] of Object.entries(raw)) {
