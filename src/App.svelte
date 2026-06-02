@@ -11,6 +11,7 @@
   import Brand     from './pages/Brand.svelte';
   import Screensaver from './pages/Screensaver.svelte';
   import Sys       from './pages/Sys.svelte';
+  import Devices   from './pages/Devices.svelte';
   import BottomNav from './lib/BottomNav.svelte';
 
   // Device build: the PWA is hosted by the firmware itself, so /api/info is
@@ -46,6 +47,8 @@
     <Screensaver />
   {:else if store.page === 'sys'}
     <Sys />
+  {:else if store.page === 'devices'}
+    <Devices />
   {/if}
 </main>
 

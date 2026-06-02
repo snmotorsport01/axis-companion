@@ -14,12 +14,15 @@
   import { store, type Page } from './store.svelte';
 
   // Each tab = { id, label }. Order matches the visual left→right.
+  // SCREEN (screensaver) lost its tab when DEVICES went in — it's still
+  // reachable via the "OPEN SCREENSAVER →" button on the CUSTOM page,
+  // which is the natural place to launch it from anyway.
   const TABS: ReadonlyArray<{ id: Page; label: string }> = [
-    { id: 'live',        label: 'LIVE'   },
-    { id: 'tune',        label: 'TUNE'   },
-    { id: 'brand',       label: 'CUSTOM' },
-    { id: 'screensaver', label: 'SCREEN' },
-    { id: 'ota',         label: 'OTA'    },
+    { id: 'live',    label: 'LIVE'    },
+    { id: 'tune',    label: 'TUNE'    },
+    { id: 'brand',   label: 'CUSTOM'  },
+    { id: 'devices', label: 'DEVICES' },
+    { id: 'ota',     label: 'OTA'     },
   ];
 
   function go(p: Page) { store.page = p; }
