@@ -33,14 +33,22 @@
     gap: var(--s-3);
     margin-bottom: var(--s-2);
   }
-  /* Logo height tuned so the right-side status pill sits visually
-     centred against it. The PNG is square so width auto-fits. */
+  /* sn-logo.png is a wide horizontal logotype (~16:1 aspect after the
+     trim pass — the original Desktop PNG was a 4167² canvas with the
+     text only in a thin strip). width:100% inside flex:1 makes the
+     image stretch to fill the available row width; height:auto then
+     follows the aspect ratio so the text reads at its natural shape,
+     no empty pillar-boxing. Capping max-height keeps the header from
+     ballooning on a hypothetical extra-wide viewport. */
   .logo {
-    height: 32px;
-    width: auto;
     flex: 1;
+    width: 100%;
+    height: auto;
+    max-height: 36px;
     object-fit: contain;
     object-position: left center;
+    display: block;
+    border: 0;
   }
   .right {
     display: flex;
