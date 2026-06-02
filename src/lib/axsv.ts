@@ -536,6 +536,17 @@ async function extractVideoFramesByPlayback(
   // Sneaks past WebKit's autoplay heuristics on iOS for muted videos.
   v.setAttribute('webkit-playsinline', 'true');
 
+  // CRITICAL: WKWebView only runs the frame-composition pipeline for
+  // video elements that are actually in the layout tree. A detached
+  // `document.createElement('video')` plays audio fine but never
+  // composites frames — rVFC therefore never fires and the watchdog
+  // trips. Park the element off-screen (1×1, opacity 0) so it stays
+  // composited without taking visible space. Removed in finally.
+  v.style.cssText =
+    'position:fixed;left:0;top:0;width:1px;height:1px;' +
+    'opacity:0;pointer-events:none;z-index:-1;';
+  document.body.appendChild(v);
+
   let videoErr: Error | null = null;
   v.addEventListener('error', () => {
     const code = v.error?.code;
@@ -648,6 +659,9 @@ async function extractVideoFramesByPlayback(
     URL.revokeObjectURL(url);
     v.removeAttribute('src');
     v.load();
+    // Detach from the layout tree once we're done — keeps the body
+    // clean even if the encode failed mid-flight.
+    if (v.parentNode) v.parentNode.removeChild(v);
   }
 }
 
@@ -655,19 +669,17 @@ export async function encodeVideo(file: File, opts: EncodeVideoOpts): Promise<Ui
   const { frames, fps, onProgress } = opts;
   // Try the modern playback + rVFC path first — far more reliable on
   // iOS WKWebView, especially for HEVC .mov files from iPhone Photos
-  // where the seek-based path has a coin-flip failure rate. If the
-  // WebView doesn't expose rVFC at all (very old Safari), fall back
-  // to the seek-based extractor.
+  // where the seek-based path has a coin-flip failure rate. ANY failure
+  // (rVFC missing, autoplay blocked, watchdog timeout) falls through
+  // to the seek-based extractor; the user just sees a slightly slower
+  // encode rather than a hard error from the first attempt.
   let rgbaFrames: Uint8ClampedArray[];
   try {
     rgbaFrames = await extractVideoFramesByPlayback(file, frames, fps, onProgress);
   } catch (e: any) {
-    if (e?.message === 'NO_RVFC') {
-      onProgress?.(0.05, 'Using fallback seek extractor…');
-      rgbaFrames = await extractVideoFrames(file, frames, fps, onProgress);
-    } else {
-      throw e;
-    }
+    console.warn('[axsv] playback extractor failed — falling back to seek:', e?.message);
+    onProgress?.(0.05, 'Switching to seek extractor…');
+    rgbaFrames = await extractVideoFrames(file, frames, fps, onProgress);
   }
   return encodeAnimation(rgbaFrames, fps, onProgress);
 }
