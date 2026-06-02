@@ -27,6 +27,7 @@
     "@capacitor/cli": "^8.3.4",
     "@capacitor/core": "^8.3.4",
     "@capacitor/ios": "^8.3.4",
-    "gifenc": "^1.0.3"
+    "gifenc": "^1.0.3",
+    "gifuct-js": "^2.1.2"
   }
 }

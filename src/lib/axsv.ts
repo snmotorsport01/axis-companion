@@ -552,13 +552,119 @@ async function rgbaFramesToGifBlob(
  * browser doesn't expose it we throw a friendly error so the PWA can
  * surface guidance.
  */
+/**
+ * Pure-JS fallback path for Capacitor WKWebView, which (even on iOS 26)
+ * doesn't expose ImageDecoder despite Safari proper having had it
+ * since iOS 17. Uses gifuct-js to parse + decompress the GIF stream,
+ * then composites each frame onto a canvas (GIFs can ship partial-
+ * frame patches with dispose modes) to produce full RGBA arrays the
+ * existing AXSV pipeline understands.
+ */
+async function encodeGifFallback(
+  file: File,
+  onProgress?: (frac: number, msg: string) => void
+): Promise<Uint8Array> {
+  onProgress?.(0.02, 'Loading GIF parser…');
+  // Dynamic import keeps the decoder out of the main bundle when the
+  // WebCodecs path is actually available.
+  const { parseGIF, decompressFrames } = await import('gifuct-js');
+
+  onProgress?.(0.05, 'Reading GIF bytes…');
+  const buf = await file.arrayBuffer();
+  const gif = parseGIF(buf);
+  // The 2nd arg `true` asks gifuct-js to expand each frame into RGBA
+  // (.patch) at the frame's own (dims.width × dims.height). We still
+  // have to composite onto a full-canvas to honour GIF dispose modes.
+  const rawFrames = decompressFrames(gif as any, true);
+  const sourceCount = rawFrames.length;
+  if (sourceCount < 1) throw new Error('GIF has zero frames');
+
+  const fullW = gif.lsd.width;
+  const fullH = gif.lsd.height;
+
+  // Compositor canvas — full GIF size, accumulates patches.
+  const comp = document.createElement('canvas');
+  comp.width  = fullW;
+  comp.height = fullH;
+  const compCtx = comp.getContext('2d', { willReadFrequently: true } as any)!;
+
+  // Output canvas — AXSV target size, fed through drawCoverFit each frame.
+  const out = document.createElement('canvas');
+  out.width  = AXSV_W;
+  out.height = AXSV_H;
+  const outCtx = out.getContext('2d', { colorSpace: 'srgb' } as any)!;
+
+  const targetCount = Math.min(24, sourceCount);
+  const rgbaFrames: Uint8ClampedArray[] = [];
+  let totalDelayMs = 0;
+  let prevImageData: ImageData | null = null;
+
+  for (let i = 0; i < sourceCount; ++i) {
+    const f: any = rawFrames[i];
+    // Dispose handling — restore previous state on dispose=3 before
+    // drawing the next patch. Modes:
+    //   0: unspecified (treat as 1)
+    //   1: do not dispose (leave as-is)
+    //   2: restore to background (clear)
+    //   3: restore to previous
+    if (i > 0) {
+      const prev: any = rawFrames[i - 1];
+      const d = prev.disposalType ?? 1;
+      if (d === 2) {
+        compCtx.clearRect(prev.dims.left, prev.dims.top, prev.dims.width, prev.dims.height);
+      } else if (d === 3 && prevImageData) {
+        compCtx.putImageData(prevImageData, 0, 0);
+      }
+    }
+    if ((f.disposalType ?? 1) === 3) {
+      prevImageData = compCtx.getImageData(0, 0, fullW, fullH);
+    }
+    // Draw this frame's patch onto the compositor at its own offset.
+    const patch = compCtx.createImageData(f.dims.width, f.dims.height);
+    patch.data.set(f.patch);
+    compCtx.putImageData(patch, f.dims.left, f.dims.top);
+
+    totalDelayMs += f.delay || 100;
+
+    // Only KEEP up to targetCount frames, evenly sampled. (We still
+    // walk every source frame so the composite stays correct for
+    // partial-frame patches.)
+    const wanted = sourceCount <= targetCount
+      ? true
+      : Math.floor(((rgbaFrames.length + 0.5) / targetCount) * sourceCount) === i;
+    if (wanted && rgbaFrames.length < targetCount) {
+      drawCoverFit(outCtx, comp, fullW, fullH);
+      rgbaFrames.push(outCtx.getImageData(0, 0, AXSV_W, AXSV_H).data);
+      onProgress?.((rgbaFrames.length) / (targetCount * 2),
+                   `Decoded ${rgbaFrames.length}/${targetCount}`);
+    }
+  }
+
+  // FPS from the GIF's own cadence. gifuct delays are in centiseconds×10
+  // (i.e. ms). Convert total to a frames-per-second the device honours.
+  let fps = 10;
+  if (totalDelayMs > 0) {
+    const loopSec = totalDelayMs / 1000;
+    fps = Math.round(targetCount / loopSec);
+  }
+  fps = Math.max(2, Math.min(20, fps));
+
+  return encodeAnimation(rgbaFrames, fps, onProgress);
+}
+
 export async function encodeGif(
   file: File,
   onProgress?: (frac: number, msg: string) => void
 ): Promise<Uint8Array> {
   const Decoder: any = (typeof window !== 'undefined') ? (window as any).ImageDecoder : undefined;
+
+  // WebCodecs ImageDecoder lives in Safari proper as of iOS 17, but
+  // Capacitor's WKWebView (even on iOS 26) doesn't expose it. Detect
+  // and fall through to the pure-JS gifuct path so the user gets a
+  // working GIF flow on every iPhone we support — not just the ones
+  // running our PWA in mobile Safari.
   if (!Decoder) {
-    throw new Error('Animated GIF needs iOS 17+ / Chrome 94+');
+    return encodeGifFallback(file, onProgress);
   }
 
   // WKWebView in Capacitor (iOS 26 included) has ImageDecoder exposed
