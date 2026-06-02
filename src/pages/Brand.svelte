@@ -230,6 +230,8 @@
       fgColor={fgColor}
       mutedColor={mutedColor}
       warnColor={warnColor}
+      transitionStyle={feel?.transitionStyle?.v ?? 0}
+      gearAnimStyle={feel?.gearAnimStyle?.v ?? 0}
     />
   </div>
 

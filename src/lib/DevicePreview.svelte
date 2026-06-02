@@ -23,63 +23,154 @@
   type View = 'main' | 'pattern' | 'gmeter' | 'info';
 
   // Each colour slot mirrors a real firmware sprite. Defaults keep the
-  // preview rendering even if a parent forgets to pass one in. Svelte 5
-  // runes mode: $props() (not `export let`).
+  // preview rendering even if a parent forgets to pass one in.
+  //
+  // transitionStyle / gearAnimStyle drive the same animations the
+  // firmware plays on the device, so the user dialling them on the
+  // CUSTOM page sees exactly the effect they're picking. Enum values
+  // match the firmware:
+  //   transitionStyle: 0=fade  1=iris  2=instant
+  //   gearAnimStyle:   0=none  1=slide 2=fade
+  //
+  // Svelte 5 runes mode: $props() (not `export let`).
   let {
-    name       = 'AXIS',
-    accent     = '#FFA500',
-    gearColor  = '#FFA500',
-    meterColor = '#888888',
-    nameColor  = '#BDBDBD',
-    fgColor    = '#FFFFFF',
-    mutedColor = '#888888',
-    warnColor  = '#FF3B3B'
+    name            = 'AXIS',
+    accent          = '#FFA500',
+    gearColor       = '#FFA500',
+    meterColor      = '#888888',
+    nameColor       = '#BDBDBD',
+    fgColor         = '#FFFFFF',
+    mutedColor      = '#888888',
+    warnColor       = '#FF3B3B',
+    transitionStyle = 0,
+    gearAnimStyle   = 0
   } = $props<{
-    name?:       string;
-    accent?:     string;
-    gearColor?:  string;
-    meterColor?: string;
-    nameColor?:  string;
-    fgColor?:    string;
-    mutedColor?: string;
-    warnColor?:  string;
+    name?:            string;
+    accent?:          string;
+    gearColor?:       string;
+    meterColor?:      string;
+    nameColor?:       string;
+    fgColor?:         string;
+    mutedColor?:      string;
+    warnColor?:       string;
+    transitionStyle?: number;
+    gearAnimStyle?:   number;
   }>();
 
-  let view = $state<View>('main');
+  // ---- View tab + transition state -----------------------------
+  let view     = $state<View>('main');
+  let prevView = $state<View | null>(null);
+  // transitionT: 0 = just started, 0.5 = midpoint (content swap),
+  // 1 = finished. While transitioning, the SVG shows prevView under
+  // an iris/fade overlay during the first half and the new view
+  // during the second half.
+  let transitionT = $state(1);
+  const TRANSITION_MS = 600;
+  let transRaf: number | undefined;
 
-  // Slowly sweep the G-meter dot so the user sees the meterColor / accent
-  // play together in motion. requestAnimationFrame so it stops when the
-  // tab is backgrounded. Angle in radians.
-  let dotAngle = $state(0);
-  let raf: number | undefined;
-  function loop() {
-    dotAngle = (dotAngle + 0.012) % (Math.PI * 2);
-    raf = requestAnimationFrame(loop);
-  }
-  $effect(() => {
-    if (view === 'gmeter') {
-      raf = requestAnimationFrame(loop);
+  function setView(next: View) {
+    if (next === view) return;
+    if (transitionStyle === 2 || transitionT < 1) {
+      // Instant OR already transitioning — just snap. (Mid-transition
+      // snap matches the firmware behaviour where rapid input commits
+      // the destination immediately.)
+      view = next;
+      transitionT = 1;
+      prevView = null;
+      if (transRaf != null) cancelAnimationFrame(transRaf);
+      return;
     }
-    return () => { if (raf != null) cancelAnimationFrame(raf); };
+    prevView = view;
+    view = next;
+    transitionT = 0;
+    const start = performance.now();
+    const step = (now: number) => {
+      transitionT = Math.min(1, (now - start) / TRANSITION_MS);
+      if (transitionT < 1) transRaf = requestAnimationFrame(step);
+      else { transRaf = undefined; prevView = null; }
+    };
+    transRaf = requestAnimationFrame(step);
+  }
+
+  // Which view's content to render right now — during a transition we
+  // show the OLD view in the first half, then swap at the midpoint.
+  let renderView = $derived(
+    transitionT < 0.5 && prevView != null ? prevView : view
+  );
+
+  // Iris overlay radius — black covers everything at midpoint.
+  // First half: hole shrinks 170 → 0 (closing). Second half: hole
+  // grows 0 → 170 (opening). Mirrors App.cpp's iris fade-out / fade-in.
+  let irisHoleR = $derived.by(() => {
+    if (transitionT >= 1) return 170;
+    if (transitionT < 0.5) return 170 * (1 - transitionT * 2);
+    return 170 * (transitionT - 0.5) * 2;
+  });
+  // Fade overlay opacity — triangle peaking at 0.5.
+  let fadeOpacity = $derived.by(() => {
+    if (transitionT >= 1) return 0;
+    return transitionT < 0.5 ? transitionT * 2 : (1 - transitionT) * 2;
   });
 
-  onDestroy(() => { if (raf != null) cancelAnimationFrame(raf); });
-
-  // Cycle gear digit for MAIN view so the user sees gearColor with both
-  // wide ("8") and narrow ("1") glyphs and against "N". Updated every
-  // 1.6 s by a setInterval that runs only while MAIN is the active view.
-  const GEAR_LABELS = ['1', '2', '3', '4', '5', 'N'];
-  let gearIdx = $state(0);
-  let gearTimer: number | undefined;
+  // ---- G-meter dot sweep ---------------------------------------
+  let dotAngle = $state(0);
+  let dotRaf: number | undefined;
+  function dotLoop() {
+    dotAngle = (dotAngle + 0.012) % (Math.PI * 2);
+    dotRaf = requestAnimationFrame(dotLoop);
+  }
   $effect(() => {
-    if (view === 'main') {
-      gearTimer = window.setInterval(() => {
-        gearIdx = (gearIdx + 1) % GEAR_LABELS.length;
-      }, 1600);
+    if (renderView === 'gmeter') {
+      dotRaf = requestAnimationFrame(dotLoop);
+    }
+    return () => { if (dotRaf != null) cancelAnimationFrame(dotRaf); };
+  });
+
+  // ---- Gear digit cycle + per-style entry animation -------------
+  // Cycles 1→2→3→4→5→N every 1.6 s while MAIN is active so the user
+  // sees gearColor on both narrow ("1") and wide ("N") glyphs.
+  const GEAR_LABELS = ['1', '2', '3', '4', '5', 'N'];
+  let gearIdx     = $state(0);
+  let prevGearStr = $state<string | null>(null);
+  let gearT       = $state(1);                 // 0=mid-anim, 1=settled
+  const GEAR_ANIM_MS = 320;
+  let gearTimer: number | undefined;
+  let gearRaf:   number | undefined;
+
+  function nextGear() {
+    const nextIdx = (gearIdx + 1) % GEAR_LABELS.length;
+    if (gearAnimStyle === 0) {
+      gearIdx = nextIdx;
+      return;
+    }
+    // Slide / Fade: capture the outgoing label and animate gearT 0→1
+    // — the SVG renders the OLD label with (1 − gearT) interpolation
+    // and the NEW with gearT, giving cross-fade or scroll-in.
+    prevGearStr = GEAR_LABELS[gearIdx];
+    gearIdx     = nextIdx;
+    gearT       = 0;
+    const start = performance.now();
+    const step = (now: number) => {
+      gearT = Math.min(1, (now - start) / GEAR_ANIM_MS);
+      if (gearT < 1) gearRaf = requestAnimationFrame(step);
+      else { gearRaf = undefined; prevGearStr = null; }
+    };
+    gearRaf = requestAnimationFrame(step);
+  }
+
+  $effect(() => {
+    if (renderView === 'main') {
+      gearTimer = window.setInterval(nextGear, 1600);
     }
     return () => { if (gearTimer != null) window.clearInterval(gearTimer); };
   });
   let gearLabel = $derived(GEAR_LABELS[gearIdx]);
+
+  onDestroy(() => {
+    if (dotRaf   != null) cancelAnimationFrame(dotRaf);
+    if (transRaf != null) cancelAnimationFrame(transRaf);
+    if (gearRaf  != null) cancelAnimationFrame(gearRaf);
+  });
 
   // Pre-compute the dot position from the angle once per frame so the
   // template stays readable.
@@ -104,26 +195,60 @@
         <!-- Pure black background, same as cfg::COLOR_BG. -->
         <rect width="240" height="240" fill="#000" />
 
-        {#if view === 'main'}
+        {#if renderView === 'main'}
           <!-- Mode label across the top, in the body/title slot. -->
           <text x="120" y="36" text-anchor="middle"
                 font-family="ui-monospace, SF Mono, Menlo, monospace"
                 font-size="13" letter-spacing="2" fill={fgColor}>
             HPATTERN
           </text>
-          <!-- Big gear digit dominates the centre. -->
-          <text x="120" y="158" text-anchor="middle"
-                font-family="ui-monospace, SF Mono, Menlo, monospace"
-                font-size="132" font-weight="700" fill={gearColor}>
-            {gearLabel}
-          </text>
+          <!-- Big gear digit dominates the centre. While gearT < 1 the
+               OLD digit fades / slides out and the NEW one fades /
+               slides in, picking the style chosen on this same page.
+               When gearAnimStyle === 0 there's no prevGearStr so we
+               render only the live label. -->
+          {#if prevGearStr && gearAnimStyle === 1}
+            <!-- Slide: old goes UP and fades; new starts BELOW and rises -->
+            <text x="120" y={158 - 60 * gearT} text-anchor="middle"
+                  font-family="ui-monospace, SF Mono, Menlo, monospace"
+                  font-size="132" font-weight="700" fill={gearColor}
+                  opacity={1 - gearT}>
+              {prevGearStr}
+            </text>
+            <text x="120" y={158 + 60 * (1 - gearT)} text-anchor="middle"
+                  font-family="ui-monospace, SF Mono, Menlo, monospace"
+                  font-size="132" font-weight="700" fill={gearColor}
+                  opacity={gearT}>
+              {gearLabel}
+            </text>
+          {:else if prevGearStr && gearAnimStyle === 2}
+            <!-- Fade: old fades out, new fades in, same position -->
+            <text x="120" y="158" text-anchor="middle"
+                  font-family="ui-monospace, SF Mono, Menlo, monospace"
+                  font-size="132" font-weight="700" fill={gearColor}
+                  opacity={1 - gearT}>
+              {prevGearStr}
+            </text>
+            <text x="120" y="158" text-anchor="middle"
+                  font-family="ui-monospace, SF Mono, Menlo, monospace"
+                  font-size="132" font-weight="700" fill={gearColor}
+                  opacity={gearT}>
+              {gearLabel}
+            </text>
+          {:else}
+            <text x="120" y="158" text-anchor="middle"
+                  font-family="ui-monospace, SF Mono, Menlo, monospace"
+                  font-size="132" font-weight="700" fill={gearColor}>
+              {gearLabel}
+            </text>
+          {/if}
           <!-- Device name across the bottom, in the name slot. -->
           <text x="120" y="208" text-anchor="middle"
                 font-family="ui-monospace, SF Mono, Menlo, monospace"
                 font-size="12" letter-spacing="2" fill={nameColor}>
             {(name || 'AXIS').toUpperCase()}
           </text>
-        {:else if view === 'pattern'}
+        {:else if renderView === 'pattern'}
           <!-- H-pattern: 3 columns × 2 rows. Dotted rails in muted; gear
                circles in gearColor; the "chase" head (gear "3" here) in
                brighter accent so the user sees gearColor + accent
@@ -152,7 +277,7 @@
             <line x1={cx} y1="98" x2={cx} y2="142" stroke={mutedColor}
                   stroke-width="1" stroke-dasharray="1 4" opacity="0.5" />
           {/each}
-        {:else if view === 'gmeter'}
+        {:else if renderView === 'gmeter'}
           <!-- Two concentric rings + 4-axis tick marks, all in meterColor. -->
           <circle cx="120" cy="120" r="105" fill="none"
                   stroke={meterColor} stroke-width="1.5" opacity="0.7" />
@@ -172,7 +297,7 @@
           <text x="190" y="125"
                 font-family="ui-monospace, SF Mono, Menlo, monospace"
                 font-size="11" fill={fgColor}>0.8G</text>
-        {:else if view === 'info'}
+        {:else if renderView === 'info'}
           <!-- Text-heavy view that exercises fg + muted + warn together. -->
           <text x="120" y="44" text-anchor="middle"
                 font-family="ui-monospace, SF Mono, Menlo, monospace"
@@ -202,6 +327,29 @@
                 font-family="ui-monospace, SF Mono, Menlo, monospace"
                 font-size="11" letter-spacing="2" fill={warnColor}>HOLD: EXIT</text>
         {/if}
+
+        <!-- ===== Page-transition overlay =================================
+             Only renders while a transition is in flight (transitionT<1)
+             and the user picked a style other than INSTANT. Mirrors what
+             ScreenSleep / goTo()'s fade & iris paths do on the device:
+               · style 0 (fade): black rect with triangle-wave opacity
+                 peaking at 0.5 — at the midpoint the screen is fully
+                 covered, so the content swap underneath is invisible.
+               · style 1 (iris): black overlay with a circular HOLE that
+                 shrinks 170→0 in the first half (closing iris) and grows
+                 0→170 in the second half (opening iris). The mask
+                 below punches the hole. ============================ -->
+        {#if transitionT < 1 && transitionStyle === 0}
+          <rect width="240" height="240" fill="#000" opacity={fadeOpacity} />
+        {:else if transitionT < 1 && transitionStyle === 1}
+          <defs>
+            <mask id="iris-mask">
+              <rect width="240" height="240" fill="white" />
+              <circle cx="120" cy="120" r={irisHoleR} fill="black" />
+            </mask>
+          </defs>
+          <rect width="240" height="240" fill="#000" mask="url(#iris-mask)" />
+        {/if}
       </g>
 
       <!-- Subtle accent ring at the edge of the LCD to evoke the bezel
@@ -223,7 +371,7 @@
         role="tab"
         aria-selected={view === t.id}
         class:active={view === t.id}
-        on:click={() => view = t.id}
+        on:click={() => setView(t.id)}
       >
         {t.label}
       </button>
