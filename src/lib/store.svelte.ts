@@ -21,8 +21,31 @@ export type Page = 'connect' | 'dashboard' | 'tune' | 'ota' | 'calibrate'
 export const IS_DEVICE_BUILD =
   typeof __DEVICE_BUILD__ !== 'undefined' && __DEVICE_BUILD__;
 
+/**
+ * True when running inside a Capacitor native wrapper (iOS/Android app).
+ * Capacitor injects `window.Capacitor` synchronously before the app loads.
+ *
+ * Why this matters: the iOS/Android Capacitor app currently REUSES the
+ * dist-device bundle (so base=`/` works for the capacitor://localhost
+ * scheme) — which means IS_DEVICE_BUILD is also true there, even though
+ * we're NOT actually hosted by the firmware. Auto-instantiating a client
+ * at window.location.origin would point at capacitor://localhost and
+ * every fetch would 404. Capacitor builds need the manual Connect flow
+ * (or the DEMO MODE button) instead.
+ */
+export const IS_CAPACITOR =
+  typeof (globalThis as any).Capacitor !== 'undefined';
+
 class Store {
-  page = $state<Page>(IS_DEVICE_BUILD ? 'dashboard' : 'connect');
+  // Live is now the landing page (was Dashboard). The companion app is meant
+  // to feel like an instrument cluster — open it, see live data, with the
+  // bottom nav as the navigation surface. Dashboard's tile grid is obsolete
+  // for that pattern, but the page is still wired so deep links survive.
+  // Auto-land on Live only when the PWA is actually served by the
+  // firmware (real device embed). In a Capacitor wrapper there's no
+  // device on the other end of capacitor://localhost — force the
+  // Connect screen so the user can enter the AP IP or hit DEMO MODE.
+  page = $state<Page>(IS_DEVICE_BUILD && !IS_CAPACITOR ? 'live' : 'connect');
   client = $state<DeviceClient | null>(null);
   info   = $state<DeviceInfo | null>(null);
   connected = $state(false);
@@ -37,7 +60,11 @@ class Store {
   }
 
   goConnect()   { this.page = 'connect';   }
-  goDashboard() { this.page = 'dashboard'; }
+  goLive()      { this.page = 'live';      }
+  // Kept so existing "‹ DASHBOARD" back buttons still compile, but routed to
+  // Live so users land on the new home — Dashboard page is deprecated. Will
+  // relabel buttons in a follow-up pass.
+  goDashboard() { this.page = 'live';      }
 }
 
 function loadHost(): string {
