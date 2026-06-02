@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import type { BrandingSnapshot, WifiStatus } from '../lib/api';
   import { store } from '../lib/store.svelte';
+  import DevicePreview from '../lib/DevicePreview.svelte';
 
   // v2.0: screensaver upload moved to its own page — see Screensaver.svelte.
 
@@ -149,13 +150,22 @@
 {#if !snap}
   <div class="card muted">Loading…</div>
 {:else}
-  <!-- Live preview chip — shows what the device will use -->
-  <div class="card preview" style="--preview: {color}">
-    <div class="chip" style="background: {color}"></div>
-    <div class="preview-text">
-      <div class="ptitle" style="color: {color}">{name || 'AXIS'}</div>
-      <div class="psub">v{store.info?.version ?? '?'}</div>
-    </div>
+  <!-- Live preview — round LCD mockup that re-renders every time the
+       user changes a colour or the device name. Tab strip switches
+       between MAIN / PATTERN / G-METER / INFO so every slot can be
+       judged in the screen where it actually shows up. -->
+  <div class="card preview-card">
+    <p class="preview-label">PREVIEW · live · not yet saved</p>
+    <DevicePreview
+      name={name}
+      accent={color}
+      gearColor={gearColor}
+      meterColor={meterColor}
+      nameColor={nameColor}
+      fgColor={fgColor}
+      mutedColor={mutedColor}
+      warnColor={warnColor}
+    />
   </div>
 
   <div class="card">
@@ -289,20 +299,17 @@
   label  { margin: 0; }
   .hint  { color: var(--muted); font-size: 12px; margin: var(--s-1) 0 0; }
 
-  .preview {
-    display: flex; align-items: center; gap: var(--s-3);
+  .preview-card {
     padding: var(--s-4);
-    border-color: var(--preview);
   }
-  .chip {
-    width: 56px; height: 56px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    box-shadow: 0 0 14px var(--preview);
+  .preview-label {
+    margin: 0 0 var(--s-3);
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-align: center;
   }
-  .preview-text { display: flex; flex-direction: column; gap: var(--s-1); }
-  .ptitle { font-size: 22px; font-weight: 700; letter-spacing: 0.02em; }
-  .psub   { color: var(--muted); font-size: 13px; font-family: var(--font-mono); }
 
   .color-row { display: flex; align-items: center; gap: var(--s-3); margin-top: var(--s-2); }
   input[type="color"] {
