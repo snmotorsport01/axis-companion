@@ -2,6 +2,23 @@
    AXIS Companion — design tokens (matching the device theme)
    ===================================================================== */
 
+/* Psionic — the same OTF (sourced from ~/Library/Fonts/psionic.otf and
+   copied into public/fonts/) that fontconvert.py turned into Psionic.h
+   for the GC9A01's bitmap renderer. Loaded as a web font so the
+   DevicePreview's gear digit + status text on the CUSTOM page reads
+   pixel-for-pixel like the real device, not whatever the system
+   monospace falls back to.
+   font-display:block while the font is fetching so the preview doesn't
+   flash a generic shape before swapping — the 23 KB OTF lands fast
+   enough that the block isn't perceptible. */
+@font-face {
+  font-family: 'Psionic';
+  src: url('/fonts/psionic.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
 :root {
   /* Color palette: keeps device + PWA visually identical */
   --bg:         #0a0a0a;
@@ -16,8 +33,12 @@
   --danger:    #ff3b3b;
 
   /* Type */
-  --font-ui:   'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  --font-ui:     'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono:   'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  /* Device font — only used inside the LCD preview so the simulated
+     gear / status / G-meter readouts match what the GC9A01 actually
+     draws. Falls back to the UI mono if the OTF hasn't loaded yet. */
+  --font-device: 'Psionic', 'JetBrains Mono', 'SF Mono', Menlo, monospace;
 
   /* Spacing — 8px grid */
   --s-1: 4px;

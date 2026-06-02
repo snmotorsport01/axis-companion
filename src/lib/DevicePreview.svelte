@@ -198,7 +198,7 @@
         {#if renderView === 'main'}
           <!-- Mode label across the top, in the body/title slot. -->
           <text x="120" y="36" text-anchor="middle"
-                font-family="ui-monospace, SF Mono, Menlo, monospace"
+                font-family="var(--font-device)"
                 font-size="13" letter-spacing="2" fill={fgColor}>
             HPATTERN
           </text>
@@ -210,13 +210,13 @@
           {#if prevGearStr && gearAnimStyle === 1}
             <!-- Slide: old goes UP and fades; new starts BELOW and rises -->
             <text x="120" y={158 - 60 * gearT} text-anchor="middle"
-                  font-family="ui-monospace, SF Mono, Menlo, monospace"
+                  font-family="var(--font-device)"
                   font-size="132" font-weight="700" fill={gearColor}
                   opacity={1 - gearT}>
               {prevGearStr}
             </text>
             <text x="120" y={158 + 60 * (1 - gearT)} text-anchor="middle"
-                  font-family="ui-monospace, SF Mono, Menlo, monospace"
+                  font-family="var(--font-device)"
                   font-size="132" font-weight="700" fill={gearColor}
                   opacity={gearT}>
               {gearLabel}
@@ -224,27 +224,27 @@
           {:else if prevGearStr && gearAnimStyle === 2}
             <!-- Fade: old fades out, new fades in, same position -->
             <text x="120" y="158" text-anchor="middle"
-                  font-family="ui-monospace, SF Mono, Menlo, monospace"
+                  font-family="var(--font-device)"
                   font-size="132" font-weight="700" fill={gearColor}
                   opacity={1 - gearT}>
               {prevGearStr}
             </text>
             <text x="120" y="158" text-anchor="middle"
-                  font-family="ui-monospace, SF Mono, Menlo, monospace"
+                  font-family="var(--font-device)"
                   font-size="132" font-weight="700" fill={gearColor}
                   opacity={gearT}>
               {gearLabel}
             </text>
           {:else}
             <text x="120" y="158" text-anchor="middle"
-                  font-family="ui-monospace, SF Mono, Menlo, monospace"
+                  font-family="var(--font-device)"
                   font-size="132" font-weight="700" fill={gearColor}>
               {gearLabel}
             </text>
           {/if}
           <!-- Device name across the bottom, in the name slot. -->
           <text x="120" y="208" text-anchor="middle"
-                font-family="ui-monospace, SF Mono, Menlo, monospace"
+                font-family="var(--font-device)"
                 font-size="12" letter-spacing="2" fill={nameColor}>
             {(name || 'AXIS').toUpperCase()}
           </text>
@@ -259,7 +259,7 @@
                     stroke-width={i === 2 ? 3 : 1.5}
                     opacity={i === 2 ? 1 : 0.55} />
             <text x={x} y={y + 5} text-anchor="middle"
-                  font-family="ui-monospace, SF Mono, Menlo, monospace"
+                  font-family="var(--font-device)"
                   font-size="14" font-weight="600"
                   fill={i === 2 ? accent : gearColor}
                   opacity={i === 2 ? 1 : 0.85}>
@@ -270,7 +270,7 @@
           <circle cx="120" cy="120" r="10" fill="none"
                   stroke={mutedColor} stroke-width="1.5" stroke-dasharray="2 3" />
           <text x="120" y="125" text-anchor="middle"
-                font-family="ui-monospace, SF Mono, Menlo, monospace"
+                font-family="var(--font-device)"
                 font-size="11" fill={mutedColor}>N</text>
           <!-- Dotted rails connecting columns through N (vertical only). -->
           {#each [60, 120, 180] as cx}
@@ -295,36 +295,36 @@
           <circle cx={dot.x} cy={dot.y} r="6" fill={accent} />
           <!-- Magnitude readout in fg colour (top right). -->
           <text x="190" y="125"
-                font-family="ui-monospace, SF Mono, Menlo, monospace"
+                font-family="var(--font-device)"
                 font-size="11" fill={fgColor}>0.8G</text>
         {:else if renderView === 'info'}
           <!-- Text-heavy view that exercises fg + muted + warn together. -->
           <text x="120" y="44" text-anchor="middle"
-                font-family="ui-monospace, SF Mono, Menlo, monospace"
+                font-family="var(--font-device)"
                 font-size="13" letter-spacing="2" fill={fgColor}>INFO</text>
-          <text x="40" y="84" font-family="ui-monospace, SF Mono, Menlo, monospace"
+          <text x="40" y="84" font-family="var(--font-device)"
                 font-size="11" fill={mutedColor}>Version</text>
           <text x="200" y="84" text-anchor="end"
-                font-family="ui-monospace, SF Mono, Menlo, monospace"
+                font-family="var(--font-device)"
                 font-size="11" fill={fgColor}>AXIS V1.0.0</text>
-          <text x="40" y="108" font-family="ui-monospace, SF Mono, Menlo, monospace"
+          <text x="40" y="108" font-family="var(--font-device)"
                 font-size="11" fill={mutedColor}>Shifts</text>
           <text x="200" y="108" text-anchor="end"
-                font-family="ui-monospace, SF Mono, Menlo, monospace"
+                font-family="var(--font-device)"
                 font-size="11" fill={fgColor}>1,247</text>
-          <text x="40" y="132" font-family="ui-monospace, SF Mono, Menlo, monospace"
+          <text x="40" y="132" font-family="var(--font-device)"
                 font-size="11" fill={mutedColor}>Mode</text>
           <text x="200" y="132" text-anchor="end"
-                font-family="ui-monospace, SF Mono, Menlo, monospace"
+                font-family="var(--font-device)"
                 font-size="11" fill={fgColor}>HPATTERN 5</text>
-          <text x="40" y="156" font-family="ui-monospace, SF Mono, Menlo, monospace"
+          <text x="40" y="156" font-family="var(--font-device)"
                 font-size="11" fill={mutedColor}>IP</text>
           <text x="200" y="156" text-anchor="end"
-                font-family="ui-monospace, SF Mono, Menlo, monospace"
+                font-family="var(--font-device)"
                 font-size="11" fill={fgColor}>192.168.4.1</text>
           <!-- Warn slot only fires in exit / error contexts. -->
           <text x="120" y="200" text-anchor="middle"
-                font-family="ui-monospace, SF Mono, Menlo, monospace"
+                font-family="var(--font-device)"
                 font-size="11" letter-spacing="2" fill={warnColor}>HOLD: EXIT</text>
         {/if}
 
