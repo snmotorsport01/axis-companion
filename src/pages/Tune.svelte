@@ -189,7 +189,9 @@
   <!-- Keys hoisted onto the CUSTOM page (Brand.svelte's "Animation &
        feel" card). They still come back from /api/config — we just
        don't render them here to avoid showing the same control twice. -->
-  {@const MOVED_TO_BRAND = new Set(['gearDwellMs', 'gearAnimStyle', 'transitionStyle'])}
+  {@const MOVED_TO_BRAND = new Set([
+    'gearDwellMs', 'gearAnimStyle', 'transitionStyle', 'patternChaseMs'
+  ])}
   {#each Object.entries(config).filter(([k]) => !MOVED_TO_BRAND.has(k)) as [key, e]}
     <div class="card">
       <div class="row">

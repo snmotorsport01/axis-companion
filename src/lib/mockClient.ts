@@ -283,17 +283,25 @@ export class MockClient extends DeviceClient {
   }
 
   async config(): Promise<ConfigSnapshot> {
-    // A tiny sampler so Tune page renders something. The real device
-    // exposes ~40 keys; we ship just enough that each section has a
-    // visible control. Add to taste.
+    // Sampler that covers every key the CUSTOM "Animation & feel" card
+    // and the TUNE page expect to see. Real device exposes ~40 keys
+    // through /api/config; the mock returns the subset Brand needs +
+    // a few more so Tune isn't empty either. The two `enum` entries
+    // ship `names` already attached (real firmware sends them via the
+    // helper keys __transitionNames / __gearAnimNames which Brand
+    // re-attaches; pre-attaching here skips that dance entirely).
     return {
-      gearDwellMs:     { v: 200,  min: 50,  max: 1500, def: 200,  unit: 'ms' },
+      gearDwellMs:     { v: 180,  min: 80,  max: 1000, def: 180,  unit: 'ms' },
       patternChaseMs:  { v: 400,  min: 100, max: 1500, def: 400,  unit: 'ms' },
       intentGyroDps:   { v: 12,   min: 5,   max: 40,   def: 12,   unit: 'dps' },
       intentWindowMs:  { v: 1500, min: 500, max: 3000, def: 1500, unit: 'ms' },
       brightFull:      { v: 255,  min: 30,  max: 255,  def: 255,  unit: '' },
       brightDim:       { v: 80,   min: 0,   max: 255,  def: 80,   unit: '' },
-      sleepAfterMs:    { v: 60_000, min: 5_000, max: 600_000, def: 60_000, unit: 'ms' }
+      sleepAfterMs:    { v: 60_000, min: 5_000, max: 600_000, def: 60_000, unit: 'ms' },
+      transitionStyle: { v: 0, min: 0, max: 2, def: 0, unit: 'enum',
+                         names: ['Fade', 'Iris', 'Instant'] },
+      gearAnimStyle:   { v: 0, min: 0, max: 2, def: 0, unit: 'enum',
+                         names: ['None', 'Slide', 'Fade'] }
     };
   }
 

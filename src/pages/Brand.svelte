@@ -18,17 +18,21 @@
   //  Tune.svelte filters these three keys out of its render so we
   //  don't show the same control in two places.
   // ============================================================
-  const FEEL_KEYS = ['gearDwellMs', 'gearAnimStyle', 'transitionStyle'] as const;
+  const FEEL_KEYS = [
+    'gearDwellMs', 'gearAnimStyle', 'transitionStyle', 'patternChaseMs'
+  ] as const;
   type FeelKey = typeof FEEL_KEYS[number];
   const FEEL_LABEL: Record<FeelKey, string> = {
     gearDwellMs:     'Gear shift delay',
     gearAnimStyle:   'Gear letter effect',
-    transitionStyle: 'Screen change effect'
+    transitionStyle: 'Screen change effect',
+    patternChaseMs:  'Pattern effect speed'
   };
   const FEEL_HELP: Record<FeelKey, string> = {
-    gearDwellMs:     'How long the new position must stay still before locking in. Lower = faster reaction. Going under ~120 ms is unreliable — small jitters slip through and the gear bounces back and forth.',
+    gearDwellMs:     'How long the new position must stay still before locking in. Lower = faster reaction. Below ~80 ms is unreliable — small jitters slip through and the gear bounces back and forth.',
     gearAnimStyle:   'How the big gear letter appears when you shift on the main screen.',
-    transitionStyle: 'How pages animate when switching from one to another.'
+    transitionStyle: 'How pages animate when switching from one to another.',
+    patternChaseMs:  'How fast the glowing light runs through the gears on the H-pattern screen.'
   };
 
   // v2.0: screensaver upload moved to its own page — see Screensaver.svelte.
