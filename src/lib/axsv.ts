@@ -429,12 +429,29 @@ async function extractVideoFrames(
     // `readyState >= HAVE_CURRENT_DATA` (2) gate plus an explicit
     // warmup seek to the first sample point + small settle delay
     // gives the decoder time to fill its frame queue.
-    onProgress?.(0.03, 'Waiting for first decoded frame…');
-    await withTimeout(new Promise<void>((ok, fail) => {
-      if (v.readyState >= 2) { ok(); return; }
-      v.onloadeddata = () => ok();
-      v.onerror      = () => fail(new Error('video data load failed'));
-    }), 8000, 'loadeddata');
+    //
+    // Bumped 8 → 20 s because iPhone Photos .mov is often HEVC
+    // (sometimes 10-bit HDR), and WKWebView's HEVC decoder can take
+    // 10+ seconds on the first frame even when it eventually succeeds.
+    // The clear "unsupported codec" message lower down only fires
+    // when the decoder TRULY can't make a frame.
+    onProgress?.(0.03, 'Decoding first frame (HEVC can be slow)…');
+    try {
+      await withTimeout(new Promise<void>((ok, fail) => {
+        if (v.readyState >= 2) { ok(); return; }
+        v.onloadeddata = () => ok();
+        v.onerror      = () => fail(new Error('video data load failed'));
+      }), 20000, 'loadeddata');
+    } catch (e: any) {
+      // Header parsed (we got loadedmetadata) but first-frame decode
+      // never happened. Almost always HEVC the WebView can't handle —
+      // give the user an actionable next step instead of a raw timeout.
+      throw new Error(
+        'This video\'s codec didn\'t decode in the app (likely HEVC / .mov from iPhone Photos). ' +
+        'Convert it to MP4 H.264 first — on iPhone: open the clip in Photos, tap Edit → Save Video, ' +
+        'or use a free app like "Video Converter". GIFs and MP4 H.264 work without conversion.'
+      );
+    }
     if (videoErr) throw videoErr;
 
     const headroom = Math.max(0.1, duration * 0.05);
