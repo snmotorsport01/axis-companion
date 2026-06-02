@@ -129,17 +129,70 @@ function nearestIdx(r: number, g: number, b: number, palette: RGB[]): number {
 function pack7bitFrame(rgba: Uint8ClampedArray, palette: RGB[]): Uint8Array {
   const out = new Uint8Array(FRAME_BYTES_F2);
   let bitPos = 0;
-  for (let i = 0; i < rgba.length; i += 4) {
-    const idx = nearestIdx(rgba[i], rgba[i + 1], rgba[i + 2], palette) & 0x7F;
-    const bytePos = bitPos >>> 3;
-    const bitOff  = bitPos & 7;
-    out[bytePos] |= (idx << bitOff) & 0xFF;
-    // Spill into the next byte when the 7-bit field crosses the boundary.
-    // Always true unless bitOff === 1 (then 7 fits exactly in one byte).
-    if (bitOff + 7 > 8 && bytePos + 1 < out.length) {
-      out[bytePos + 1] |= (idx >>> (8 - bitOff)) & 0xFF;
+
+  // Floyd-Steinberg error diffusion — distributes the quantisation
+  // residual from each pixel to its right + downstairs neighbours so
+  // smooth gradients stay smooth across the 128-entry palette boundary
+  // (otherwise dark blue→black gradients band into 3-4 visible steps).
+  // We operate on a Float32 working buffer of the same R/G/B channels
+  // so error accumulation can go slightly negative or >255 before being
+  // re-clamped on the next neighbour. ~3 MB scratch for 240×240, fine.
+  const W = AXSV_W;
+  const H = AXSV_H;
+  const work = new Float32Array(rgba.length);
+  for (let i = 0; i < rgba.length; ++i) work[i] = rgba[i];
+
+  for (let y = 0; y < H; ++y) {
+    for (let x = 0; x < W; ++x) {
+      const i = (y * W + x) * 4;
+      // Round + clamp the working pixel before looking up the palette.
+      const r = work[i]     < 0 ? 0 : work[i]     > 255 ? 255 : work[i];
+      const g = work[i + 1] < 0 ? 0 : work[i + 1] > 255 ? 255 : work[i + 1];
+      const b = work[i + 2] < 0 ? 0 : work[i + 2] > 255 ? 255 : work[i + 2];
+      const idx = nearestIdx(r, g, b, palette) & 0x7F;
+      const pc  = palette[idx];
+      const er  = r - pc[0];
+      const eg  = g - pc[1];
+      const eb  = b - pc[2];
+      // 7/16 right, 3/16 down-left, 5/16 down, 1/16 down-right.
+      if (x + 1 < W) {
+        const j = i + 4;
+        work[j]     += er * 7 / 16;
+        work[j + 1] += eg * 7 / 16;
+        work[j + 2] += eb * 7 / 16;
+      }
+      if (y + 1 < H) {
+        if (x > 0) {
+          const j = i + (W - 1) * 4;
+          work[j]     += er * 3 / 16;
+          work[j + 1] += eg * 3 / 16;
+          work[j + 2] += eb * 3 / 16;
+        }
+        {
+          const j = i + W * 4;
+          work[j]     += er * 5 / 16;
+          work[j + 1] += eg * 5 / 16;
+          work[j + 2] += eb * 5 / 16;
+        }
+        if (x + 1 < W) {
+          const j = i + (W + 1) * 4;
+          work[j]     += er * 1 / 16;
+          work[j + 1] += eg * 1 / 16;
+          work[j + 2] += eb * 1 / 16;
+        }
+      }
+
+      // Pack the chosen index. Same 7-bit bit-stream layout as before.
+      const bytePos = bitPos >>> 3;
+      const bitOff  = bitPos & 7;
+      out[bytePos] |= (idx << bitOff) & 0xFF;
+      // Spill into the next byte when the 7-bit field crosses the boundary.
+      // Always true unless bitOff === 1 (then 7 fits exactly in one byte).
+      if (bitOff + 7 > 8 && bytePos + 1 < out.length) {
+        out[bytePos + 1] |= (idx >>> (8 - bitOff)) & 0xFF;
+      }
+      bitPos += 7;
     }
-    bitPos += 7;
   }
   return out;
 }
@@ -582,11 +635,17 @@ async function encodeGifFallback(
   const fullW = gif.lsd.width;
   const fullH = gif.lsd.height;
 
-  // Compositor canvas — full GIF size, accumulates patches.
+  // Compositor canvas — full GIF size, accumulates patches. Force
+  // srgb colorSpace so iOS WKWebView doesn't sneak in a Display-P3
+  // working space, which would shift colours on read-back (the
+  // posterised "everything is dark gray + blue" symptom).
   const comp = document.createElement('canvas');
   comp.width  = fullW;
   comp.height = fullH;
-  const compCtx = comp.getContext('2d', { willReadFrequently: true } as any)!;
+  const compCtx = comp.getContext('2d', {
+    willReadFrequently: true,
+    colorSpace: 'srgb'
+  } as any)!;
 
   // Output canvas — AXSV target size, fed through drawCoverFit each frame.
   const out = document.createElement('canvas');
