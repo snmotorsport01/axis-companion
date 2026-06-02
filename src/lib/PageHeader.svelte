@@ -35,16 +35,25 @@
   }
   /* sn-logo.png is a wide horizontal logotype (~16:1 aspect after the
      trim pass — the original Desktop PNG was a 4167² canvas with the
-     text only in a thin strip). width:100% inside flex:1 makes the
-     image stretch to fill the available row width; height:auto then
-     follows the aspect ratio so the text reads at its natural shape,
-     no empty pillar-boxing. Capping max-height keeps the header from
-     ballooning on a hypothetical extra-wide viewport. */
+     text only in a thin strip). The first pass used flex:1 + width
+     100% which made the IMG element greedy enough to push the status
+     pill off the right edge of the screen.
+     New rules:
+       · height fixed (24 px), width:auto follows the aspect → image
+         renders at natural shape with no pillar-boxing.
+       · max-width 100% so it never overflows the parent if the slot
+         is narrower than the natural ~395 px (object-fit contain then
+         scales the rendered image down proportionally).
+       · flex:0 1 auto — don't grow into the status's space; do allow
+         shrinking if absolutely needed.
+       · status side gets margin-left:auto + flex-shrink:0 so it
+         claims its own width first. */
   .logo {
-    flex: 1;
-    width: 100%;
-    height: auto;
-    max-height: 36px;
+    flex: 0 1 auto;
+    height: 24px;
+    width: auto;
+    max-width: 100%;
+    min-width: 0;
     object-fit: contain;
     object-position: left center;
     display: block;
@@ -55,5 +64,6 @@
     align-items: center;
     gap: var(--s-2);
     flex-shrink: 0;
+    margin-left: auto;
   }
 </style>
