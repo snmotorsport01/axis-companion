@@ -505,9 +505,170 @@ async function extractVideoFrames(
   }
 }
 
+/**
+ * Playback-based frame extractor — primary path on iOS for .mov / HEVC.
+ *
+ * iOS WKWebView's `seeked` event is unreliable for HEVC (decoder lands
+ * but callback fires late or never), and even with our timeout +
+ * polling fallback in extractVideoFrames(), the seek path is slow and
+ * sometimes returns black frames. requestVideoFrameCallback is the
+ * modern primitive that fires reliably the moment a frame is rendered
+ * to the video element — Safari 15.4+ / iOS 15+ ship it, including
+ * inside WKWebView. We play the video through (muted, playsInline,
+ * speed-up via playbackRate) and snapshot the canvas at each rVFC
+ * tick whose mediaTime crosses the next target timestamp.
+ *
+ * Wall-clock: roughly duration / playbackRate. For a 5 s clip at
+ * playbackRate 4 → ~1.25 s plus codec warm-up.
+ */
+async function extractVideoFramesByPlayback(
+  file: File,
+  frames: number,
+  _fps: number,
+  onProgress?: (frac: number, msg: string) => void
+): Promise<Uint8ClampedArray[]> {
+  const url = URL.createObjectURL(file);
+  const v = document.createElement('video');
+  v.src = url;
+  v.muted = true;
+  v.playsInline = true;
+  v.preload = 'auto';
+  // Sneaks past WebKit's autoplay heuristics on iOS for muted videos.
+  v.setAttribute('webkit-playsinline', 'true');
+
+  let videoErr: Error | null = null;
+  v.addEventListener('error', () => {
+    const code = v.error?.code;
+    videoErr = new Error(`Video element error (code ${code ?? '?'}) — codec may not be supported.`);
+  });
+
+  try {
+    onProgress?.(0.01, 'Loading video metadata…');
+    await withTimeout(new Promise<void>((ok, fail) => {
+      v.onloadedmetadata = () => ok();
+      v.onerror = () => fail(new Error('video metadata failed'));
+    }), 8000, 'loadedmetadata');
+    if (videoErr) throw videoErr;
+
+    const duration = isFinite(v.duration) && v.duration > 0 ? v.duration : 1;
+    const headroom = Math.max(0.1, duration * 0.05);
+    const winStart = Math.min(headroom, duration / 4);
+    const winLen   = Math.max(0.001, duration - winStart * 2);
+
+    // Even targets across the visible portion of the clip.
+    const targets: number[] = [];
+    for (let i = 0; i < frames; ++i) {
+      targets.push(winStart + ((i + 0.5) / frames) * winLen);
+    }
+
+    const cv = document.createElement('canvas');
+    cv.width = AXSV_W; cv.height = AXSV_H;
+    const ctx = cv.getContext('2d', { colorSpace: 'srgb' } as any)!;
+
+    const rgbaFrames: Uint8ClampedArray[] = [];
+    let nextTargetIdx = 0;
+
+    // 4× speed-up — WebKit honours it for muted playback; the rVFC
+    // tick still fires per real decoded frame, so we get the same
+    // frame timestamps in less wall-clock time. Falls back to 1× if
+    // the browser ignores it.
+    v.playbackRate = 4;
+
+    onProgress?.(0.05, `Playing through clip (${frames} samples)…`);
+
+    // Tie the per-frame capture to rVFC AND a watchdog: if no frame
+    // callback arrives for 4 s, bail out — better than spinning.
+    let lastTickAt = performance.now();
+    let stopped = false;
+
+    const result = new Promise<Uint8ClampedArray[]>(async (resolve, reject) => {
+      const watchdog = window.setInterval(() => {
+        if (stopped) return;
+        if (performance.now() - lastTickAt > 4000) {
+          stopped = true;
+          window.clearInterval(watchdog);
+          try { v.pause(); } catch {}
+          reject(new Error('No video frames received for 4 s — codec may not be supported in this WebView.'));
+        }
+      }, 500);
+
+      const anyV: any = v as any;
+      if (typeof anyV.requestVideoFrameCallback !== 'function') {
+        // Old WebKit — bail to the seek fallback by rejecting with a
+        // sentinel the caller looks for.
+        stopped = true;
+        window.clearInterval(watchdog);
+        reject(new Error('NO_RVFC'));
+        return;
+      }
+
+      const onFrame = (_now: number, metadata: any) => {
+        if (stopped) return;
+        lastTickAt = performance.now();
+        const t = metadata?.mediaTime ?? v.currentTime;
+        // Capture every target the current playhead has passed since
+        // the last tick — handles cases where the playback jumps over
+        // multiple targets between consecutive rVFC fires.
+        while (nextTargetIdx < targets.length && t >= targets[nextTargetIdx]) {
+          drawCoverFit(ctx, v, v.videoWidth, v.videoHeight);
+          rgbaFrames.push(ctx.getImageData(0, 0, AXSV_W, AXSV_H).data);
+          nextTargetIdx++;
+          onProgress?.(nextTargetIdx / (frames * 2),
+                       `Captured ${nextTargetIdx}/${frames}`);
+        }
+        if (nextTargetIdx >= targets.length || v.ended) {
+          stopped = true;
+          window.clearInterval(watchdog);
+          try { v.pause(); } catch {}
+          resolve(rgbaFrames);
+          return;
+        }
+        anyV.requestVideoFrameCallback(onFrame);
+      };
+      anyV.requestVideoFrameCallback(onFrame);
+
+      try {
+        await v.play();
+      } catch (e: any) {
+        stopped = true;
+        window.clearInterval(watchdog);
+        reject(new Error('Could not play video — iOS may have blocked autoplay. Tap the file picker again.'));
+      }
+    });
+
+    const out = await result;
+    // If we ran out of source clip before hitting every target (e.g.
+    // very short clip), pad by re-using the last frame so the rest of
+    // the pipeline isn't surprised by a short array.
+    while (out.length < frames && out.length > 0) {
+      out.push(out[out.length - 1]);
+    }
+    return out;
+  } finally {
+    URL.revokeObjectURL(url);
+    v.removeAttribute('src');
+    v.load();
+  }
+}
+
 export async function encodeVideo(file: File, opts: EncodeVideoOpts): Promise<Uint8Array> {
   const { frames, fps, onProgress } = opts;
-  const rgbaFrames = await extractVideoFrames(file, frames, fps, onProgress);
+  // Try the modern playback + rVFC path first — far more reliable on
+  // iOS WKWebView, especially for HEVC .mov files from iPhone Photos
+  // where the seek-based path has a coin-flip failure rate. If the
+  // WebView doesn't expose rVFC at all (very old Safari), fall back
+  // to the seek-based extractor.
+  let rgbaFrames: Uint8ClampedArray[];
+  try {
+    rgbaFrames = await extractVideoFramesByPlayback(file, frames, fps, onProgress);
+  } catch (e: any) {
+    if (e?.message === 'NO_RVFC') {
+      onProgress?.(0.05, 'Using fallback seek extractor…');
+      rgbaFrames = await extractVideoFrames(file, frames, fps, onProgress);
+    } else {
+      throw e;
+    }
+  }
   return encodeAnimation(rgbaFrames, fps, onProgress);
 }
 
