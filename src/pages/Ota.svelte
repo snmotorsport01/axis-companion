@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { store } from '../lib/store.svelte';
   import {
-    fetchReleaseManifest,
+    fetchReleaseManifest, resolveReleaseUrl,
     type ReleaseManifest, type ReleaseEntry
   } from '../lib/api';
   import PageHeader from '../lib/PageHeader.svelte';
@@ -88,6 +88,72 @@
     }
   }
 
+  // ---- Install from the manifest entry ----------------------
+  // Fetches the .bin straight from GitHub Pages and pipes it through
+  // the same store.client.ota() path the local upload uses. On BLE
+  // that's the chunked-transfer protocol (~3 min for a 1.6 MB bin);
+  // on Wi-Fi it'd be the multipart POST. Either way, one tap goes
+  // from "I want the latest release" to a rebooted device.
+  let installPhase = $state<'idle' | 'download' | 'flash'>('idle');
+  let installPct   = $state(0);
+  async function installLatest() {
+    if (!latest?.url || !store.client) return;
+    uploading   = true;
+    uploadErr   = null;
+    uploadDone  = false;
+    uploadProg  = 0;
+    installPhase = 'download';
+    installPct   = 0;
+    try {
+      const absUrl = resolveReleaseUrl(latest.url);
+      // 1) Pull the .bin. fetch() + Response.blob() handles redirect
+      //    from GitHub Pages and gives us a real Blob we can wrap.
+      const res = await fetch(absUrl);
+      if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
+      const total = Number(res.headers.get('content-length')) || latest.size_bytes || 0;
+      // Manual chunked read for progress reporting (Response.blob()
+      // doesn't expose download progress).
+      const reader = res.body?.getReader();
+      const chunks: Uint8Array[] = [];
+      let pulled = 0;
+      if (reader && total > 0) {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            chunks.push(value);
+            pulled += value.byteLength;
+            installPct = pulled / total;
+          }
+        }
+      } else {
+        // Fallback: no stream API, take the whole body at once.
+        chunks.push(new Uint8Array(await res.arrayBuffer()));
+        pulled = chunks[0].byteLength;
+        installPct = 1;
+      }
+      const bytes = new Uint8Array(pulled);
+      let off = 0;
+      for (const c of chunks) { bytes.set(c, off); off += c.byteLength; }
+      const stem = absUrl.split('/').pop() || 'axis-firmware.bin';
+      const binFile = new File([bytes], stem, { type: 'application/octet-stream' });
+
+      // 2) Hand to the device. ota() will pick the right transport
+      //    (BLE chunked-transfer if currently paired over BLE, the
+      //    multipart POST if it's a Wi-Fi DeviceClient instead).
+      installPhase = 'flash';
+      installPct   = 0;
+      await store.client.ota(binFile, p => { installPct = p; uploadProg = p; });
+      uploadDone = true;
+      setTimeout(() => store.goLive(), 4000);
+    } catch (e: any) {
+      uploadErr = e?.message ?? 'install failed';
+    } finally {
+      uploading = false;
+      installPhase = 'idle';
+    }
+  }
+
   function fmtMb(b: number): string {
     return (b / 1024 / 1024).toFixed(2) + ' MB';
   }
@@ -147,9 +213,12 @@
 
       <button
         class="primary release-btn"
+        on:click={installLatest}
         disabled={isPreview || !updateAvailable || uploading}
       >
-        {#if isPreview}
+        {#if uploading && installPhase !== 'idle'}
+          {installPhase === 'download' ? 'DOWNLOADING' : 'FLASHING'} {(installPct * 100).toFixed(0)}%
+        {:else if isPreview}
           PREVIEW — install via USB flash
         {:else if !updateAvailable}
           Already installed
@@ -157,6 +226,13 @@
           INSTALL {latest.build ?? latest.version}
         {/if}
       </button>
+      {#if uploading && installPhase !== 'idle'}
+        <p class="muted xs mono">
+          {installPhase === 'download'
+            ? 'Pulling .bin from GitHub…'
+            : 'Streaming to device over BLE — keep app open, ~3 min for 1.6 MB.'}
+        </p>
+      {/if}
       {#if isPreview}
         <p class="muted xs">
           A binary will appear here once the release is signed off. For

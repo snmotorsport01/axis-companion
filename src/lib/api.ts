@@ -70,6 +70,20 @@ export async function fetchReleaseManifest(
   return fetchJson<ReleaseManifest>(url, { timeoutMs });
 }
 
+/**
+ * Resolve a manifest entry's `url` to an absolute URL. Entries store
+ * "firmware/smart_knob_shifter-vX.Y.Z.bin" (relative to the manifest's
+ * own location); this joins with the MANIFEST_URL base so the PWA can
+ * fetch the binary directly.
+ */
+export function resolveReleaseUrl(relativeOrAbsolute: string): string {
+  if (/^https?:\/\//.test(relativeOrAbsolute)) return relativeOrAbsolute;
+  // MANIFEST_URL ends in /index.json — strip the filename to get the
+  // base directory, then append the entry's relative path.
+  const base = MANIFEST_URL.replace(/\/[^/]+$/, '/');
+  return new URL(relativeOrAbsolute, base).toString();
+}
+
 const DEFAULT_TIMEOUT_MS = 4000;
 
 async function fetchJson<T>(
