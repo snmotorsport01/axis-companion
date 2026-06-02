@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.5.28",
+      "date":       "2026-06-03",
+      "notes":      "Touch sensitivity overhaul. (1) Dropped the 2-of-2 I2C debounce — concurrent BLE writes + display SPI bursts were making the two reads disagree, dropping the touch entirely. Single-read poll is sufficient since the chip's FingerNum==1 check already rejects bus noise. (2) Active-area gate widened to the full 240×240 panel (was 220×220 inner box). Centre-of-screen touches that landed when the I2C bus was contended were being treated as edge-grip false touches and rejected. (3) readXY() at touch-down retries up to 3× — if the initial coordinate read failed, the swipe baseline used to get re-seeded mid-drag, producing the 'must swipe to the screen edge' complaint. (4) Swipe distance threshold dropped 6 → 4 px for snappier centre-launched swipes.",
+      "url":        "firmware/smart_knob_shifter-v2.5.28.bin",
+      "size_bytes": 1670288
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.5.27",
       "date":       "2026-06-03",
       "notes":      "Calibrate page now lets you switch between PRND / SEQ / HPATTERN and pick gear count (4/5/6) for HPAT + SEQ — no more on-device wizard scrolling. JSON over BLE was getting truncated at NimBLE's 512-byte ATT cap, so config + calibration shapes are trimmed and the PWA fills in static metadata client-side. Screensaver upload chunks now go via WRITE (with ATT response) — fixes the silent packet drops that triggered XE_SIZE after upload. BleAxis transfer-buf char now declares WRITE | WRITE_NR so iOS can pick the reliable path. WebCodecs VideoDecoder fallback added for 4K HEVC clips iPhone Photos exports — pipes through MP4Box + hardware decode. Custom page preview now mirrors the device's live gear + tilt over BLE telemetry.",
