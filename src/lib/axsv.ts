@@ -561,8 +561,26 @@ export async function encodeGif(
     throw new Error('Animated GIF needs iOS 17+ / Chrome 94+');
   }
 
-  const decoder = new Decoder({ data: file.stream(), type: 'image/gif' });
-  await decoder.completed;
+  // WKWebView in Capacitor (iOS 26 included) has ImageDecoder exposed
+  // but it intermittently stalls — `decoder.completed` never resolves
+  // for certain GIFs, and `decoder.decode()` can return a hung promise.
+  // Symptoms look identical to a JS error swallowed somewhere up the
+  // chain. Wrap every async call in a timeout race so the UI surfaces
+  // a real error message instead of spinning forever.
+  onProgress?.(0.02, 'Reading GIF header…');
+
+  // file.stream() can be missing on some WKWebView builds — fall back
+  // to ArrayBuffer if needed so the decoder still gets bytes.
+  let data: ReadableStream<Uint8Array> | ArrayBuffer;
+  if (typeof (file as any).stream === 'function') {
+    data = file.stream();
+  } else {
+    data = await file.arrayBuffer();
+  }
+
+  const decoder = new Decoder({ data, type: 'image/gif' });
+  await withTimeout(decoder.completed, 15000, 'GIF header parse');
+
   const track = decoder.tracks.selectedTrack;
   if (!track) throw new Error('GIF has no decodable track');
   const sourceCount = track.frameCount;
@@ -584,7 +602,13 @@ export async function encodeGif(
     const srcIdx = sourceCount <= targetCount
       ? i
       : Math.floor(((i + 0.5) / targetCount) * sourceCount);
-    const result = await decoder.decode({ frameIndex: srcIdx });
+    onProgress?.((i + 0.5) / (targetCount * 2),
+                 `Decoding GIF ${i + 1}/${targetCount}…`);
+    const result = await withTimeout(
+      decoder.decode({ frameIndex: srcIdx }),
+      8000,
+      `GIF frame ${srcIdx + 1}`
+    );
     const vf = result.image;            // VideoFrame
     const w = vf.displayWidth || vf.codedWidth || AXSV_W;
     const h = vf.displayHeight || vf.codedHeight || AXSV_H;
@@ -593,7 +617,7 @@ export async function encodeGif(
     if (typeof vf.duration === 'number') totalDurationUs += vf.duration;
     vf.close();
     onProgress?.((i + 1) / (targetCount * 2),
-                 `Decoding GIF ${i + 1}/${targetCount}`);
+                 `Decoded ${i + 1}/${targetCount}`);
   }
 
   // Derive FPS from the GIF's natural cadence. WebCodecs gives durations
