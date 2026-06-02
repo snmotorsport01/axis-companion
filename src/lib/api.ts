@@ -6,6 +6,9 @@
 export interface DeviceInfo {
   name: string;
   version: string;
+  /** Internal build tag (e.g. "v2.5.12"). Optional for backwards compat
+   *  with devices on firmware < v2.5.12 that don't expose this yet. */
+  build?: string;
   uptime_ms: number;
   free_heap: number;
   mode_id?: number;
@@ -14,6 +17,57 @@ export interface DeviceInfo {
   gear_index?: number;
   gear_label?: string;
   gear_frozen?: boolean;
+}
+
+// ============================================================
+//  Release manifest — single source of truth for "latest firmware".
+//  Hosted at <PWA origin>/firmware/index.json (e.g. github.io for the
+//  web build; axis-companion repo's /public/firmware/ in source).
+//
+//  Entries with `url === null` are "preview" rows — listed so the
+//  companion can show release notes, but install is blocked until a
+//  binary is actually published.
+// ============================================================
+export interface ReleaseEntry {
+  /** Public product label (e.g. "AXIS V1.0.0"). Stable across the V1 line. */
+  version: string;
+  /** Internal build tag (e.g. "v2.5.12"). Optional on legacy entries
+   *  that predate the build field — those don't participate in
+   *  "update available" detection. */
+  build?: string;
+  date: string;
+  notes: string;
+  /** Absolute or relative URL to the .bin. null = preview only. */
+  url: string | null;
+  size_bytes: number;
+  status?: 'preview' | 'stable';
+}
+
+export interface ReleaseManifest {
+  _schema: string;
+  releases: ReleaseEntry[];
+}
+
+/** Where the companion fetches the firmware manifest from. Always an
+ *  absolute https URL so the native iOS app (loaded from capacitor://
+ *  localhost) can reach it the same way as the web PWA.
+ *
+ *  Owner is `snmotorsport01` (not `snmotorsports` — confused the brand
+ *  name with the GitHub handle on first pass; the wrong URL returned a
+ *  GitHub Pages "Site not found" page that the companion surfaced as
+ *  "release load fail"). The repo's Pages site serves index.json with
+ *  `access-control-allow-origin: *` so the capacitor://localhost
+ *  webview's CORS check passes. */
+export const MANIFEST_URL =
+  'https://snmotorsport01.github.io/axis-companion/firmware/index.json';
+
+export async function fetchReleaseManifest(
+  timeoutMs = 8000
+): Promise<ReleaseManifest> {
+  // Cache-busting query so users don't get a stale manifest from an
+  // intermediate proxy / browser cache the moment we publish an update.
+  const url = `${MANIFEST_URL}?t=${Date.now()}`;
+  return fetchJson<ReleaseManifest>(url, { timeoutMs });
 }
 
 const DEFAULT_TIMEOUT_MS = 4000;
@@ -207,7 +261,15 @@ export class DeviceClient {
     return fetchJson(`${this.base}/api/branding/reset`, { method: 'POST' });
   }
 
-  /** Upload raw RGB565 little-endian pixels (W*H*2 bytes) as the screensaver. */
+  /** Upload raw RGB565 little-endian pixels (W*H*2 bytes) as the screensaver.
+   *  Handles a known iOS Safari quirk: large POSTs over the AXIS SoftAP
+   *  sometimes finish the upload phase, the device commits to LittleFS,
+   *  but Safari never delivers the response back to xhr.onload — the
+   *  PWA then hangs on "UPLOADING…" forever even though the device is
+   *  fine. We watch for the upload-body completing (`xhr.upload.onload`),
+   *  give the server a 5 s grace window to send a response, and if it
+   *  doesn't, assume success and resolve. The actual save state is
+   *  visible by re-reading /api/branding right after. */
   async uploadScreensaver(
     bytes: Uint8Array,
     onProgress?: (frac: number) => void
@@ -216,16 +278,39 @@ export class DeviceClient {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${this.base}/api/branding/screensaver`);
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.timeout = 60_000;   // hard upper bound — bail if nothing happens at all
+
+      let uploadDone = false;
+      let settled    = false;
+      const finish = (cb: () => void) => { if (!settled) { settled = true; cb(); } };
+
       xhr.upload.onprogress = e => {
         if (onProgress && e.lengthComputable) onProgress(e.loaded / e.total);
       };
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) resolve();
-        else reject(new Error(`HTTP ${xhr.status} ${xhr.responseText}`));
+      xhr.upload.onload = () => {
+        // Body fully shipped to the device. Most browsers race on to
+        // fire xhr.onload moments later — but iOS Safari sometimes
+        // doesn't. Schedule a fallback: if onload hasn't fired in 5 s
+        // we treat the upload as successful, since the device almost
+        // certainly committed the bytes already.
+        uploadDone = true;
+        if (onProgress) onProgress(1);
+        setTimeout(() => finish(resolve), 5000);
       };
-      xhr.onerror = () => reject(new Error('upload network error'));
-      // Send as ArrayBuffer (BodyInit) to keep multipart frames out of the
-      // body — the firmware just memcpy's the raw stream.
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) finish(resolve);
+        else finish(() => reject(new Error(`HTTP ${xhr.status} ${xhr.responseText}`)));
+      };
+      xhr.onerror = () => {
+        // If the body finished cleanly, a "network error" here is just
+        // the connection closing after a lost response — treat as ok.
+        if (uploadDone) finish(resolve);
+        else            finish(() => reject(new Error('upload network error')));
+      };
+      xhr.ontimeout = () => {
+        if (uploadDone) finish(resolve);
+        else            finish(() => reject(new Error('upload timeout')));
+      };
       xhr.send(bytes.buffer as ArrayBuffer);
     });
   }

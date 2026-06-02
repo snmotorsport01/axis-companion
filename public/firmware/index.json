@@ -1,6 +1,15 @@
 {
-  "_schema": "axis-firmware-manifest/v1",
+  "_schema": "axis-firmware-manifest/v2",
   "releases": [
+    {
+      "version": "AXIS V1.0.0",
+      "build":   "v2.5.12",
+      "date":    "2026-06-02",
+      "notes":   "Pre-release — companion now shows release notes again. Touch active area limited to inner 220×220 (no more edge-grip misfires). WiFi reliability fixes (no power-save, max TX) — OTA + screensaver upload should stay connected on iPhone. Gear shift delay minimum raised to 120 ms (fixes the bounce-back-and-forth bug). G-meter gets a red gyro-rate dot with a ghost trail. Boot now waits for the knob to be still before zero-cal. New: companion is also shipping as a native iOS app via Capacitor.",
+      "url":     null,
+      "size_bytes": 0,
+      "status":  "preview"
+    },
     {
       "version": "AXIS V1.0.0",
       "date": "2026-05-28",

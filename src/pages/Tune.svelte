@@ -16,7 +16,7 @@
   const PRETTY: Record<string, LabelInfo> = {
     gearDwellMs: {
       label: 'Gear shift delay',
-      help:  'How long to wait before locking in a new gear. Lower = faster reaction. Higher = harder to trigger by mistake.',
+      help:  'How long the new position must stay still before locking in. Lower = faster reaction. Going under ~120 ms is unreliable — small jitters slip through and the gear bounces back and forth.',
     },
     patternChaseMs: {
       label: 'Pattern Effect speed',

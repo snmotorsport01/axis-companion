@@ -1,16 +1,68 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { store } from '../lib/store.svelte';
+  import {
+    fetchReleaseManifest,
+    type ReleaseManifest, type ReleaseEntry
+  } from '../lib/api';
 
-  // Upload a signed firmware image to the device over Wi-Fi. The file
-  // streams straight to the device's update partition and the device
-  // reboots into the new image when the transfer completes.
+  // ============================================================
+  //  OTA — two install paths:
+  //
+  //  1. Releases section (top): fetch the public manifest from
+  //     github.io, show the latest entry's notes + version, compare
+  //     against the device's build tag, and offer install. Entries
+  //     with `url === null` (preview rows during a stabilising release
+  //     cycle) show the notes but lock the INSTALL button.
+  //
+  //  2. Local upload (bottom): unchanged path — user picks a local
+  //     .bin and streams it to /api/ota. Always available, even when
+  //     the device has no internet and the manifest fetch fails.
+  // ============================================================
 
+  // ---- Local upload state -----------------------------------
   let file       = $state<File | null>(null);
   let uploading  = $state(false);
   let uploadErr  = $state<string | null>(null);
   let uploadDone = $state(false);
   let uploadProg = $state(0);
 
+  // ---- Manifest state ---------------------------------------
+  let manifest   = $state<ReleaseManifest | null>(null);
+  let mLoading   = $state(true);
+  let mErr       = $state<string | null>(null);
+
+  onMount(() => { refreshManifest(); });
+
+  async function refreshManifest() {
+    mLoading = true;
+    mErr = null;
+    try {
+      manifest = await fetchReleaseManifest();
+    } catch (e: any) {
+      mErr = e?.message ?? 'Could not reach release server';
+    } finally {
+      mLoading = false;
+    }
+  }
+
+  // Latest = first entry in the manifest (manifest convention).
+  let latest = $derived(manifest?.releases?.[0] ?? null);
+
+  // "Update available" only if BOTH sides expose a build tag AND they
+  // differ AND the latest entry has a real binary URL. Old firmware
+  // without a build field can't be diffed automatically — surface
+  // "build unknown" rather than spamming false positives.
+  let updateAvailable = $derived.by(() => {
+    if (!latest) return false;
+    if (!latest.build) return false;
+    if (!store.info?.build) return false;
+    return latest.build !== store.info.build && !!latest.url;
+  });
+
+  let isPreview = $derived(latest?.status === 'preview' || latest?.url == null);
+
+  // ---- Local upload handlers --------------------------------
   function onPick(ev: Event) {
     const input = ev.currentTarget as HTMLInputElement;
     file = input.files?.[0] ?? null;
@@ -27,9 +79,7 @@
     try {
       await store.client.ota(file, p => { uploadProg = p; });
       uploadDone = true;
-      // Device will reboot — bounce back to the dashboard so the next
-      // /api/info call reflects the new version.
-      setTimeout(() => store.goDashboard(), 4000);
+      setTimeout(() => store.goLive(), 4000);
     } catch (e: any) {
       uploadErr = e?.message ?? 'upload failed';
     } finally {
@@ -40,20 +90,88 @@
   function fmtMb(b: number): string {
     return (b / 1024 / 1024).toFixed(2) + ' MB';
   }
+  function statusLabel(r: ReleaseEntry): string {
+    if (r.url == null) return 'PREVIEW';
+    if (r.status === 'stable') return 'STABLE';
+    return 'AVAILABLE';
+  }
 </script>
 
 <header class="bar">
-  <button class="back" on:click={() => store.goDashboard()}>‹ DASHBOARD</button>
+  <button class="back" on:click={() => store.goLive()}>‹ LIVE</button>
   <h1>OTA</h1>
 </header>
 
+<!-- Current firmware ------------------------------------------ -->
 <div class="card current">
-  <span class="muted">Current</span>
-  <span class="mono ver">{store.info?.version ?? '?'}</span>
+  <div>
+    <span class="muted small">Installed</span>
+    <div class="mono ver">{store.info?.version ?? '?'}</div>
+    {#if store.info?.build}
+      <div class="muted mono small">build {store.info.build}</div>
+    {/if}
+  </div>
 </div>
 
+<!-- Releases (manifest) --------------------------------------- -->
 <div class="card">
-  <h3>Install firmware</h3>
+  <header class="card-head">
+    <h3>Releases</h3>
+    <button class="link" on:click={refreshManifest} disabled={mLoading}>
+      {mLoading ? 'Checking…' : 'Refresh'}
+    </button>
+  </header>
+
+  {#if mLoading && !manifest}
+    <p class="muted small">Fetching manifest…</p>
+  {:else if mErr && !manifest}
+    <p class="err small">{mErr}</p>
+    <p class="muted small">
+      Couldn't reach the release server. Local upload below still works.
+    </p>
+  {:else if latest}
+    <div class="release">
+      <div class="release-head">
+        <span class="mono ver">{latest.version}</span>
+        {#if latest.build}
+          <span class="muted mono small">· {latest.build}</span>
+        {/if}
+        <span class="badge {isPreview ? 'preview' : updateAvailable ? 'available' : 'current'}">
+          {isPreview
+            ? statusLabel(latest)
+            : updateAvailable
+              ? 'UPDATE AVAILABLE'
+              : 'UP TO DATE'}
+        </span>
+      </div>
+      <p class="muted mono xs">{latest.date}</p>
+      <p class="notes">{latest.notes}</p>
+
+      <button
+        class="primary release-btn"
+        disabled={isPreview || !updateAvailable || uploading}
+      >
+        {#if isPreview}
+          PREVIEW — install via USB flash
+        {:else if !updateAvailable}
+          Already installed
+        {:else}
+          INSTALL {latest.build ?? latest.version}
+        {/if}
+      </button>
+      {#if isPreview}
+        <p class="muted xs">
+          A binary will appear here once the release is signed off. For
+          now, flash via USB from the developer build.
+        </p>
+      {/if}
+    </div>
+  {/if}
+</div>
+
+<!-- Local upload (unchanged) ---------------------------------- -->
+<div class="card">
+  <h3>Local upload</h3>
   <p class="muted small">
     Pick an AXIS firmware file (<code>.bin</code>) and tap UPLOAD. The
     device will reboot into the new firmware once the transfer is
@@ -95,15 +213,52 @@
 
   .muted { color: var(--muted); }
   .small { font-size: 13px; }
+  .xs    { font-size: 11px; }
   .err   { color: var(--danger);  margin: var(--s-2) 0 0; }
   .ok    { color: var(--success); margin: var(--s-2) 0 0; }
   code   { font-family: var(--font-mono); background: var(--surface-2); padding: 2px 6px; border-radius: 4px; }
 
-  .current {
-    display: flex; align-items: center; gap: var(--s-3);
-    padding: var(--s-3) var(--s-4);
-  }
+  .current { padding: var(--s-3) var(--s-4); }
   .ver { color: var(--accent); font-size: 18px; }
+
+  .card-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: var(--s-2);
+  }
+  .card-head h3 { margin: 0; }
+  .link {
+    background: transparent; border: none; color: var(--accent);
+    font-size: 13px; padding: 0; min-height: 0; cursor: pointer;
+  }
+  .link[disabled] { color: var(--muted); cursor: default; }
+
+  .release-head {
+    display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2);
+    margin-top: var(--s-2);
+  }
+  .badge {
+    margin-left: auto;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 10px; letter-spacing: 1px;
+    background: var(--surface-2);
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .badge.available { color: var(--accent); border-color: var(--accent); }
+  .badge.preview   { color: var(--warn, #ffaa33); border-color: var(--warn, #ffaa33); }
+  .badge.current   { color: var(--success); border-color: var(--success); }
+
+  .notes {
+    margin: var(--s-3) 0 var(--s-3);
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+  }
+
+  .release-btn { width: 100%; margin-top: var(--s-2); }
 
   .file {
     display: block;
