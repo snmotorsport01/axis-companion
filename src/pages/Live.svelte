@@ -65,9 +65,12 @@
   }
 </script>
 
+<!-- Logo on the left, connection status on the right. Page title and the
+     "‹ DASHBOARD" back affordance dropped — bottom nav handles all
+     navigation now, and a literal "LIVE" label was redundant with the
+     bottom-nav LIVE tab being highlighted while this page is open. -->
 <header class="bar">
-  <button class="back" on:click={() => store.goDashboard()}>‹ DASHBOARD</button>
-  <h1>LIVE</h1>
+  <img class="logo" src="/sn-logo.png" alt="SN Motorsports" />
   <div class="status">
     <span class="dot {status === 'open' ? 'online' : status === 'error' ? 'error' : 'offline'}"></span>
     {status}
@@ -122,8 +125,10 @@
 
 <style>
   .bar { display: flex; align-items: center; gap: var(--s-3); }
-  .bar h1 { margin: 0; flex: 1; }
-  .back   { background: transparent; border: none; color: var(--accent); padding: 0; min-height: 0; }
+  /* Logo height tuned to match the connection-status row visually
+     (~32 px tall so the status dot sits centred against it). Width
+     comes from aspect-ratio of the source PNG. */
+  .logo   { height: 32px; width: auto; flex: 1; object-fit: contain; object-position: left center; }
   .status { color: var(--muted); font-size: 13px; text-transform: uppercase; }
   .muted  { color: var(--muted); text-align: center; }
   .gear   { font-size: 72px; text-align: center; font-weight: 700; color: var(--accent); }
