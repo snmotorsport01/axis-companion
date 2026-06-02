@@ -44,11 +44,18 @@ const SKIP_EXTS = ['.map'];              // sourcemaps inflate flash for zero ga
 // (1.5 MB each) which would otherwise blow past the device's flash budget.
 const SKIP_DIRS = new Set(['firmware']);
 
+// Files we ship in dist-device/ for the Capacitor iOS app but the firmware-
+// hosted PWA doesn't need. sn-splash.png is the SN Motorsports launch logo
+// shown while the WKWebView wakes up — the ESP32's UI draws its own native
+// splash so embedding 18 KB of identical pixels in flash is pure waste.
+const SKIP_FILES = new Set(['sn-splash.png']);
+
 /** Walk a directory, return absolute paths to every file. */
 async function walk(dir, relPrefix = '') {
   const out = [];
   for (const ent of await fs.readdir(dir, { withFileTypes: true })) {
     if (SKIP_DIRS.has(ent.name) && relPrefix === '') continue;   // top-level only
+    if (SKIP_FILES.has(ent.name) && relPrefix === '') continue;  // top-level only
     const full = join(dir, ent.name);
     if (ent.isDirectory()) {
       out.push(...(await walk(full, relPrefix + ent.name + '/')));

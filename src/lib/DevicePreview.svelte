@@ -43,7 +43,11 @@
     mutedColor      = '#888888',
     warnColor       = '#FF3B3B',
     transitionStyle = 0,
-    gearAnimStyle   = 0
+    gearAnimStyle   = 0,
+    patternChaseMs  = 220,
+    liveGearLabel   = null,
+    liveRoll        = null,
+    livePitch       = null
   } = $props<{
     name?:            string;
     accent?:          string;
@@ -55,6 +59,15 @@
     warnColor?:       string;
     transitionStyle?: number;
     gearAnimStyle?:   number;
+    patternChaseMs?:  number;
+    // When any of these are non-null the preview switches from the
+    // synthesised cycle to live data from /api/stream telemetry. The
+    // Custom page passes them in so users see what the real device
+    // looks like with their colour edits applied right now, not a
+    // generic 1→2→3 sweep.
+    liveGearLabel?:   string | null;
+    liveRoll?:        number | null;
+    livePitch?:       number | null;
   }>();
 
   // ---- View tab + transition state -----------------------------
@@ -113,6 +126,11 @@
   });
 
   // ---- G-meter dot sweep ---------------------------------------
+  // Two drive modes:
+  //   • No live tilt → synthesised circular sweep (demo behaviour)
+  //   • Live tilt    → polar map of roll (X) / pitch (Y), same axis
+  //                    convention the firmware uses (race convention,
+  //                    matches GMETER_FLIP_X/Y after v2.5.22)
   let dotAngle = $state(0);
   let dotRaf: number | undefined;
   function dotLoop() {
@@ -120,7 +138,7 @@
     dotRaf = requestAnimationFrame(dotLoop);
   }
   $effect(() => {
-    if (renderView === 'gmeter') {
+    if (renderView === 'gmeter' && liveRoll == null && livePitch == null) {
       dotRaf = requestAnimationFrame(dotLoop);
     }
     return () => { if (dotRaf != null) cancelAnimationFrame(dotRaf); };
@@ -159,24 +177,72 @@
   }
 
   $effect(() => {
-    if (renderView === 'main') {
+    // Skip the demo cycle when live gear data is flowing — otherwise
+    // the preview would fight the real value and flicker every 1.6 s.
+    if (renderView === 'main' && liveGearLabel == null) {
       gearTimer = window.setInterval(nextGear, 1600);
     }
     return () => { if (gearTimer != null) window.clearInterval(gearTimer); };
   });
-  let gearLabel = $derived(GEAR_LABELS[gearIdx]);
+  // Live label wins over the demo cycle. Fall back to the cycle index
+  // so the preview stays useful in DEMO MODE or when the device is
+  // disconnected mid-session.
+  let gearLabel = $derived(liveGearLabel ?? GEAR_LABELS[gearIdx]);
+
+  // ---- Pattern-chase animation ----------------------------------
+  // The real H-pattern screen runs a "Pac-Man" marker that walks
+  // through the gear positions at the rate set by patternChaseMs.
+  // We mirror that here so the slider on the Custom page has a
+  // visible effect — slide it left and the chase speeds up, right
+  // and it slows down. Without this loop, the PATTERN tab was a
+  // still picture and the demo froze at gear "5" the moment the
+  // user switched away from MAIN.
+  //
+  // CHASE_ORDER walks the H-pattern in gear-shift order
+  // (1 → 2 → 3 → 4 → 5 → R) by mapping each gear to the index of
+  // its circle in the layout array further down. Spatially this
+  // zig-zags: top-left → bot-left → top-mid → bot-mid → top-right
+  // → bot-right, which matches how a driver pulls the lever on a
+  // real H-pattern gearbox.
+  const CHASE_ORDER = [0, 3, 1, 4, 2, 5];
+  let chaseStep = $state(0);
+  let chaseTimer: number | undefined;
+
+  $effect(() => {
+    if (renderView !== 'pattern') return;
+    // Clamp under 40 ms to avoid pinning the main thread if the prop
+    // is misconfigured — the real firmware clamps at 60 ms anyway.
+    const period = Math.max(40, patternChaseMs);
+    chaseTimer = window.setInterval(() => {
+      chaseStep = (chaseStep + 1) % CHASE_ORDER.length;
+    }, period);
+    return () => { if (chaseTimer != null) window.clearInterval(chaseTimer); };
+  });
+  let chaseHighlight = $derived(CHASE_ORDER[chaseStep]);
 
   onDestroy(() => {
-    if (dotRaf   != null) cancelAnimationFrame(dotRaf);
-    if (transRaf != null) cancelAnimationFrame(transRaf);
-    if (gearRaf  != null) cancelAnimationFrame(gearRaf);
+    if (dotRaf    != null) cancelAnimationFrame(dotRaf);
+    if (transRaf  != null) cancelAnimationFrame(transRaf);
+    if (gearRaf   != null) cancelAnimationFrame(gearRaf);
+    if (chaseTimer != null) clearInterval(chaseTimer);
   });
 
-  // Pre-compute the dot position from the angle once per frame so the
-  // template stays readable.
-  let dot = $derived({
-    x: 120 + Math.cos(dotAngle) * 75,
-    y: 120 + Math.sin(dotAngle) * 75
+  // G-meter dot position. Live mode maps roll/pitch directly to X/Y
+  // on the same radar plane the firmware draws on (centre = 0/0,
+  // outer ring = ±30°). Demo mode falls back to the synthesised
+  // circular sweep so the preview never goes static. Scale factor
+  // matches the firmware's kBeamRout / 30° → ~2.5 px/° at 240×240.
+  let dot = $derived.by(() => {
+    if (liveRoll != null && livePitch != null) {
+      const k = 2.5;   // px per degree
+      const x = 120 + Math.max(-90, Math.min(90, liveRoll  * k));
+      const y = 120 + Math.max(-90, Math.min(90, livePitch * k));
+      return { x, y };
+    }
+    return {
+      x: 120 + Math.cos(dotAngle) * 75,
+      y: 120 + Math.sin(dotAngle) * 75
+    };
   });
 </script>
 
@@ -250,19 +316,21 @@
           </text>
         {:else if renderView === 'pattern'}
           <!-- H-pattern: 3 columns × 2 rows. Dotted rails in muted; gear
-               circles in gearColor; the "chase" head (gear "3" here) in
-               brighter accent so the user sees gearColor + accent
-               playing against each other in context. -->
+               circles in gearColor; the "chase" head animates through
+               the gear-shift order (1→2→3→4→5→R) at patternChaseMs so
+               the user can dial in their preferred speed and see it
+               immediately. The active slot pops in accent + thicker
+               stroke; inactive slots hold gearColor at reduced opacity. -->
           {#each [[60, 80], [120, 80], [180, 80], [60, 160], [120, 160], [180, 160]] as [x, y], i}
             <circle cx={x} cy={y} r="14" fill="none"
-                    stroke={i === 2 ? accent : gearColor}
-                    stroke-width={i === 2 ? 3 : 1.5}
-                    opacity={i === 2 ? 1 : 0.55} />
+                    stroke={i === chaseHighlight ? accent : gearColor}
+                    stroke-width={i === chaseHighlight ? 3 : 1.5}
+                    opacity={i === chaseHighlight ? 1 : 0.55} />
             <text x={x} y={y + 5} text-anchor="middle"
                   font-family="var(--font-device)"
                   font-size="14" font-weight="600"
-                  fill={i === 2 ? accent : gearColor}
-                  opacity={i === 2 ? 1 : 0.85}>
+                  fill={i === chaseHighlight ? accent : gearColor}
+                  opacity={i === chaseHighlight ? 1 : 0.85}>
               {['1', '3', '5', '2', '4', 'R'][i]}
             </text>
           {/each}

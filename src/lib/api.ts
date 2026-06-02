@@ -183,6 +183,8 @@ export interface SysSnapshot {
   };
 }
 
+export type CalibPhase = 0 | 1 | 2;   // idle / waiting / sampling
+
 export interface CalibSnapshot {
   mode_id:     number;
   mode_name:   string;
@@ -190,6 +192,23 @@ export interface CalibSnapshot {
   calib_steps: number;
   steps:       Array<{ label: string; hint: string }>;
   imu_zero:    { roll: number; pitch: number; yaw: number };
+  // Live IMU tilt — populated by the firmware even when no session is
+  // active, so the PWA can show an "are we level?" peek before BEGIN.
+  imu_live?:   { roll: number; pitch: number; gyroMag: number };
+  // Wizard live state. `active` is true only while the device is on
+  // SCR_CALIBRATE — the PWA gates its capture buttons on this.
+  state?: {
+    active:              boolean;
+    step:                number;
+    total:               number;
+    phase:               CalibPhase;
+    is_still:            boolean;
+    still_held_ms:       number;
+    sample_progress_ms:  number;
+    still_hold_ms:       number;   // threshold from firmware (cfg::CALIB_STILL_HOLD_MS)
+    sample_ms:           number;   // threshold from firmware (cfg::CALIB_SAMPLE_MS)
+    still_gyro_dps:      number;
+  };
 }
 
 export interface TelemetryFrame {
@@ -233,6 +252,60 @@ export class DeviceClient {
   calibration(): Promise<CalibSnapshot>   { return fetchJson(`${this.base}/api/calibration`); }
   resetCalibration(): Promise<{ ok: boolean }> {
     return fetchJson(`${this.base}/api/calibration/reset`, { method: 'POST' });
+  }
+
+  /**
+   * Switch the device's active engine mode (PRND / SEQ / HPATTERN).
+   * Persists immediately so the choice survives reboot. Used by the
+   * Calibrate page's mode-selector chip so the user can change modes
+   * straight from the phone — no need to walk the on-device wizard.
+   */
+  setMode(mode_id: number): Promise<{ ok: boolean; mode_id: number; mode_name: string }> {
+    return fetchJson(`${this.base}/api/mode`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ mode_id })
+    });
+  }
+
+  /**
+   * Set the active mode's gear count (HPAT + SEQ only; PRND ignores).
+   * Range is clamped to 4..6 on the firmware side. Persisted to NVS
+   * immediately. Returns ok=false if the current mode doesn't accept
+   * a gear count.
+   */
+  setGearCount(count: number): Promise<{ ok: boolean; count: number }> {
+    return fetchJson(`${this.base}/api/mode`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ gear_count: count })
+    });
+  }
+
+  /**
+   * Start a calibration session driven from the PWA. The device's screen
+   * switches to the calibrate wizard and the live `state` field on
+   * subsequent `calibration()` polls reflects the wizard's progress.
+   */
+  beginCalibration():  Promise<{ ok: boolean }> {
+    return fetchJson(`${this.base}/api/calibration/begin`,  { method: 'POST' });
+  }
+  /**
+   * Trigger a capture for the current step — equivalent to a single
+   * TAP on the device's calibrate screen. The state machine then runs
+   * WAITING → SAMPLING → step++. Returns 409 if the device isn't on
+   * the calibrate screen (caller should re-call beginCalibration).
+   */
+  tapCalibration():    Promise<{ ok: boolean }> {
+    return fetchJson(`${this.base}/api/calibration/tap`,    { method: 'POST' });
+  }
+  /** Persist captured steps and exit the wizard — like LONGPRESS. */
+  commitCalibration(): Promise<{ ok: boolean }> {
+    return fetchJson(`${this.base}/api/calibration/commit`, { method: 'POST' });
+  }
+  /** Abandon the session without saving — like MULTITAP. */
+  abortCalibration():  Promise<{ ok: boolean }> {
+    return fetchJson(`${this.base}/api/calibration/abort`,  { method: 'POST' });
   }
 
   branding(): Promise<BrandingSnapshot>   { return fetchJson(`${this.base}/api/branding`); }

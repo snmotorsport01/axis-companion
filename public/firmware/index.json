@@ -2,6 +2,23 @@
   "_schema": "axis-firmware-manifest/v2",
   "releases": [
     {
+      "version":    "AXIS V1.0.0",
+      "build":      "v2.5.27",
+      "date":       "2026-06-03",
+      "notes":      "Calibrate page now lets you switch between PRND / SEQ / HPATTERN and pick gear count (4/5/6) for HPAT + SEQ — no more on-device wizard scrolling. JSON over BLE was getting truncated at NimBLE's 512-byte ATT cap, so config + calibration shapes are trimmed and the PWA fills in static metadata client-side. Screensaver upload chunks now go via WRITE (with ATT response) — fixes the silent packet drops that triggered XE_SIZE after upload. BleAxis transfer-buf char now declares WRITE | WRITE_NR so iOS can pick the reliable path. WebCodecs VideoDecoder fallback added for 4K HEVC clips iPhone Photos exports — pipes through MP4Box + hardware decode. Custom page preview now mirrors the device's live gear + tilt over BLE telemetry.",
+      "url":        "firmware/smart_knob_shifter-v2.5.27.bin",
+      "size_bytes": 1667856
+    },
+    {
+      "version":    "AXIS V1.0.0",
+      "build":      "v2.5.23",
+      "date":       "2026-06-02",
+      "notes":      "BLE-first release. All daily features (config, calibration, custom name + colours, telemetry) now go over BLE — no more Wi-Fi AP join. New BLE chunked-transfer protocol carries screensaver uploads (~12 s) and OTA firmware (~3 min) so Wi-Fi is no longer needed for ANY feature. SETUP MODE screen rewritten — single 'PAIR' page, no SoftAP / QR / HTTP server (fixes the SETUP-MODE-causes-reboot crash). G-meter axes inverted to match race convention (left-turn pulls dot right). Companion app: Connect screen is BLE-only, Wi-Fi entry removed. ⚠ ONE-TIME USB FLASH — your current firmware doesn't have the new BLE chunked-transfer chars, so this jump can't OTA. After this install, all future updates flow over BLE OTA.",
+      "url":        "firmware/smart_knob_shifter-v2.5.23.bin",
+      "size_bytes": 0,
+      "status":     "preview"
+    },
+    {
       "version": "AXIS V1.0.0",
       "build":   "v2.5.12",
       "date":    "2026-06-02",

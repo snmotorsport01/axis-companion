@@ -299,12 +299,28 @@ async function encodeAnimation(
 
 // ---- Public API -----------------------------------------------------
 
+export interface EncodeImageOpts {
+  /**
+   * 'high'  — raw 240×240 RGB565 (115,200 bytes, 65k colours, no
+   *           palette). Best fidelity, what the firmware natively
+   *           prefers for stills.
+   * 'low'   — single-frame AXSV format 2 with a 128-colour median-cut
+   *           palette (~28,000 bytes — ~4× smaller). Visually
+   *           near-indistinguishable for photos / GUI mockups; saves
+   *           ~10 s of BLE upload time on a slow link.
+   * Default 'high' so existing callers keep current behaviour.
+   */
+  quality?: 'high' | 'low';
+}
+
 /**
- * Encode a static image as raw 240×240 RGB565 little-endian (115,200 bytes,
- * no header). Firmware recognises this layout by exact byte count and uses
- * it directly — full 16-bit colour, no palette quantisation.
+ * Encode a static image. With quality:'high' the output is raw 240×240
+ * RGB565 (115 KB). With quality:'low' the same pixels are quantised
+ * through the AXSV-format-2 pipeline as a single-frame loop, dropping
+ * to ~30 KB at the cost of going from 65k colours to 128. Both formats
+ * are detected on the firmware side by header inspection.
  */
-export async function encodeImage(file: File): Promise<Uint8Array> {
+export async function encodeImage(file: File, opts?: EncodeImageOpts): Promise<Uint8Array> {
   let bitmap: ImageBitmap | null = null;
   try {
     bitmap = await createImageBitmap(file, {
@@ -332,12 +348,23 @@ export async function encodeImage(file: File): Promise<Uint8Array> {
   drawCoverFit(ctx, bitmap, bitmap.width, bitmap.height);
   bitmap.close?.();
 
-  const data = ctx.getImageData(0, 0, AXSV_W, AXSV_H, { colorSpace: 'srgb' } as any).data;
-  const out  = new Uint8Array(AXSV_W * AXSV_H * 2);
-  for (let i = 0, j = 0; i < data.length; i += 4, j += 2) {
-    const r = data[i]     >> 3;
-    const g = data[i + 1] >> 2;
-    const b = data[i + 2] >> 3;
+  const rgba = ctx.getImageData(0, 0, AXSV_W, AXSV_H, { colorSpace: 'srgb' } as any).data;
+
+  // Compressed path — feed the single frame through the animation
+  // encoder. encodeAnimation appends a loop-blend tail which is
+  // pointless for a still, but the cost is one extra frame of palette
+  // work (~10 ms) and yields a clean AXSV header the firmware already
+  // knows how to display.
+  if (opts?.quality === 'low') {
+    return encodeAnimation([rgba], 1);
+  }
+
+  // Default raw RGB565 path — full fidelity.
+  const out = new Uint8Array(AXSV_W * AXSV_H * 2);
+  for (let i = 0, j = 0; i < rgba.length; i += 4, j += 2) {
+    const r = rgba[i]     >> 3;
+    const g = rgba[i + 1] >> 2;
+    const b = rgba[i + 2] >> 3;
     const px = (r << 11) | (g << 5) | b;
     out[j]     =  px        & 0xFF;
     out[j + 1] = (px >> 8)  & 0xFF;
@@ -409,10 +436,14 @@ async function extractVideoFrames(
   });
   try {
     onProgress?.(0.01, 'Loading video metadata…');
+    // 30 s — 4K HEVC files from iPhone Photos can take 10-20 s to
+    // parse on cold open because the moov atom often sits at the end
+    // of the container and iOS has to fetch most of the file before
+    // returning loadedmetadata.
     await withTimeout(new Promise<void>((ok, fail) => {
       v.onloadedmetadata = () => ok();
       v.onerror = () => fail(new Error('video metadata failed'));
-    }), 8000, 'loadedmetadata');
+    }), 30000, 'loadedmetadata');
     if (videoErr) throw videoErr;
 
     const duration = isFinite(v.duration) && v.duration > 0 ? v.duration : frames / fps;
@@ -572,10 +603,12 @@ async function extractVideoFramesByPlayback(
 
   try {
     onProgress?.(0.01, 'Loading video metadata…');
+    // Same 30 s budget as the rVFC playback extractor — covers iPhone
+    // 4K HEVC files where moov atom parsing dominates.
     await withTimeout(new Promise<void>((ok, fail) => {
       v.onloadedmetadata = () => ok();
       v.onerror = () => fail(new Error('video metadata failed'));
-    }), 8000, 'loadedmetadata');
+    }), 30000, 'loadedmetadata');
     if (videoErr) throw videoErr;
 
     const duration = isFinite(v.duration) && v.duration > 0 ? v.duration : 1;
@@ -682,21 +715,249 @@ async function extractVideoFramesByPlayback(
   }
 }
 
+/**
+ * Read input video metadata. Earlier versions hard-capped at 1920 px
+ * because some 4K H.264 / HEVC files from iPhone Photos failed to
+ * seek inside WKWebView's HTMLVideoElement. v0.5.4 relaxed the cap to
+ * 4096 px after upgrading the rVFC playback extractor — it samples
+ * during natural playback instead of seeking, so it tolerates the
+ * weird-GOP / many-B-frame H.264 profiles that broke the seek path.
+ * The downscale to 240×240 still happens at canvas-draw time, so
+ * input resolution only affects DECODE robustness, not output size.
+ *
+ * iOS Photos exports cap out at 3840×2160 (4K UHD) so 4096 is a clean
+ * safe upper bound; anything over that is either a screen recording
+ * of a 5K monitor or some niche edge case — we still bail rather than
+ * try to decode an 8K stream the radio could never push anyway.
+ */
+const VIDEO_MAX_DIM = 4096;
+
+async function checkVideoLimits(file: File): Promise<{ w: number; h: number }> {
+  const url = URL.createObjectURL(file);
+  const v = document.createElement('video');
+  v.src = url;
+  v.muted = true;
+  v.playsInline = true;
+  v.preload = 'metadata';
+  try {
+    // Larger timeout for HEVC 4K — iOS sometimes needs 10-20 s to
+    // parse the metadata box on a 100 MB+ file (the box sits at the
+    // end of the container so the entire file must be partially read
+    // before the dimensions are known).
+    await withTimeout(new Promise<void>((ok, fail) => {
+      v.onloadedmetadata = () => ok();
+      v.onerror = () => fail(new Error('Could not read video metadata.'));
+    }), 30000, 'metadata');
+    const w = v.videoWidth, h = v.videoHeight;
+    if (Math.max(w, h) > VIDEO_MAX_DIM) {
+      throw new Error(
+        `Video is ${w}×${h} — that's larger than 4K. Re-encode to 4K or ` +
+        `lower in any video editor before uploading.`
+      );
+    }
+    return { w, h };
+  } finally {
+    URL.revokeObjectURL(url);
+    v.removeAttribute('src');
+    v.load();
+  }
+}
+
+/**
+ * WebCodecs-based frame extractor — the third + most reliable path.
+ *
+ * The rVFC and seek extractors above both go through HTMLVideoElement,
+ * which delegates to WKWebView's AVFoundation. For HEVC files exported
+ * by iPhone Photos that path is hit-or-miss: the same file can play
+ * fine in QuickTime but trip an MEDIA_ERR_DECODE in WKWebView. The
+ * underlying iOS hardware decoder absolutely *can* handle the file —
+ * it just doesn't get a chance via the legacy `<video>` API.
+ *
+ * WebCodecs exposes the hardware decoder directly. We demux the MP4
+ * container with MP4Box.js (parses moov/stbl/stsd to get codec config
+ * + sample positions), then feed encoded chunks to VideoDecoder.
+ * VideoFrames come back via the output callback. We pick the N
+ * evenly-spaced ones by timestamp and drawImage them to a 240×240
+ * canvas — same downstream shape as the other extractors.
+ *
+ * Requires iOS 17.4+ / Safari 17.4+ for VideoDecoder + EncodedVideoChunk.
+ */
+async function extractFramesWithWebCodecs(
+  file: File,
+  frames: number,
+  fps: number,
+  onProgress?: (frac: number, msg: string) => void
+): Promise<Uint8ClampedArray[]> {
+  if (typeof (globalThis as any).VideoDecoder === 'undefined') {
+    throw new Error('VideoDecoder not available — need iOS 17.4 or Safari 17.4+.');
+  }
+  onProgress?.(0.05, 'Demuxing video…');
+
+  const MP4BoxModule = await import('mp4box');
+  // mp4box's exports flip-flop between CJS default and ESM named over
+  // versions. Probe both shapes so the build doesn't break on upgrade.
+  const MP4Box: any = (MP4BoxModule as any).default ?? MP4BoxModule;
+
+  const buffer = await file.arrayBuffer();
+
+  return new Promise<Uint8ClampedArray[]>((resolve, reject) => {
+    const mp4 = MP4Box.createFile();
+
+    // Set up the canvas we'll draw each kept frame into. 240×240 is
+    // the device target; drawImage handles the downscale (uses the
+    // hardware path when the source is a VideoFrame).
+    const cv = document.createElement('canvas');
+    cv.width = AXSV_W; cv.height = AXSV_H;
+    const ctx = cv.getContext('2d')!;
+
+    const kept: Uint8ClampedArray[] = [];
+    let targets: number[] = [];        // target timestamps in microseconds
+    let nextTargetIdx = 0;
+    let decoder: any = null;
+    let decoderConfigured = false;
+    let durationUs = 0;
+    let timedOut = false;
+
+    // 60 s hard watchdog — for a corrupt file the decoder might just
+    // never fire output. Bail with a clear message rather than hang.
+    const watchdog = setTimeout(() => {
+      timedOut = true;
+      try { decoder?.close(); } catch {}
+      reject(new Error('WebCodecs decode timed out after 60 s.'));
+    }, 60_000);
+
+    const finish = (ok: boolean, err?: Error) => {
+      clearTimeout(watchdog);
+      try { decoder?.close(); } catch {}
+      if (ok) resolve(kept);
+      else    reject(err ?? new Error('WebCodecs decode failed.'));
+    };
+
+    mp4.onError = (e: any) => finish(false, new Error('MP4 demux error: ' + e));
+
+    mp4.onReady = (info: any) => {
+      const track = info.videoTracks?.[0];
+      if (!track) return finish(false, new Error('No video track in container.'));
+
+      // Duration in seconds → microseconds (VideoDecoder unit).
+      durationUs = (info.duration / info.timescale) * 1_000_000;
+      // Build target timestamps. Evenly spaced over the duration with
+      // a 5 % headroom at each end so we don't accidentally pick the
+      // first/last frame (often a fade-in or freeze-frame).
+      const headFrac = 0.05;
+      for (let i = 0; i < frames; ++i) {
+        const t = (headFrac + (1 - 2 * headFrac) * i / Math.max(1, frames - 1)) * durationUs;
+        targets.push(t);
+      }
+
+      // Codec descriptor (avcC / hvcC bytes). VideoDecoder needs this
+      // for HEVC and for some H.264 streams that don't have inline SPS/PPS.
+      const trak = mp4.getTrackById(track.id);
+      let description: Uint8Array | undefined;
+      for (const entry of trak.mdia.minf.stbl.stsd.entries) {
+        const config = entry.avcC || entry.hvcC || entry.vpcC || entry.av1C;
+        if (config) {
+          const stream = new MP4Box.DataStream(undefined, 0, MP4Box.DataStream.BIG_ENDIAN);
+          config.write(stream);
+          // Skip 8-byte FullBox header (size + type) — VideoDecoder
+          // expects just the payload.
+          description = new Uint8Array(stream.buffer, 8);
+          break;
+        }
+      }
+
+      decoder = new (globalThis as any).VideoDecoder({
+        output: (frame: any) => {
+          if (timedOut) { frame.close(); return; }
+          // Decide if this frame matches the next target timestamp.
+          // VideoFrame.timestamp is microseconds.
+          if (nextTargetIdx < targets.length &&
+              frame.timestamp >= targets[nextTargetIdx] - 1000) {
+            // Cover-fit (crop overflow, preserve aspect ratio) so a
+            // 9:16 vertical iPhone clip lands centred-square inside
+            // 240×240 instead of being squished to 1:1. VideoFrame is
+            // a valid CanvasImageSource on iOS 17.4+; the cast keeps
+            // TypeScript happy without a separate runtime branch.
+            try {
+              drawCoverFit(ctx, frame as any, frame.displayWidth, frame.displayHeight);
+              const data = ctx.getImageData(0, 0, AXSV_W, AXSV_H,
+                { colorSpace: 'srgb' } as any).data;
+              kept.push(new Uint8ClampedArray(data));
+              nextTargetIdx++;
+              onProgress?.(0.1 + 0.4 * (kept.length / frames),
+                           `WebCodecs frame ${kept.length}/${frames}`);
+              if (kept.length >= frames) finish(true);
+            } catch (e: any) {
+              finish(false, new Error('Frame draw failed: ' + (e?.message ?? e)));
+            }
+          }
+          frame.close();
+        },
+        error: (e: any) => finish(false, new Error('VideoDecoder error: ' + (e?.message ?? e)))
+      });
+
+      decoder.configure({
+        codec: track.codec,
+        codedWidth:  track.video.width,
+        codedHeight: track.video.height,
+        description
+      });
+      decoderConfigured = true;
+      onProgress?.(0.1, 'Decoding…');
+
+      mp4.setExtractionOptions(track.id, null, { nbSamples: 500 });
+      mp4.onSamples = (_id: any, _user: any, samples: any[]) => {
+        if (!decoderConfigured || timedOut) return;
+        for (const s of samples) {
+          if (kept.length >= frames || timedOut) return;
+          decoder.decode(new (globalThis as any).EncodedVideoChunk({
+            type:      s.is_sync ? 'key' : 'delta',
+            timestamp: (s.cts * 1_000_000) / s.timescale,
+            duration:  (s.duration * 1_000_000) / s.timescale,
+            data:      s.data
+          }));
+        }
+      };
+      mp4.start();
+    };
+
+    // Feed the buffer into the demuxer. mp4box wants `.fileStart` on
+    // the buffer view + a flush() to signal EOF.
+    (buffer as any).fileStart = 0;
+    mp4.appendBuffer(buffer);
+    mp4.flush();
+  });
+}
+
 export async function encodeVideo(file: File, opts: EncodeVideoOpts): Promise<Uint8Array> {
   const { frames, fps, onProgress } = opts;
-  // Try the modern playback + rVFC path first — far more reliable on
-  // iOS WKWebView, especially for HEVC .mov files from iPhone Photos
-  // where the seek-based path has a coin-flip failure rate. ANY failure
-  // (rVFC missing, autoplay blocked, watchdog timeout) falls through
-  // to the seek-based extractor; the user just sees a slightly slower
-  // encode rather than a hard error from the first attempt.
+  // Up-front gate: reject obviously-broken files (8K+, corrupted
+  // metadata) early so we don't sink 30 s into a decode that's going
+  // to fail. 4K is allowed through; the WebCodecs fallback handles
+  // the HEVC files the legacy <video> path chokes on.
+  onProgress?.(0.01, 'Checking video…');
+  await checkVideoLimits(file);
+
+  // 3-tier extractor chain. Each tier is more robust than the previous
+  // but slower. Start with the fastest on the assumption that most
+  // files Just Work; fall back only when a tier actually throws.
+  //   1. rVFC playback   — fast (~5 s), works for most H.264 + simple HEVC
+  //   2. seek-based      — slower (~15 s), some H.264 profiles + small HEVC
+  //   3. WebCodecs       — slowest (~30 s), handles 4K HEVC and odd profiles
+  //                        that AVFoundation refuses to feed to <video>
   let rgbaFrames: Uint8ClampedArray[];
   try {
     rgbaFrames = await extractVideoFramesByPlayback(file, frames, fps, onProgress);
-  } catch (e: any) {
-    console.warn('[axsv] playback extractor failed — falling back to seek:', e?.message);
+  } catch (e1: any) {
+    console.warn('[axsv] rVFC failed — trying seek:', e1?.message);
     onProgress?.(0.05, 'Switching to seek extractor…');
-    rgbaFrames = await extractVideoFrames(file, frames, fps, onProgress);
+    try {
+      rgbaFrames = await extractVideoFrames(file, frames, fps, onProgress);
+    } catch (e2: any) {
+      console.warn('[axsv] seek failed — trying WebCodecs:', e2?.message);
+      onProgress?.(0.05, 'Switching to WebCodecs decoder…');
+      rgbaFrames = await extractFramesWithWebCodecs(file, frames, fps, onProgress);
+    }
   }
   return encodeAnimation(rgbaFrames, fps, onProgress);
 }
@@ -717,7 +978,21 @@ export async function videoToGifBlob(
   fps: number,
   onProgress?: (frac: number, msg: string) => void
 ): Promise<Blob> {
-  const rgbaFrames = await extractVideoFrames(file, frames, fps, onProgress);
+  // Same 3-tier chain as encodeVideo so the COMPRESS button on the
+  // Screensaver page gets WebCodecs fallback too — it's the whole
+  // reason COMPRESS exists for 4K HEVC clips.
+  let rgbaFrames: Uint8ClampedArray[];
+  try {
+    rgbaFrames = await extractVideoFramesByPlayback(file, frames, fps, onProgress);
+  } catch (e1: any) {
+    console.warn('[axsv] gif: rVFC failed — trying seek:', e1?.message);
+    try {
+      rgbaFrames = await extractVideoFrames(file, frames, fps, onProgress);
+    } catch (e2: any) {
+      console.warn('[axsv] gif: seek failed — trying WebCodecs:', e2?.message);
+      rgbaFrames = await extractFramesWithWebCodecs(file, frames, fps, onProgress);
+    }
+  }
   appendLoopBlend(rgbaFrames);
   return rgbaFramesToGifBlob(rgbaFrames, fps, onProgress);
 }

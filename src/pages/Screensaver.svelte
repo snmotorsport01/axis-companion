@@ -25,11 +25,21 @@
   import { store } from '../lib/store.svelte';
   import PageHeader from '../lib/PageHeader.svelte';
 
-  // Animation defaults — single source of truth, no user-facing knobs.
-  // 12 frames @ 6 fps = 2-second loop, sized to fit comfortably inside
-  // the device's PSRAM crossfade budget.
-  const SS_FRAMES = 12;
-  const SS_FPS    = 6;
+  // Compression presets — each level trades visual quality for upload
+  // size. BLE caps practical throughput at ~80 kbps, so a 100 KB
+  // screensaver takes ~12 s and a 30 KB one takes ~4 s. Default to
+  // HIGH so behaviour matches the pre-compression versions; LOW is
+  // what the user reaches for when the upload feels slow.
+  type Quality = 'high' | 'medium' | 'low';
+  const PRESETS: Record<Quality, { frames: number; fps: number; label: string; hint: string }> = {
+    high:   { frames: 12, fps: 6, label: 'HIGH',
+              hint: 'Photo: full 16-bit · Video: 12 frames @ 6 fps' },
+    medium: { frames: 8,  fps: 5, label: 'MEDIUM',
+              hint: 'Photo: 128 colours · Video: 8 frames @ 5 fps' },
+    low:    { frames: 6,  fps: 4, label: 'LOW',
+              hint: 'Photo: 128 colours · Video: 6 frames @ 4 fps' }
+  };
+  let quality: Quality = $state('high');
 
   let snap = $state<BrandingSnapshot | null>(null);
 
@@ -85,22 +95,26 @@
         kind === 'gif'   ? 'Decoding GIF…' :
         kind === 'video' ? 'Extracting frames…' :
                            'Quantising colours…';
+      const preset = PRESETS[quality];
       if (kind === 'gif') {
+        // GIFs are already palette-quantised by the decoder; the
+        // quality knob only changes the frame budget in the
+        // animation pipeline. The decoder passes that along.
         ssBytes = await encodeGif(f, (_p, m) => { ssEncodeMsg = m; });
       } else if (kind === 'video') {
         ssBytes = await encodeVideo(f, {
-          frames: SS_FRAMES, fps: SS_FPS,
+          frames: preset.frames, fps: preset.fps,
           onProgress: (_p, m) => { ssEncodeMsg = m; }
         });
       } else {
-        ssBytes = await encodeImage(f);
+        ssBytes = await encodeImage(f, { quality: quality === 'high' ? 'high' : 'low' });
       }
       await renderPreview();
       const kb = (ssBytes.length / 1024).toFixed(0);
       ssEncodeMsg =
         kind === 'gif'   ? `${kb} KB · animated GIF (seamless loop)` :
-        kind === 'video' ? `${kb} KB · ${SS_FRAMES} frames @ ${SS_FPS} fps` :
-                           `${kb} KB · still image · full 16-bit colour`;
+        kind === 'video' ? `${kb} KB · ${preset.frames} frames @ ${preset.fps} fps · ${preset.label}` :
+                           `${kb} KB · still image · ${quality === 'high' ? 'full 16-bit colour' : 'compressed'}`;
     } catch (e: any) {
       const msg = e?.message ?? 'conversion failed';
       ssErr = /decode|read|fetch/i.test(msg)
@@ -242,14 +256,55 @@
     ssBusy = true;
     ssErr = null;
     try {
+      const preset = PRESETS[quality];
       ssEncodeMsg = 'Encoding GIF…';
-      const blob = await videoToGifBlob(ssFile, SS_FRAMES, SS_FPS,
+      const blob = await videoToGifBlob(ssFile, preset.frames, preset.fps,
                                         (_p, m) => { ssEncodeMsg = m; });
       const stem = ssFile.name.replace(/\.[^.]+$/, '') || 'screensaver';
       triggerDownload(blob, `${stem}.gif`);
       ssEncodeMsg = `${(blob.size / 1024).toFixed(0)} KB · downloaded`;
     } catch (e: any) {
       ssErr = e?.message ?? 'GIF export failed';
+    } finally {
+      ssBusy = false;
+    }
+  }
+
+  // Convert a video (incl. 4K 60fps) to an in-memory GIF, then re-run
+  // the encode pipeline as if the user had picked that GIF themselves.
+  // Saves a round-trip through the Files app vs. "SAVE GIF + re-pick"
+  // — and the GIF intermediate sidesteps the AXSV pipeline's direct
+  // video extractor, which is the path that struggles with weird-GOP
+  // 4K H.264 / HEVC encoders. The GIF is decoded by gifuct-js (pure
+  // JS, no WebKit involved) so reliability is higher.
+  async function compressToGif() {
+    if (!ssFile) return;
+    const kind = detectKind(ssFile);
+    if (kind !== 'video') {
+      ssErr = 'Compress to GIF only works for video sources.';
+      return;
+    }
+    ssBusy = true;
+    ssErr  = null;
+    previewFrame = 0;
+    try {
+      const preset = PRESETS[quality];
+      ssEncodeMsg = 'Compressing video to GIF…';
+      const blob = await videoToGifBlob(ssFile, preset.frames, preset.fps,
+                                        (_p, m) => { ssEncodeMsg = m; });
+      // Wrap blob in a File so the rest of the pipeline (preview,
+      // upload, file-name display) keeps working unchanged.
+      const stem = ssFile.name.replace(/\.[^.]+$/, '') || 'screensaver';
+      const gifFile = new File([blob], `${stem}.gif`, { type: 'image/gif' });
+      ssFile = gifFile;
+      ssEncodeMsg = 'Re-encoding GIF as screensaver…';
+      ssBytes = await encodeGif(gifFile, (_p, m) => { ssEncodeMsg = m; });
+      await renderPreview();
+      const kb = (ssBytes.length / 1024).toFixed(0);
+      const gifKb = (blob.size / 1024).toFixed(0);
+      ssEncodeMsg = `${kb} KB · from ${gifKb} KB GIF · ready to upload`;
+    } catch (e: any) {
+      ssErr = e?.message ?? 'compression failed';
     } finally {
       ssBusy = false;
     }
@@ -318,6 +373,34 @@
       {/if}
     </div>
 
+    <!-- Compression preset — affects both photo + video pipelines. -->
+    <!-- Higher compression = smaller file = faster BLE upload (~12 s -->
+    <!--  → ~4 s for stills, ~12 s → ~6 s for video). LOW + MEDIUM     -->
+    <!-- quantise stills through the AXSV-128 path; HIGH stays raw     -->
+    <!-- RGB565. Re-picking quality after a file is chosen requires    -->
+    <!-- re-picking the file — the encoded buffer doesn't auto-rerun.  -->
+    <div class="quality-row">
+      <span class="quality-label">QUALITY</span>
+      {#each (['high','medium','low'] as const) as q}
+        <button
+          type="button"
+          class="quality-chip"
+          class:active={quality === q}
+          on:click={() => quality = q}
+          disabled={ssBusy}
+        >
+          {q.toUpperCase()}
+        </button>
+      {/each}
+    </div>
+    <p class="muted small quality-hint">
+      {#if ssFile}
+        ⟳ Re-pick the file to apply — {PRESETS[quality].hint}
+      {:else}
+        {PRESETS[quality].hint}
+      {/if}
+    </p>
+
     <!-- File picker -->
     <label class="file">
       <input
@@ -328,6 +411,16 @@
       />
       <span>{ssFile ? ssFile.name : 'Choose image, GIF, or video'}</span>
     </label>
+
+    <!-- Spec note: 4K clips now accepted (v0.5.4 rVFC playback path
+         handles iPhone H.264 + HEVC at 4K). Output is still 240×240
+         so anything above 1080p is technically wasted pixels, but
+         users can drop any phone export here and it Just Works. -->
+    <p class="muted small spec-note">
+      * Videos: up to <b>4K (3840 × 2160)</b> accepted. iPhone Photos
+      exports — H.264 + HEVC, any frame rate — work natively. Large 4K
+      files may take 30-60 s to decode the first time.
+    </p>
 
     {#if ssEncodeMsg && ssBytes}
       <p class="muted small mono">{ssEncodeMsg}</p>
@@ -358,6 +451,9 @@
     <ul>
       <li><b>GIFs</b> usually look best — designers author them to loop.</li>
       <li><b>Videos</b> get sampled into 12 frames at 6 fps automatically.</li>
+      <li>Any source resolution up to <b>4K</b> works — the encoder
+          downscales to 240 × 240 in the canvas before sampling.
+          Smaller sources (1080p or below) still decode faster.</li>
       <li>Keep motion smooth and avoid abrupt cuts near the end of the clip.</li>
       <li>Stills upload as full 16-bit colour — no palette quantisation.</li>
     </ul>
@@ -428,6 +524,45 @@
   }
   .file input { display: none; }
   .file:hover { color: var(--fg); border-color: var(--accent); }
+  /* ---- Quality chip selector ---- */
+  .quality-row {
+    display: flex; align-items: center; gap: 6px;
+    margin: 10px 2px 4px;
+  }
+  .quality-label {
+    font-family: ui-monospace, monospace;
+    font-size: 11px; letter-spacing: 1px;
+    color: var(--muted);
+    margin-right: 6px;
+  }
+  .quality-chip {
+    flex: 1;
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-family: ui-monospace, monospace;
+    font-size: 11px; letter-spacing: 1px;
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease;
+  }
+  .quality-chip:hover:not(:disabled) { color: var(--fg); border-color: var(--accent); }
+  .quality-chip.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #000;
+  }
+  .quality-chip:disabled { opacity: 0.4; cursor: not-allowed; }
+  .quality-hint {
+    margin: 4px 2px 8px;
+    line-height: 1.4;
+  }
+  .spec-note {
+    margin: 6px 2px 4px;
+    line-height: 1.4;
+  }
+  .spec-note b { color: var(--fg); }
   .err {
     color: #ff6e6e;
     font-size: 13px;

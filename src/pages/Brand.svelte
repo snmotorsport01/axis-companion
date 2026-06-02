@@ -1,9 +1,29 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import type { BrandingSnapshot, ConfigSnapshot, WifiStatus } from '../lib/api';
+  import { onMount, onDestroy } from 'svelte';
+  import type { BrandingSnapshot, ConfigSnapshot, WifiStatus, TelemetryFrame } from '../lib/api';
   import { store } from '../lib/store.svelte';
   import DevicePreview from '../lib/DevicePreview.svelte';
   import PageHeader from '../lib/PageHeader.svelte';
+
+  // ---- Live telemetry → DevicePreview ---------------------------------
+  // Subscribe to /api/stream so the preview mirrors the real device's
+  // gear + tilt in real time. Lets the user see exactly what their
+  // colour edits look like with the gear that's currently engaged,
+  // instead of a synthesised 1→2→3 cycle. Demo / disconnected paths
+  // get null → preview falls back to the cycle automatically.
+  let liveFrame = $state<TelemetryFrame | null>(null);
+  let liveSock: WebSocket | null = null;
+  onMount(() => {
+    if (!store.client) return;
+    liveSock = store.client.openTelemetry(
+      (f) => { liveFrame = f; },
+      ()  => { liveFrame = null; }
+    );
+  });
+  onDestroy(() => {
+    try { liveSock?.close(); } catch {}
+    liveSock = null;
+  });
 
   // ============================================================
   //  "Animation & feel" — three tunables that used to live on the
@@ -222,7 +242,9 @@
        between MAIN / PATTERN / G-METER / INFO so every slot can be
        judged in the screen where it actually shows up. -->
   <div class="card preview-card">
-    <p class="preview-label">PREVIEW · live · not yet saved</p>
+    <p class="preview-label">
+      PREVIEW · {liveFrame ? 'live from device' : 'demo cycle'} · not yet saved
+    </p>
     <DevicePreview
       name={name}
       accent={color}
@@ -234,6 +256,10 @@
       warnColor={warnColor}
       transitionStyle={feel?.transitionStyle?.v ?? 0}
       gearAnimStyle={feel?.gearAnimStyle?.v ?? 0}
+      patternChaseMs={Number(feel?.patternChaseMs?.v ?? 220)}
+      liveGearLabel={liveFrame?.label ?? null}
+      liveRoll={liveFrame?.roll ?? null}
+      livePitch={liveFrame?.pitch ?? null}
     />
   </div>
 

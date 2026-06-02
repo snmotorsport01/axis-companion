@@ -327,22 +327,117 @@ export class MockClient extends DeviceClient {
     };
   }
 
+  // ---- Calibration wizard session (DEMO MODE only) ------------------
+  // Mirrors the firmware's state machine so the wizard UI is fully
+  // playable without a device: tap CAPTURE → 800 ms HOLD STILL bar →
+  // 500 ms CAPTURING bar → step++. SAVE/CANCEL clear the session.
+  // Timings match the firmware's CALIB_STILL_HOLD_MS / CALIB_SAMPLE_MS
+  // so the user sees what to expect on the real device.
+  private calibSession_ = {
+    active:     false,
+    step:       0,
+    phase:      0 as 0 | 1 | 2,
+    phaseAt:    0,
+    stillAt:    0
+  };
+  private calibTimers_: number[] = [];
+
+  private calibClearTimers_() {
+    for (const t of this.calibTimers_) clearTimeout(t);
+    this.calibTimers_ = [];
+  }
+
   async calibration(): Promise<CalibSnapshot> {
+    const STEPS = [
+      { label: 'N', hint: 'Hold knob centred' },
+      { label: '1', hint: 'Tilt forward-left' },
+      { label: '2', hint: 'Tilt backward-left' },
+      { label: '3', hint: 'Tilt forward-centre' },
+      { label: '4', hint: 'Tilt backward-centre' },
+      { label: '5', hint: 'Tilt forward-right' }
+    ];
+    const total = STEPS.length;
+    const s = this.calibSession_;
+    const now = Date.now();
     return {
       mode_id:    0,
       mode_name:  'HPATTERN',
       gear_count: 5,
-      calib_steps: 6,
-      steps: [
-        { label: 'N', hint: 'Hold knob centred' },
-        { label: '1', hint: 'Tilt forward-left' },
-        { label: '2', hint: 'Tilt backward-left' },
-        { label: '3', hint: 'Tilt forward-centre' },
-        { label: '4', hint: 'Tilt backward-centre' },
-        { label: '5', hint: 'Tilt forward-right' }
-      ],
-      imu_zero: { roll: 0, pitch: 0, yaw: 0 }
+      calib_steps: total,
+      steps: STEPS,
+      imu_zero: { roll: 0, pitch: 0, yaw: 0 },
+      imu_live: {
+        roll:    Math.sin(now / 400) * 3,
+        pitch:   Math.cos(now / 500) * 2,
+        gyroMag: 1 + Math.abs(Math.sin(now / 300)) * 5
+      },
+      state: {
+        active:              s.active,
+        step:                s.step,
+        total,
+        phase:               s.phase,
+        is_still:            s.phase === 1,
+        still_held_ms:       s.phase === 1 ? Math.min(250, now - s.stillAt) : 0,
+        sample_progress_ms:  s.phase === 2 ? Math.min(500, now - s.phaseAt) : 0,
+        still_hold_ms:       250,
+        sample_ms:           500,
+        still_gyro_dps:      20
+      }
     };
+  }
+
+  async beginCalibration(): Promise<{ ok: boolean }> {
+    this.calibClearTimers_();
+    this.calibSession_ = { active: true, step: 0, phase: 0, phaseAt: 0, stillAt: 0 };
+    return { ok: true };
+  }
+
+  async tapCalibration(): Promise<{ ok: boolean }> {
+    const s = this.calibSession_;
+    if (!s.active || s.phase !== 0) return { ok: true };
+    s.phase = 1;                         // WAITING
+    s.stillAt = Date.now();
+    // After 800ms still hold → start sampling
+    this.calibTimers_.push(window.setTimeout(() => {
+      if (!s.active) return;
+      s.phase = 2;                       // SAMPLING
+      s.phaseAt = Date.now();
+      // After 500ms sampling → step++, back to IDLE
+      this.calibTimers_.push(window.setTimeout(() => {
+        if (!s.active) return;
+        s.phase = 0;
+        s.step++;
+        // Don't auto-end the session at the last step — let the user
+        // tap SAVE so they see the "READY" state in the UI.
+      }, 500));
+    }, 800));
+    return { ok: true };
+  }
+
+  async commitCalibration(): Promise<{ ok: boolean }> {
+    this.calibClearTimers_();
+    this.calibSession_.active = false;
+    return { ok: true };
+  }
+
+  async abortCalibration(): Promise<{ ok: boolean }> {
+    this.calibClearTimers_();
+    this.calibSession_ = { active: false, step: 0, phase: 0, phaseAt: 0, stillAt: 0 };
+    return { ok: true };
+  }
+
+  // Mode switching in DEMO MODE is a no-op that returns success — the
+  // synthesised telemetry doesn't actually care which mode is "set",
+  // and the Calibrate page just needs the await to resolve so it can
+  // re-fetch calibration() and re-render the step list.
+  async setMode(mode_id: number): Promise<{ ok: boolean; mode_id: number; mode_name: string }> {
+    const names = ['PRND', 'SEQ', 'HPATTERN'];
+    return { ok: true, mode_id, mode_name: names[mode_id] ?? '' };
+  }
+
+  async setGearCount(count: number): Promise<{ ok: boolean; count: number }> {
+    const c = Math.max(4, Math.min(6, Math.round(count)));
+    return { ok: true, count: c };
   }
 
   async wifi(): Promise<WifiStatus> {

@@ -14,15 +14,24 @@
   import { store, type Page } from './store.svelte';
 
   // Each tab = { id, label }. Order matches the visual left→right.
-  // SCREEN (screensaver) lost its tab when DEVICES went in — it's still
-  // reachable via the "OPEN SCREENSAVER →" button on the CUSTOM page,
-  // which is the natural place to launch it from anyway.
+  //
+  // 6 tabs at 11 px mono fits on every supported iPhone (375 px wide
+  // worst case for iPhone SE → 62 px per tab → "DEVICES" is the widest
+  // label at ~58 px). CALIB sits between TUNE and CUSTOM because it's
+  // the "device knows what each gear is" foundation that TUNE's response
+  // curves and CUSTOM's colour mappings ride on top of — easier to find
+  // when it's next to its prerequisites.
+  //
+  // SCREEN (screensaver) lives off the CUSTOM page; SYS lives off the
+  // Connect screen and Live overflow. They're occasional destinations
+  // and don't earn a permanent tab.
   const TABS: ReadonlyArray<{ id: Page; label: string }> = [
-    { id: 'live',    label: 'LIVE'    },
-    { id: 'tune',    label: 'TUNE'    },
-    { id: 'brand',   label: 'CUSTOM'  },
-    { id: 'devices', label: 'DEVICES' },
-    { id: 'ota',     label: 'OTA'     },
+    { id: 'live',      label: 'LIVE'    },
+    { id: 'tune',      label: 'TUNE'    },
+    { id: 'calibrate', label: 'CALIB'   },
+    { id: 'brand',     label: 'CUSTOM'  },
+    { id: 'devices',   label: 'DEVICES' },
+    { id: 'ota',       label: 'OTA'     },
   ];
 
   function go(p: Page) { store.page = p; }
