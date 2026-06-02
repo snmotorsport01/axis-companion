@@ -312,6 +312,25 @@ export interface EncodeVideoOpts {
  * playback order; caller decides whether to encode as AXSV, encode as
  * GIF, or both.
  */
+/**
+ * Race a Promise against a timeout. Used to wrap the video element's
+ * `seeked` / `loadeddata` waits so the encode pipeline can't get stuck
+ * forever when iOS WKWebView silently drops a media event (which it
+ * does for some HEVC / .mov files from iPhone Photos — the codec
+ * decodes fine, but the `seeked` callback never fires).
+ */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: number | undefined;
+  const timeout = new Promise<T>((_, fail) => {
+    timer = window.setTimeout(
+      () => fail(new Error(`${label} timed out after ${ms} ms`)), ms
+    );
+  });
+  return Promise.race([p, timeout]).finally(() => {
+    if (timer != null) clearTimeout(timer);
+  });
+}
+
 async function extractVideoFrames(
   file: File,
   frames: number,
@@ -323,11 +342,26 @@ async function extractVideoFrames(
   v.src = url;
   v.muted = true;
   v.playsInline = true;
+  // Hint to the WebView that we want full preload — without this, iOS
+  // sometimes only loads metadata and hangs at the first seek waiting
+  // for bytes to materialise.
+  v.preload = 'auto';
+  // Defensive global error handler — fires for codec-not-supported
+  // (e.g. HEVC in some iOS WKWebView versions) and surfaces it via
+  // the rejection path instead of silent hang.
+  let videoErr: Error | null = null;
+  v.addEventListener('error', () => {
+    const code = v.error?.code;
+    videoErr = new Error(`Video element error (code ${code ?? '?'}) — codec may not be supported on this device.`);
+  });
   try {
-    await new Promise<void>((ok, fail) => {
+    onProgress?.(0.01, 'Loading video metadata…');
+    await withTimeout(new Promise<void>((ok, fail) => {
       v.onloadedmetadata = () => ok();
       v.onerror = () => fail(new Error('video metadata failed'));
-    });
+    }), 8000, 'loadedmetadata');
+    if (videoErr) throw videoErr;
+
     const duration = isFinite(v.duration) && v.duration > 0 ? v.duration : frames / fps;
 
     const cv = document.createElement('canvas');
@@ -342,44 +376,73 @@ async function extractVideoFrames(
     // `readyState >= HAVE_CURRENT_DATA` (2) gate plus an explicit
     // warmup seek to the first sample point + small settle delay
     // gives the decoder time to fill its frame queue.
-    await new Promise<void>((ok, fail) => {
+    onProgress?.(0.03, 'Waiting for first decoded frame…');
+    await withTimeout(new Promise<void>((ok, fail) => {
       if (v.readyState >= 2) { ok(); return; }
       v.onloadeddata = () => ok();
       v.onerror      = () => fail(new Error('video data load failed'));
-    });
+    }), 8000, 'loadeddata');
+    if (videoErr) throw videoErr;
 
     const headroom = Math.max(0.1, duration * 0.05);
     const winStart = Math.min(headroom, duration / 4);
     const winLen   = Math.max(0.001, duration - winStart * 2);
 
+    // Seek helper. iOS WKWebView's `seeked` event is unreliable for
+    // some HEVC / .mov files — even though the decoder eventually
+    // lands on the target frame, the event is dropped. We race the
+    // event against a polling timer that checks `currentTime` ≈ target,
+    // and against an overall timeout to bail out cleanly if neither
+    // signal arrives. Returns the time actually reached so callers can
+    // skip a frame if needed (rare).
+    async function seekTo(t: number): Promise<void> {
+      // No-op fast path: if we're already at the target (±20 ms), skip
+      // the seek entirely — setting currentTime to its current value
+      // does NOT fire `seeked` on iOS, which was a hidden hang source.
+      if (Math.abs(v.currentTime - t) < 0.02) return;
+      await withTimeout(new Promise<void>((ok) => {
+        let done = false;
+        const finish = () => { if (done) return; done = true; ok(); };
+        const onSeeked = () => { v.removeEventListener('seeked', onSeeked); finish(); };
+        v.addEventListener('seeked', onSeeked);
+        // Polling fallback — every 50 ms check if currentTime drifted
+        // to the target. Catches the iOS-drops-seeked case.
+        const poll = window.setInterval(() => {
+          if (Math.abs(v.currentTime - t) < 0.04) {
+            window.clearInterval(poll);
+            v.removeEventListener('seeked', onSeeked);
+            finish();
+          }
+        }, 50);
+        v.currentTime = t;
+        // Stop polling when the promise resolves or rejects.
+        Promise.resolve().then(() => {
+          setTimeout(() => window.clearInterval(poll), 6500);
+        });
+      }), 6000, `seek to ${t.toFixed(2)}s`);
+      if (videoErr) throw videoErr;
+    }
+
     // Throwaway warmup seek. Land on the same timestamp the first real
-    // sample will use, wait for `seeked`, then idle 100 ms so the
-    // codec has actually rendered into the frame buffer (just because
-    // seeked fired doesn't mean drawImage has pixels yet).
+    // sample will use, idle 100 ms so the codec actually renders into
+    // the frame buffer (just because seeked fired doesn't mean
+    // drawImage has pixels yet).
+    onProgress?.(0.05, 'Warming up decoder…');
     const warmupT = winStart + (0.5 / frames) * winLen;
-    await new Promise<void>((ok) => {
-      const fn = () => { v.removeEventListener('seeked', fn); ok(); };
-      v.addEventListener('seeked', fn);
-      v.currentTime = warmupT;
-    });
+    await seekTo(warmupT);
     await new Promise<void>(r => setTimeout(r, 100));
 
     const rgbaFrames: Uint8ClampedArray[] = [];
     for (let i = 0; i < frames; ++i) {
       const t = winStart + ((i + 0.5) / frames) * winLen;
-      await new Promise<void>((ok) => {
-        const onSeeked = () => { v.removeEventListener('seeked', onSeeked); ok(); };
-        v.addEventListener('seeked', onSeeked);
-        v.currentTime = t;
-      });
+      onProgress?.((i + 0.5) / (frames * 2), `Seeking frame ${i + 1}/${frames}…`);
+      await seekTo(t);
       // Small extra delay AFTER seeked for the codec to actually
-      // render the seeked-to frame. 20 ms is barely perceptible in
-      // the overall encode time but kills the "first frame black"
-      // race in practice.
+      // render the seeked-to frame.
       await new Promise<void>(r => setTimeout(r, 20));
       drawCoverFit(ctx, v, v.videoWidth, v.videoHeight);
       rgbaFrames.push(ctx.getImageData(0, 0, AXSV_W, AXSV_H).data);
-      onProgress?.((i + 1) / (frames * 2), `Capturing frame ${i + 1}/${frames}`);
+      onProgress?.((i + 1) / (frames * 2), `Captured ${i + 1}/${frames}`);
     }
     return rgbaFrames;
   } finally {
