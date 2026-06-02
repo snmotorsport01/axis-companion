@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import type { CalibSnapshot } from '../lib/api';
   import { store } from '../lib/store.svelte';
+  import PageHeader from '../lib/PageHeader.svelte';
 
   let calib = $state<CalibSnapshot | null>(null);
   let err   = $state<string | null>(null);
@@ -22,10 +23,7 @@
   }
 </script>
 
-<header class="bar">
-  <button class="back" on:click={() => store.goDashboard()}>‹ DASHBOARD</button>
-  <h1>CALIBRATION</h1>
-</header>
+<PageHeader />
 
 {#if err}<div class="card err">{err}</div>{/if}
 

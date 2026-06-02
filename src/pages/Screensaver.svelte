@@ -23,6 +23,7 @@
   import type { BrandingSnapshot } from '../lib/api';
   import { encodeImage, encodeVideo, encodeGif, videoToGifBlob } from '../lib/axsv';
   import { store } from '../lib/store.svelte';
+  import PageHeader from '../lib/PageHeader.svelte';
 
   // Animation defaults — single source of truth, no user-facing knobs.
   // 12 frames @ 6 fps = 2-second loop, sized to fit comfortably inside
@@ -275,10 +276,7 @@
   }
 </script>
 
-<header class="bar">
-  <button class="back" on:click={() => store.goDashboard()}>‹ DASHBOARD</button>
-  <h1>SCREENSAVER</h1>
-</header>
+<PageHeader />
 
 {#if !snap}
   <div class="card muted">Loading…</div>

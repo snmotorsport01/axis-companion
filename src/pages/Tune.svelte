@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import type { ConfigSnapshot } from '../lib/api';
   import { store } from '../lib/store.svelte';
+  import PageHeader from '../lib/PageHeader.svelte';
 
   let config = $state<ConfigSnapshot | null>(null);
   let err    = $state<string | null>(null);
@@ -174,10 +175,7 @@
   }
 </script>
 
-<header class="bar">
-  <button class="back" on:click={() => store.goDashboard()}>‹ DASHBOARD</button>
-  <h1>TUNE</h1>
-</header>
+<PageHeader />
 
 {#if err}
   <div class="card err">{err}</div>

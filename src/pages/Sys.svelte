@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import type { SysSnapshot } from '../lib/api';
   import { store } from '../lib/store.svelte';
+  import PageHeader from '../lib/PageHeader.svelte';
 
   // Live system snapshot — refreshed every 2s while this page is open.
   let snap = $state<SysSnapshot | null>(null);
@@ -83,10 +84,7 @@
   }
 </script>
 
-<header class="bar">
-  <button class="back" on:click={() => store.goDashboard()}>‹ DASHBOARD</button>
-  <h1>SYS</h1>
-</header>
+<PageHeader />
 
 {#if err}<div class="card err">{err}</div>{/if}
 

@@ -3,6 +3,7 @@
   import type { BrandingSnapshot, ConfigSnapshot, WifiStatus } from '../lib/api';
   import { store } from '../lib/store.svelte';
   import DevicePreview from '../lib/DevicePreview.svelte';
+  import PageHeader from '../lib/PageHeader.svelte';
 
   // ============================================================
   //  "Animation & feel" — three tunables that used to live on the
@@ -209,10 +210,7 @@
 
 </script>
 
-<header class="bar">
-  <button class="back" on:click={() => store.goDashboard()}>‹ DASHBOARD</button>
-  <h1>CUSTOM</h1>
-</header>
+<PageHeader />
 
 {#if err}<div class="card err">{err}</div>{/if}
 

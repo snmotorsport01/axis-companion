@@ -5,6 +5,7 @@
     fetchReleaseManifest,
     type ReleaseManifest, type ReleaseEntry
   } from '../lib/api';
+  import PageHeader from '../lib/PageHeader.svelte';
 
   // ============================================================
   //  OTA — two install paths:
@@ -97,10 +98,7 @@
   }
 </script>
 
-<header class="bar">
-  <button class="back" on:click={() => store.goLive()}>‹ LIVE</button>
-  <h1>OTA</h1>
-</header>
+<PageHeader />
 
 <!-- Current firmware ------------------------------------------ -->
 <div class="card current">
