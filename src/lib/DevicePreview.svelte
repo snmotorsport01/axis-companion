@@ -233,17 +233,18 @@
   // circular sweep so the preview never goes static. Scale factor
   // matches the firmware's kBeamRout / 30° → ~2.5 px/° at 240×240.
   //
-  // Roll axis is INVERTED here so the preview matches what the device
-  // actually renders. The firmware applies GMETER_FLIP_X=true locally
-  // (so a left-bank tilt pushes the dot RIGHT on the round LCD); the
-  // BLE telemetry transmits the raw signed roll, so the PWA has to do
-  // the same flip itself or the preview mirrors what the user sees on
-  // the device.
+  // BOTH axes are INVERTED here to match the firmware. The device
+  // applies GMETER_FLIP_X=true and GMETER_FLIP_Y=true when it
+  // renders the G-meter on the round LCD (race convention: a left
+  // bank pushes the dot right; a nose-down pitch pushes the dot up).
+  // BLE telemetry sends raw signed roll/pitch, so the PWA preview
+  // has to mirror both signs or it shows the dot in the opposite
+  // quadrant from what the user sees on the device.
   let dot = $derived.by(() => {
     if (liveRoll != null && livePitch != null) {
       const k = 2.5;   // px per degree
-      const x = 120 + Math.max(-90, Math.min(90, -liveRoll * k));
-      const y = 120 + Math.max(-90, Math.min(90,  livePitch * k));
+      const x = 120 + Math.max(-90, Math.min(90, -liveRoll  * k));
+      const y = 120 + Math.max(-90, Math.min(90, -livePitch * k));
       return { x, y };
     }
     return {
