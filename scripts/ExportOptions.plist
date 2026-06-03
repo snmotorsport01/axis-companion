@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    ExportOptions.plist for AXIS Companion
+    ======================================
+    Consumed by `xcodebuild -exportArchive` to control how the
+    .xcarchive becomes an .ipa. Tuned for the App Store Connect /
+    TestFlight pipeline: automatic signing + symbols upload + bitcode
+    off (Xcode 14+ no longer accepts bitcode anyway).
+
+    To switch to ad-hoc distribution (for sideloading on a registered
+    device list during development), change `method` to `ad-hoc` and
+    add a `provisioningProfiles` dict. This file stays App-Store-only
+    so the archive script is unambiguous.
+  -->
+  <key>method</key>
+  <string>app-store</string>
+
+  <key>destination</key>
+  <string>export</string>
+
+  <key>signingStyle</key>
+  <string>automatic</string>
+
+  <!-- Strip symbols from the binary the user runs; upload them to
+       App Store Connect for crash symbolication. Standard recipe. -->
+  <key>uploadSymbols</key>
+  <true/>
+  <key>stripSwiftSymbols</key>
+  <true/>
+
+  <!-- Capacitor is a thin Swift+JS wrapper; thin-for-app-store is
+       the same as the default but explicit about which slice gets
+       shipped. -->
+  <key>thinning</key>
+  <string>&lt;none&gt;</string>
+</dict>
+</plist>
