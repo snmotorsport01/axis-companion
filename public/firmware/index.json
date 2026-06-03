@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.5.33",
+      "date":       "2026-06-03",
+      "notes":      "Touch-lock indicator now silent at rest. MAIN and the gear-pattern screen no longer show a persistent padlock badge — the locked state stays invisible until you actually touch the screen, at which point a 'LOCKED · hold to unlock' toast flashes for 1.5s telling you how to recover. Keeps the gear screens clean while driving but doesn't leave a tester wondering why a tap did nothing.",
+      "url":        "firmware/smart_knob_shifter-v2.5.33.bin",
+      "size_bytes": 1672032
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.5.32",
       "date":       "2026-06-03",
       "notes":      "Stationary IMU jitter fix. When the knob is sitting still (no chassis motion detected), roll/pitch now snap to zero through a 0.6° dead-band — accel micro-noise that used to leak through as a constant wiggle of the G-meter dot is filtered out completely. Heavy 0.04 EMA still catches slow real drift (mounting settling, temperature) so a genuinely-tilted knob does eventually re-zero on its own. Snappy response while actually moving the knob is unchanged.",
