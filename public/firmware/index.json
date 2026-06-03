@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.5.35",
+      "date":       "2026-06-03",
+      "notes":      "Screensaver upload reliability — root-cause fix. Pre-reserves the two 115 KB RGB565 decode buffers (230 KB total) in PSRAM at boot and never frees them, so subsequent uploads always reuse the same slots instead of fighting BLE / display chrome for a contiguous block. Fixes the failure mode where the file made it to flash but the in-memory reload silently failed, leaving the device showing the default AXIS logo on sleep. The variable-size raw-frames buffer (only used for animations) still allocs on demand. Each loadFile_ failure path now also logs a specific reason over USB serial to make debugging future weirdness one read of the log.",
+      "url":        "firmware/smart_knob_shifter-v2.5.35.bin",
+      "size_bytes": 1672768
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.5.34",
       "date":       "2026-06-03",
       "notes":      "Screensaver upload now auto-previews. After the upload finishes the companion app pushes the device into its sleep/screensaver screen via a new BLE command (0x20 GOTO_SLEEP), so you immediately see the image you just uploaded instead of waiting for the 2-minute idle timeout or long-pressing the device. Touch the knob to wake back to MAIN. Also: screensaver upload now propagates a 'commit' error to the app if the file made it to flash but couldn't reload into PSRAM — previously this case silently reported success but left the device with no visible image until reboot.",
