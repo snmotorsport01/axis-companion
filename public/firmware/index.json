@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.5.40",
+      "date":       "2026-06-04",
+      "notes":      "Critical PSRAM mode fix. Previous releases were built with PSRAM=OPI (Octal) for the ESP32-S3R8 module, but the actual hardware in the field is ESP32-S3R2 (QSPI 2MB) — those bins booted with PSRAM init silently failing, so every screensaver decode-buffer alloc returned null and the device only ever showed the AXIS fallback logo (recently surfaced as 'decode buffer alloc failed' after the v2.5.37 diagnostic patch). v2.5.40 rebuilds with PSRAM=enabled (QSPI). After install + reboot the boot log should show 'PSRAM init: SPI3 CS1' and screensaver uploads should land for real. A merged.bin variant is bundled alongside for one-shot USB recovery if OTA is stuck (esptool write_flash 0x0 merged.bin).",
+      "url":        "firmware/smart_knob_shifter-v2.5.40.bin",
+      "size_bytes": 1671760
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.5.39",
       "date":       "2026-06-03",
       "notes":      "Companion-app G-meter preview now mirrors the device pixel-exactly. The firmware already does the accelerometer → gx/gy maths and applies its own axis-flip flags, so v2.5.39 sends the final dot pixel coordinates over telemetry. The app plots the dot at the same coordinate the LCD is showing — no more 'preview is correct but device is wrong' or vice-versa loop after a flip-flag tweak. Older firmware that doesn't send the new fields still falls back to the previous roll/pitch math.",
