@@ -450,6 +450,26 @@ export class BleClient extends DeviceClient {
     onProgress?: (frac: number) => void
   ): Promise<void> {
     const total = bytes.byteLength;
+    // 0) ABORT (defensive) — clear any stale prior state before START.
+    //    v2.5.36: a previous BLE link drop mid-upload can leave the
+    //    device's xfer state pinned at RECEIVING/COMMITTING. Without
+    //    this preemptive abort, a phone reconnect + retry hits XE_BUSY
+    //    on the next START and the user has to reboot the device to
+    //    recover. ABORT is a no-op when state is already IDLE on the
+    //    device, so it's safe to send unconditionally. Failures here
+    //    are silently swallowed — the START itself will still surface
+    //    a real error if the link genuinely can't carry traffic.
+    try {
+      const abortBuf = new Uint8Array([XFER_OP_ABORT]);
+      await CapBle.write(this.deviceId, AXIS_SVC, XFER_CTL_CHAR,
+        new DataView(abortBuf.buffer));
+      // Tiny breather so the device sees ABORT settle in xferReset_
+      // before the START arrives. NimBLE callbacks are serialised on
+      // the connection task, so a sub-100 ms delay is overkill but
+      // also free.
+      await new Promise(r => setTimeout(r, 50));
+    } catch { /* state probe; START will catch the real issue */ }
+
     // 1) START — payload [op, type, total_lo..total_hi]
     const startBuf = new Uint8Array(6);
     startBuf[0] = XFER_OP_START;

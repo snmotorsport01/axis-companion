@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.5.36",
+      "date":       "2026-06-03",
+      "notes":      "BLE upload self-recovery. Fixes the 'Device rejected upload: busy' failure that hit when a previous BLE upload dropped mid-stream and left the device's transfer state pinned at RECEIVING/COMMITTING — every subsequent attempt then returned XE_BUSY until a reboot. Two-layer fix: (1) firmware now watches xfer state in the main loop and auto-aborts back to IDLE after 30 s of no chunk activity; (2) the app sends a defensive ABORT opcode before every START so any stale prior state gets cleared regardless of how it got stuck. No-op when the device is already idle.",
+      "url":        "firmware/smart_knob_shifter-v2.5.36.bin",
+      "size_bytes": 1672960
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.5.35",
       "date":       "2026-06-03",
       "notes":      "Screensaver upload reliability — root-cause fix. Pre-reserves the two 115 KB RGB565 decode buffers (230 KB total) in PSRAM at boot and never frees them, so subsequent uploads always reuse the same slots instead of fighting BLE / display chrome for a contiguous block. Fixes the failure mode where the file made it to flash but the in-memory reload silently failed, leaving the device showing the default AXIS logo on sleep. The variable-size raw-frames buffer (only used for animations) still allocs on demand. Each loadFile_ failure path now also logs a specific reason over USB serial to make debugging future weirdness one read of the log.",
