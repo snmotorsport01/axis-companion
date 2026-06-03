@@ -235,20 +235,17 @@
   //
   // Per-axis flip — empirically tuned to match what the user actually
   // sees on the device LCD:
-  //   • ROLL is NOT inverted. Despite GMETER_FLIP_X=true in firmware
-  //     config, the path that lands the dot on the device LCD ends up
-  //     with raw-sign-roll = preview-sign-roll. (Inverting it once
-  //     made the preview match v2.5.29 visually, then the v2.5.32
-  //     stationary dead-band changed the steady-state roll sign in
-  //     telemetry, so we ended up double-flipped.)
-  //   • PITCH stays inverted. The device's GMETER_FLIP_Y still applies
-  //     to its render path, and pitch on the desk reads correctly with
-  //     the minus in place.
+  //   • ROLL not inverted — preview-sign-roll matches device-sign-roll.
+  //   • PITCH not inverted as of v2.5.38. The firmware previously had
+  //     GMETER_FLIP_Y=true (and the preview compensated with `-pitch`),
+  //     but real-world testing showed the device pitch was reading
+  //     reversed; v2.5.38 flipped that flag back to false. To stay in
+  //     lockstep, the preview drops its own pitch minus too.
   let dot = $derived.by(() => {
     if (liveRoll != null && livePitch != null) {
       const k = 2.5;   // px per degree
-      const x = 120 + Math.max(-90, Math.min(90,  liveRoll  * k));
-      const y = 120 + Math.max(-90, Math.min(90, -livePitch * k));
+      const x = 120 + Math.max(-90, Math.min(90, liveRoll  * k));
+      const y = 120 + Math.max(-90, Math.min(90, livePitch * k));
       return { x, y };
     }
     return {
