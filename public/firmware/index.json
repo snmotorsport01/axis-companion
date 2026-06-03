@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.5.38",
+      "date":       "2026-06-03",
+      "notes":      "G-meter on the device: (1) pitch axis flipped back so nose-down now pushes the dot up the radar plane in race-convention direction instead of opposite. (2) The two main rings and the four cardinal tick marks now follow the user's meter colour from BRAND — the Custom-page meter slot actually affects what the G-meter screen looks like for the first time. The dimmer graticule range rings stay grey so the instrument still reads as one.",
+      "url":        "firmware/smart_knob_shifter-v2.5.38.bin",
+      "size_bytes": 1673872
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.5.37",
       "date":       "2026-06-03",
       "notes":      "Screensaver upload errors now tell you why. Previously a failed load surfaced in the companion app as a generic 'Device rejected upload: commit' with no further detail. The device now stamps a short human-readable reason at every loadFile_ failure point (bad header, wrong format, palette read short, body truncated, alloc failed, ...) and exposes it over BLE so the Screensaver page can show the specific cause instead.",
