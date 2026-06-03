@@ -47,7 +47,9 @@
     patternChaseMs  = 220,
     liveGearLabel   = null,
     liveRoll        = null,
-    livePitch       = null
+    livePitch       = null,
+    liveGmX         = null,
+    liveGmY         = null
   } = $props<{
     name?:            string;
     accent?:          string;
@@ -68,6 +70,13 @@
     liveGearLabel?:   string | null;
     liveRoll?:        number | null;
     livePitch?:       number | null;
+    // v2.5.39+ — device-rendered G-meter dot screen coordinates (the
+    // firmware does the accel → gx/gy math + GMETER_FLIP flags and
+    // ships the final pixel position). Preferred over liveRoll/Pitch
+    // so the preview can never desync from the LCD again. Older
+    // firmware doesn't send these → fall back to the roll/pitch path.
+    liveGmX?:         number | null;
+    liveGmY?:         number | null;
   }>();
 
   // ---- View tab + transition state -----------------------------
@@ -138,7 +147,14 @@
     dotRaf = requestAnimationFrame(dotLoop);
   }
   $effect(() => {
-    if (renderView === 'gmeter' && liveRoll == null && livePitch == null) {
+    // Synth sweep runs only when there's no live source — v2.5.39+
+    // adds liveGmX/Y as the preferred source, so include it in the
+    // "is anyone driving the dot" check or the sweep would shadow
+    // the live coords on a phone paired with current firmware.
+    const haveLive =
+      (liveGmX != null && liveGmY != null) ||
+      (liveRoll != null && livePitch != null);
+    if (renderView === 'gmeter' && !haveLive) {
       dotRaf = requestAnimationFrame(dotLoop);
     }
     return () => { if (dotRaf != null) cancelAnimationFrame(dotRaf); };
@@ -227,21 +243,25 @@
     if (chaseTimer != null) clearInterval(chaseTimer);
   });
 
-  // G-meter dot position. Live mode maps roll/pitch directly to X/Y
-  // on the same radar plane the firmware draws on (centre = 0/0,
-  // outer ring = ±30°). Demo mode falls back to the synthesised
-  // circular sweep so the preview never goes static. Scale factor
-  // matches the firmware's kBeamRout / 30° → ~2.5 px/° at 240×240.
-  //
-  // Per-axis flip — empirically tuned to match what the user actually
-  // sees on the device LCD:
-  //   • ROLL not inverted — preview-sign-roll matches device-sign-roll.
-  //   • PITCH not inverted as of v2.5.38. The firmware previously had
-  //     GMETER_FLIP_Y=true (and the preview compensated with `-pitch`),
-  //     but real-world testing showed the device pitch was reading
-  //     reversed; v2.5.38 flipped that flag back to false. To stay in
-  //     lockstep, the preview drops its own pitch minus too.
+  // G-meter dot position. Three-tier source priority:
+  //   1. v2.5.39+ device-rendered pixel coords (liveGmX/Y) — preferred.
+  //      The firmware has already applied GMETER_FLIP_X/Y and mapped
+  //      to its 240×240 frame, so we just plot at the same pixel. No
+  //      axis-flip math here means the preview is guaranteed to match
+  //      the LCD frame-by-frame, regardless of any future device-side
+  //      sign-convention changes.
+  //   2. Older-firmware fallback — derive a position from raw
+  //      roll/pitch the same way the v2.5.32-v2.5.38 preview did, so
+  //      a phone paired with stale firmware still gets a roughly
+  //      correct dot. Sign convention there may drift from the LCD;
+  //      that's the bug v2.5.39 specifically eliminates for current
+  //      firmware.
+  //   3. Demo / no-data — synthesised circular sweep so the preview
+  //      never freezes on an empty Custom page.
   let dot = $derived.by(() => {
+    if (liveGmX != null && liveGmY != null) {
+      return { x: liveGmX, y: liveGmY };
+    }
     if (liveRoll != null && livePitch != null) {
       const k = 2.5;   // px per degree
       const x = 120 + Math.max(-90, Math.min(90, liveRoll  * k));

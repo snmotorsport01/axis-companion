@@ -263,6 +263,8 @@
       liveGearLabel={liveFrame?.label ?? null}
       liveRoll={liveFrame?.roll ?? null}
       livePitch={liveFrame?.pitch ?? null}
+      liveGmX={liveFrame?.gm_x ?? null}
+      liveGmY={liveFrame?.gm_y ?? null}
     />
   </div>
 

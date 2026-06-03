@@ -241,6 +241,15 @@ export interface TelemetryFrame {
   gear:   number;
   label:  string;
   frozen: boolean;
+  // v2.5.39+ — pre-computed G-meter dot pixel coords in device frame
+  // space (0..239). When present, the PWA preview plots the dot at
+  // EXACTLY these coordinates so it can never drift out of sync with
+  // what the device LCD is showing — the firmware does the accel →
+  // gx/gy math + GMETER_FLIP_X/Y once, we just consume the answer.
+  // Optional so older firmware (≤ v2.5.38) still works via the
+  // roll/pitch fallback in DevicePreview.
+  gm_x?:  number;
+  gm_y?:  number;
 }
 
 // Firmware release-manifest flow (fetchReleaseManifest / resolveReleaseUrl /
