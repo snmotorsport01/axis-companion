@@ -80,7 +80,9 @@
     try {
       await store.client.ota(file, p => { uploadProg = p; });
       uploadDone = true;
-      setTimeout(() => store.goLive(), 4000);
+      // Same 5-s reboot countdown + auto-reconnect flow as the Releases
+      // path. Keeps the two install routes behaviourally identical.
+      startPostFlashFlow();
     } catch (e: any) {
       uploadErr = e?.message ?? 'upload failed';
     } finally {
@@ -96,6 +98,15 @@
   // from "I want the latest release" to a rebooted device.
   let installPhase = $state<'idle' | 'download' | 'flash'>('idle');
   let installPct   = $state(0);
+  // v2.5.31 — post-flash reboot countdown + auto-reconnect.
+  // The firmware schedules its restart for +5 s after the chunked
+  // transfer ends so the PWA has time to render "Update complete" and
+  // start its own reconnect timer. We tick once a second so the user
+  // sees the seconds tick down, then begin retrying connect() at +6 s
+  // (1 s past the device's reboot to give the radio time to come back).
+  let rebootCountdown = $state(0);   // 0 = idle, 5..0 = ticking down
+  let reconnecting    = $state(false);
+  let reconnectErr    = $state<string | null>(null);
   async function installLatest() {
     if (!latest?.url || !store.client) return;
     uploading   = true;
@@ -145,13 +156,75 @@
       installPct   = 0;
       await store.client.ota(binFile, p => { installPct = p; uploadProg = p; });
       uploadDone = true;
-      setTimeout(() => store.goLive(), 4000);
+      // v2.5.31 — kick off the post-flash countdown + auto-reconnect
+      // flow. Device firmware schedules its ESP.restart() at +5 s after
+      // it acks the chunked transfer; the PWA mirrors the same clock
+      // here so the user sees "Update complete · rebooting in N s"
+      // tick down in sync with what's happening on the LCD.
+      startPostFlashFlow();
     } catch (e: any) {
       uploadErr = e?.message ?? 'install failed';
     } finally {
       uploading = false;
       installPhase = 'idle';
     }
+  }
+
+  // ---- v2.5.31 post-flash countdown + reconnect -----------------------
+  // Two phases, both backed by wall-clock not setInterval drift:
+  //   1. Countdown 5→0 while the device is still on the old firmware,
+  //      finishing its flush + scheduling its restart.
+  //   2. Reconnect loop — every 2 s, try to call .connect() on the same
+  //      BleClient (its deviceId is unchanged). When the device's new
+  //      firmware comes up its BLE advertising lights back up and the
+  //      attempt succeeds. Re-read info to confirm the link is healthy
+  //      (a stale connect handle without a working ATT channel would
+  //      otherwise leave the UI in a half-connected state). Give up
+  //      after 30 s and tell the user to pair manually.
+  function startPostFlashFlow() {
+    reconnectErr = null;
+    rebootCountdown = 5;
+    const tick = () => {
+      rebootCountdown -= 1;
+      if (rebootCountdown <= 0) {
+        rebootCountdown = 0;
+        attemptReconnect();
+        return;
+      }
+      setTimeout(tick, 1000);
+    };
+    setTimeout(tick, 1000);
+  }
+
+  async function attemptReconnect() {
+    if (!store.client) return;
+    reconnecting = true;
+    reconnectErr = null;
+    // Give the device an extra second past its scheduled restart so
+    // the radio definitely went down and is now coming back. Without
+    // this, connect() can succeed against the stale OLD-firmware
+    // connection right before it drops — and the next read times out.
+    await new Promise(r => setTimeout(r, 1000));
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline) {
+      try {
+        await store.client.connect(() => { store.connected = false; });
+        // Re-read info — the new firmware's BUILD_VERSION will now
+        // reflect the just-installed version, which is what makes the
+        // "Releases" section flip back to "UP TO DATE".
+        const fresh = await store.client.info();
+        store.info = fresh;
+        store.connected = true;
+        reconnecting = false;
+        uploadDone = false;
+        store.goLive();
+        return;
+      } catch {
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+    reconnecting = false;
+    reconnectErr = "Couldn't reconnect automatically — open Devices and pair again.";
   }
 
   function fmtMb(b: number): string {
@@ -232,6 +305,17 @@
             ? 'Pulling .bin from GitHub…'
             : 'Streaming to device over BLE — keep app open, ~3 min for 1.6 MB.'}
         </p>
+      {/if}
+      {#if uploadDone && rebootCountdown > 0}
+        <!-- v2.5.31: post-flash countdown synced with the firmware's
+             ESP.restart() deadline. Reads as "the device knows you're
+             waiting" rather than a silent blank screen. -->
+        <p class="ok">✓ Update complete</p>
+        <p class="muted small mono">Device rebooting in {rebootCountdown}s…</p>
+      {:else if reconnecting}
+        <p class="muted small mono">Reconnecting to the device…</p>
+      {:else if reconnectErr}
+        <p class="err small">{reconnectErr}</p>
       {/if}
       {#if isPreview}
         <p class="muted xs">

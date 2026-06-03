@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.5.31",
+      "date":       "2026-06-03",
+      "notes":      "OTA reboot delay + auto-reconnect. After a firmware update finishes streaming, the device now waits 5 seconds before rebooting and shows 'OTA OK · rebooting in 5s' on screen — gives you visual confirmation the flash actually landed and time to put the knob down before the LCD goes dark. The companion app shows a matching countdown, then automatically tries to reconnect to the same device for up to 30 seconds. When the device comes back, it pairs itself and drops you onto the Live screen without you tapping anything. Same flow on the local-upload path (UPLOAD .BIN) too.",
+      "url":        "firmware/smart_knob_shifter-v2.5.31.bin",
+      "size_bytes": 1672176
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.5.30",
       "date":       "2026-06-03",
       "notes":      "SET ZERO menu row + G-meter preview pitch fix. (1) New 'SET ZERO' option right under CALIBRATE in the main menu — long-press to snap the IMU origin to whatever pose the knob is in right now, without going through the full calibration wizard. Useful when the knob has shifted in its mount but the gear targets are still good. (2) DevicePreview G-meter now also inverts the pitch axis (front/back) to match the device's GMETER_FLIP_Y=true convention — v2.5.29 only flipped roll, so the dot was still landing in the wrong forward/back quadrant when the knob was stationary on a slope or being pitched intentionally.",
