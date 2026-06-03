@@ -234,7 +234,21 @@
       // see the existing "uploaded" UI state.
       try { await store.client.gotoSleep(); } catch {}
     } catch (e: any) {
-      ssErr = e?.message ?? 'upload failed';
+      // v2.5.37 — on XE_COMMIT ("Device rejected upload: commit"), the
+      // device's last loadFile_ reason is now surfaced via branding.
+      // Read it back and show that instead of the generic string. Older
+      // firmware just leaves screensaver_error undefined → fall through
+      // to the original message.
+      let detail: string | null = null;
+      try {
+        if (store.client) {
+          const s = await store.client.branding();
+          if (s.screensaver_error) detail = s.screensaver_error;
+        }
+      } catch {}
+      ssErr = detail
+        ? `Device couldn't load the file: ${detail}`
+        : (e?.message ?? 'upload failed');
     } finally {
       ssBusy = false;
     }

@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.5.37",
+      "date":       "2026-06-03",
+      "notes":      "Screensaver upload errors now tell you why. Previously a failed load surfaced in the companion app as a generic 'Device rejected upload: commit' with no further detail. The device now stamps a short human-readable reason at every loadFile_ failure point (bad header, wrong format, palette read short, body truncated, alloc failed, ...) and exposes it over BLE so the Screensaver page can show the specific cause instead.",
+      "url":        "firmware/smart_knob_shifter-v2.5.37.bin",
+      "size_bytes": 1673856
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.5.36",
       "date":       "2026-06-03",
       "notes":      "BLE upload self-recovery. Fixes the 'Device rejected upload: busy' failure that hit when a previous BLE upload dropped mid-stream and left the device's transfer state pinned at RECEIVING/COMMITTING — every subsequent attempt then returned XE_BUSY until a reboot. Two-layer fix: (1) firmware now watches xfer state in the main loop and auto-aborts back to IDLE after 30 s of no chunk activity; (2) the app sends a defensive ABORT opcode before every START so any stale prior state gets cleared regardless of how it got stuck. No-op when the device is already idle.",

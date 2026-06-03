@@ -161,6 +161,11 @@ export interface BrandingSnapshot {
   screensaver_frames:   number;
   screensaver_fps:      number;
   screensaver_animated: boolean;
+  // v2.5.37+ — only present when the device's last loadFile_ attempt
+  // failed. PWA surfaces this on an XE_COMMIT upload error so the user
+  // sees the actual reason ("bad header v=0 w=0 h=0 …", "rawFrames
+  // alloc fail (480KB)", etc.) instead of a generic code.
+  screensaver_error?:   string;
 }
 
 /** Detailed system snapshot for the SYS panel (see /api/sys). */

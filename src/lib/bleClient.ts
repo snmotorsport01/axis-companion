@@ -326,28 +326,30 @@ export class BleClient extends DeviceClient {
   async branding(): Promise<BrandingSnapshot> {
     const v = await CapBle.read(this.deviceId, AXIS_SVC, BRANDING_CHAR);
     const flat = viewToJson<any>(v);
-    // BLE branding char doesn't expose screensaver metadata (that
-    // lives on Wi-Fi-only LittleFS for now — phase-2 work). Stub the
-    // fields the Brand UI expects so destructuring doesn't crash.
+    // v2.5.37 — BLE branding now carries the screensaver fields (incl.
+    // an optional `screensaver_error` set when the last loadFile_
+    // failed). Older firmware (pre-v2.5.37) omits these; fall back to
+    // safe stubs so the Brand / Screensaver UI keep destructuring.
     return {
-      name:                flat.name        ?? 'AXIS',
-      accent565:           flat.accent565   ?? 0,
-      accent_hex:          flat.accent_hex  ?? '#FFA500',
-      gear_hex:            flat.gear_hex    ?? '#FFA500',
-      meter_hex:           flat.meter_hex   ?? '#888888',
-      name_hex:            flat.name_hex    ?? '#BDBDBD',
-      fg_hex:              flat.fg_hex      ?? '#FFFFFF',
-      muted_hex:           flat.muted_hex   ?? '#888888',
-      warn_hex:            flat.warn_hex    ?? '#FF3B3B',
-      max_name:            flat.max_name    ?? 16,
-      screensaver:         false,
-      screensaver_w:       240,
-      screensaver_h:       240,
-      screensaver_size:    115_200,
-      screensaver_frames:  0,
-      screensaver_fps:     0,
-      screensaver_animated:false
-    };
+      name:                 flat.name                 ?? 'AXIS',
+      accent565:            flat.accent565            ?? 0,
+      accent_hex:           flat.accent_hex           ?? '#FFA500',
+      gear_hex:             flat.gear_hex             ?? '#FFA500',
+      meter_hex:            flat.meter_hex            ?? '#888888',
+      name_hex:             flat.name_hex             ?? '#BDBDBD',
+      fg_hex:               flat.fg_hex               ?? '#FFFFFF',
+      muted_hex:            flat.muted_hex            ?? '#888888',
+      warn_hex:             flat.warn_hex             ?? '#FF3B3B',
+      max_name:             flat.max_name             ?? 16,
+      screensaver:          flat.screensaver          ?? false,
+      screensaver_w:        flat.screensaver_w        ?? 240,
+      screensaver_h:        flat.screensaver_h        ?? 240,
+      screensaver_size:     flat.screensaver_size     ?? 115_200,
+      screensaver_frames:   flat.screensaver_frames   ?? 0,
+      screensaver_fps:      flat.screensaver_fps      ?? 0,
+      screensaver_animated: flat.screensaver_animated ?? false,
+      screensaver_error:    flat.screensaver_error    ?? undefined
+    } as BrandingSnapshot;
   }
   async setBranding(patch: Record<string, any>): Promise<{ ok: boolean }> {
     await CapBle.write(this.deviceId, AXIS_SVC, BRANDING_CHAR, jsonToView(patch));
