@@ -13,6 +13,11 @@
   // get null → preview falls back to the cycle automatically.
   let liveFrame = $state<TelemetryFrame | null>(null);
   let liveSock: WebSocket | null = null;
+  // Preview mode toggle. Default is DEMO so the preview always animates
+  // regardless of pair / telemetry status — useful for picking colours
+  // before / without a paired device. Flip to LIVE to mirror what the
+  // physical knob is doing right now. Persisted in-memory only.
+  let previewMode = $state<'demo' | 'live'>('demo');
   onMount(() => {
     if (!store.client) return;
     liveSock = store.client.openTelemetry(
@@ -245,9 +250,29 @@
        between MAIN / PATTERN / G-METER / INFO so every slot can be
        judged in the screen where it actually shows up. -->
   <div class="card preview-card">
-    <p class="preview-label">
-      PREVIEW · {liveFrame ? 'live from device' : 'demo cycle'} · not yet saved
-    </p>
+    <div class="preview-head">
+      <p class="preview-label">
+        PREVIEW · {previewMode === 'live' && liveFrame
+          ? 'live from device'
+          : 'demo cycle'} · not yet saved
+      </p>
+      <!-- Two-state toggle. DEMO is default and always animates so the
+           colour pickers stay useful without a paired device. LIVE
+           mirrors the real knob, only meaningful when actually paired
+           AND the device is on v2.5.39+ (so gm_x/gm_y stream). -->
+      <div class="preview-toggle" role="tablist">
+        <button
+          type="button" role="tab"
+          class:active={previewMode === 'demo'}
+          on:click={() => (previewMode = 'demo')}
+        >DEMO</button>
+        <button
+          type="button" role="tab"
+          class:active={previewMode === 'live'}
+          on:click={() => (previewMode = 'live')}
+        >LIVE</button>
+      </div>
+    </div>
     <DevicePreview
       name={name}
       accent={color}
@@ -260,11 +285,11 @@
       transitionStyle={feel?.transitionStyle?.v ?? 0}
       gearAnimStyle={feel?.gearAnimStyle?.v ?? 0}
       patternChaseMs={Number(feel?.patternChaseMs?.v ?? 220)}
-      liveGearLabel={liveFrame?.label ?? null}
-      liveRoll={liveFrame?.roll ?? null}
-      livePitch={liveFrame?.pitch ?? null}
-      liveGmX={liveFrame?.gm_x ?? null}
-      liveGmY={liveFrame?.gm_y ?? null}
+      liveGearLabel={previewMode === 'live' ? (liveFrame?.label ?? null) : null}
+      liveRoll={previewMode === 'live' ? (liveFrame?.roll ?? null) : null}
+      livePitch={previewMode === 'live' ? (liveFrame?.pitch ?? null) : null}
+      liveGmX={previewMode === 'live' ? (liveFrame?.gm_x ?? null) : null}
+      liveGmY={previewMode === 'live' ? (liveFrame?.gm_y ?? null) : null}
     />
   </div>
 
@@ -459,12 +484,42 @@
     padding: var(--s-4);
   }
   .preview-label {
-    margin: 0 0 var(--s-3);
+    margin: 0;
     color: var(--muted);
     font-family: var(--font-mono);
     font-size: 11px;
     letter-spacing: 1.5px;
-    text-align: center;
+  }
+  /* DEMO/LIVE pill toggle on the preview header. Mono font + pill
+     border to match the rest of the segmented controls on the page. */
+  .preview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+    margin: 0 0 var(--s-3);
+  }
+  .preview-toggle {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .preview-toggle button {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 1.2px;
+    padding: 4px 10px;
+    min-height: 0;
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .preview-toggle button.active {
+    background: var(--accent);
+    color: var(--bg);
   }
 
   /* Animation & feel — three Tune keys hoisted onto this page. */
