@@ -62,6 +62,7 @@ export const CMD_REBOOT         = 0x01;
 export const CMD_ZERO_IMU       = 0x02;
 export const CMD_SET_MODE       = 0x10;   // payload: [mode_id:u8] (0 PRND, 1 SEQ, 2 HPATTERN)
 export const CMD_SET_GEAR_COUNT = 0x11;   // payload: [count:u8] clamped 4..6, HPAT+SEQ only
+export const CMD_GOTO_SLEEP     = 0x20;   // v2.5.34 — force SCR_SLEEP for screensaver preview
 
 // Calibration opcodes — keep in sync with BleAxis.cpp::CalibCmdCb.
 export const CALIB_BEGIN  = 0x01;
@@ -293,6 +294,18 @@ export class BleClient extends DeviceClient {
     await CapBle.write(this.deviceId, AXIS_SVC, COMMAND_CHAR,
       new DataView(new Uint8Array([CMD_SET_GEAR_COUNT, c]).buffer));
     return { ok: true, count: c };
+  }
+
+  /**
+   * Force the device into the screensaver (sleep) screen. Used by the
+   * Screensaver upload flow so a freshly-uploaded image is visible
+   * immediately, rather than waiting for the auto-sleep timeout. Any
+   * touch on the device wakes back to MAIN as usual.
+   */
+  async gotoSleep(): Promise<{ ok: boolean }> {
+    await CapBle.write(this.deviceId, AXIS_SVC, COMMAND_CHAR,
+      new DataView(new Uint8Array([CMD_GOTO_SLEEP]).buffer));
+    return { ok: true };
   }
 
   // Telemetry — same surface as the WS path, so Live.svelte just keeps

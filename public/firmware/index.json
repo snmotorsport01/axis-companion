@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.5.34",
+      "date":       "2026-06-03",
+      "notes":      "Screensaver upload now auto-previews. After the upload finishes the companion app pushes the device into its sleep/screensaver screen via a new BLE command (0x20 GOTO_SLEEP), so you immediately see the image you just uploaded instead of waiting for the 2-minute idle timeout or long-pressing the device. Touch the knob to wake back to MAIN. Also: screensaver upload now propagates a 'commit' error to the app if the file made it to flash but couldn't reload into PSRAM — previously this case silently reported success but left the device with no visible image until reboot.",
+      "url":        "firmware/smart_knob_shifter-v2.5.34.bin",
+      "size_bytes": 1672016
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.5.33",
       "date":       "2026-06-03",
       "notes":      "Touch-lock indicator now silent at rest. MAIN and the gear-pattern screen no longer show a persistent padlock badge — the locked state stays invisible until you actually touch the screen, at which point a 'LOCKED · hold to unlock' toast flashes for 1.5s telling you how to recover. Keeps the gear screens clean while driving but doesn't leave a tester wondering why a tap did nothing.",

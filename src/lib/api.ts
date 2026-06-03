@@ -298,6 +298,16 @@ export class DeviceClient {
   }
 
   /**
+   * Force the device into its screensaver/sleep screen. v2.5.34+. Wi-Fi
+   * path doesn't expose a route for this (the old HTTP API never had
+   * one); BleClient overrides with the 0x20 command opcode. The default
+   * here just resolves so call sites don't need a transport check.
+   */
+  async gotoSleep(): Promise<{ ok: boolean }> {
+    return { ok: false };
+  }
+
+  /**
    * Start a calibration session driven from the PWA. The device's screen
    * switches to the calibrate wizard and the live `state` field on
    * subsequent `calibration()` polls reflects the wizard's progress.

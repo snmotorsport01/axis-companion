@@ -224,6 +224,15 @@
       snap = await store.client.branding();
       ssFile = null; ssBytes = null;
       ssEncodeMsg = null;
+      // v2.5.34: push the device into its sleep/screensaver screen so
+      // the user can immediately see the image they just uploaded.
+      // Without this, screensaver upload felt like a no-op — it would
+      // only become visible after the sleepAfterMs idle timeout
+      // (default 2 minutes) or a manual long-press on MAIN. The
+      // command is fire-and-forget; any error here doesn't undo the
+      // successful upload above, so we swallow it and let the user
+      // see the existing "uploaded" UI state.
+      try { await store.client.gotoSleep(); } catch {}
     } catch (e: any) {
       ssErr = e?.message ?? 'upload failed';
     } finally {
