@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.5.32",
+      "date":       "2026-06-03",
+      "notes":      "Stationary IMU jitter fix. When the knob is sitting still (no chassis motion detected), roll/pitch now snap to zero through a 0.6° dead-band — accel micro-noise that used to leak through as a constant wiggle of the G-meter dot is filtered out completely. Heavy 0.04 EMA still catches slow real drift (mounting settling, temperature) so a genuinely-tilted knob does eventually re-zero on its own. Snappy response while actually moving the knob is unchanged.",
+      "url":        "firmware/smart_knob_shifter-v2.5.32.bin",
+      "size_bytes": 1672240
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.5.31",
       "date":       "2026-06-03",
       "notes":      "OTA reboot delay + auto-reconnect. After a firmware update finishes streaming, the device now waits 5 seconds before rebooting and shows 'OTA OK · rebooting in 5s' on screen — gives you visual confirmation the flash actually landed and time to put the knob down before the LCD goes dark. The companion app shows a matching countdown, then automatically tries to reconnect to the same device for up to 30 seconds. When the device comes back, it pairs itself and drops you onto the Live screen without you tapping anything. Same flow on the local-upload path (UPLOAD .BIN) too.",
