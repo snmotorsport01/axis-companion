@@ -484,9 +484,14 @@ export class BleClient extends DeviceClient {
     //    this preemptive abort, a phone reconnect + retry hits XE_BUSY
     //    on the next START and the user has to reboot the device to
     //    recover. ABORT is a no-op when state is already IDLE on the
-    //    device, so it's safe to send unconditionally. Failures here
-    //    are silently swallowed — the START itself will still surface
-    //    a real error if the link genuinely can't carry traffic.
+    //    device, so it's safe to send unconditionally.
+    //
+    //    v2.5.43: keep swallowing the failure (START still surfaces
+    //    the real link error if traffic is genuinely broken) but log
+    //    it instead of black-holing — when XE_BUSY shows up on START
+    //    we now have a console breadcrumb that says "ABORT also
+    //    failed", which points to the right root cause instead of
+    //    sending us hunting in firmware xfer state.
     try {
       const abortBuf = new Uint8Array([XFER_OP_ABORT]);
       await CapBle.write(this.deviceId, AXIS_SVC, XFER_CTL_CHAR,
@@ -496,7 +501,10 @@ export class BleClient extends DeviceClient {
       // the connection task, so a sub-100 ms delay is overkill but
       // also free.
       await new Promise(r => setTimeout(r, 50));
-    } catch { /* state probe; START will catch the real issue */ }
+    } catch (e) {
+      console.warn('[ble.xfer] defensive ABORT failed (proceeding to START):',
+        e instanceof Error ? e.message : String(e));
+    }
 
     // 1) START — payload [op, type, total_lo..total_hi]
     const startBuf = new Uint8Array(6);

@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.5.43",
+      "date":       "2026-06-04",
+      "notes":      "Closes the last two HIGH-severity findings from the 4-domain audit so the campaign hits 12/14 fixed + 2/14 verified-safe. Firmware: emitXferState_ now snapshots g_xferSubscribed to a local before the setValue + notify sequence — onSubscribe runs on the connection task and could flip the flag between the check and the notify on the pinned-core ESP32-S3, leading to a missed notify for a just-subscribed client. App: the defensive ABORT before every XFER START used to swallow its own error silently; now logs via console.warn so when XE_BUSY surfaces on the START itself there's a breadcrumb pointing at the abort-failure rather than sending us hunting in firmware state. Behaviour is unchanged in the happy path — the START still surfaces the real link error if traffic is genuinely broken. No new features.",
+      "url":        "firmware/smart_knob_shifter-v2.5.43.bin",
+      "size_bytes": 1672000
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.5.42",
       "date":       "2026-06-04",
       "notes":      "Phase-2 audit cleanup — non-conflicting remaining findings. Firmware: WiFi-OTA path now aborts the in-progress write if the stream produced fewer bytes than the manifest promised (a mid-download drop used to call Update.end on a truncated image); Tunables logs a clear WARNING if a stored WiFi SSID or password exceeds the in-memory buffer rather than silently truncating. App: Ota.svelte's reconnect loop now re-checks store.client on every iteration so a mid-loop disconnect breaks cleanly instead of spinning for 30 s on null. iOS: NSBluetoothPeripheralUsageDescription added for iOS 12 fallback; archive.sh fails fast with a readable message if DEVELOPMENT_TEAM env var is missing instead of spending two minutes building before xcodebuild's codesign step.",
