@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.7.0",
+      "date":       "2026-06-05",
+      "notes":      "Music subsystem retired. After nine iterations (v2.6.1 → v2.6.9) trying to get Apple Media Service over a reverse-GATT client running on NimBLE-Arduino, AXIS still wouldn't appear reliably in iPhone Settings → Bluetooth — even with Service Solicitation + Appearance both in the advertisement. The reverse-GATT central-on-an-already-connected-peer flow has limitations in this stack that proper role-switch refactoring couldn't paper over in a release timeframe. v2.7.0 deletes ScreenMusic / BleMedia / AmsClient / MusicArt entirely (~174 KB of code) and removes MUSIC from the main menu. SETUP is also hidden from the menu (the ScreenApp pairing screen remains for the first-boot wizard). BleAxis is now the sole BLE service. Firmware drops from 1.84 MB → 1.66 MB. Music will return if/when a different transport lands (native MFi chip, or an upstream NimBLE fix that exposes proper central-while-peripheral discovery).",
+      "url":        "firmware/smart_knob_shifter-v2.7.0.bin",
+      "size_bytes": 1660864
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.6.9",
       "date":       "2026-06-05",
       "notes":      "iOS-mode advertising now carries BOTH Appearance AND Service Solicitation. v2.6.8 had only solicitation; iOS filtered AXIS out of Settings → Bluetooth → Other Devices because no Appearance hint was present in the packet. v2.6.9 puts Appearance = 0x0180 (Generic Remote Control) back alongside the AMS solicitation — iOS classifies as a normal Bluetooth accessory (pair sheet says 'Pair Bluetooth accessory', not keyboard) AND honours the AMS request. 31-byte ad budget fits exactly: Flags 3 + Appearance 4 + Solicitation 18 + Short name 6 = 31. Full brand name moved to scan response so PWA Web Bluetooth discovery still works.",
