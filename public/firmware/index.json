@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.5.42",
+      "date":       "2026-06-04",
+      "notes":      "Phase-2 audit cleanup — non-conflicting remaining findings. Firmware: WiFi-OTA path now aborts the in-progress write if the stream produced fewer bytes than the manifest promised (a mid-download drop used to call Update.end on a truncated image); Tunables logs a clear WARNING if a stored WiFi SSID or password exceeds the in-memory buffer rather than silently truncating. App: Ota.svelte's reconnect loop now re-checks store.client on every iteration so a mid-loop disconnect breaks cleanly instead of spinning for 30 s on null. iOS: NSBluetoothPeripheralUsageDescription added for iOS 12 fallback; archive.sh fails fast with a readable message if DEVELOPMENT_TEAM env var is missing instead of spending two minutes building before xcodebuild's codesign step.",
+      "url":        "firmware/smart_knob_shifter-v2.5.42.bin",
+      "size_bytes": 1672000
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.5.41",
       "date":       "2026-06-04",
       "notes":      "Diagnostic-audit Phase-1 fixes — 7 latent bugs cleaned up across firmware + companion app. Firmware: snapshot current_ before deref to close a two-core race where a BLE GOTO_SLEEP could re-target screens between the null-check and the call. App: BleFakeSocket now handles a synchronously-throwing startNotifications cleanly (used to sit waiting for a notify that never came); double-tap pair guard in Devices and Connect pages; Live page closes a prior telemetry socket before opening a new one on re-mount; Brand page wifiPoll / feelTimer moved into onDestroy (they were leaking past navigation because Svelte ignores async-onMount return cleanups); Ota page countdown timer now cancellable; calibration subscribe flag only flips after both subscribe + seed-read succeed. iOS Info.plist gets ITSAppUsesNonExemptEncryption=false so TestFlight uploads stop prompting for export-compliance every time.",

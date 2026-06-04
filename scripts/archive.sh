@@ -38,6 +38,16 @@ EXPORT_OPTIONS="scripts/ExportOptions.plist"
 APPLE_ID="${APPLE_ID:-}"                      # set in env or below
 KEYCHAIN_PROFILE="${KEYCHAIN_PROFILE:-axis-altool}"  # `xcrun notarytool store-credentials` profile name
 
+# v2.5.42 — fail fast if signing prerequisites are missing. xcodebuild
+# would otherwise spend a couple of minutes building before failing in
+# the codesign step with a noisy provisioning-profile error.
+if [ -z "${DEVELOPMENT_TEAM:-}" ]; then
+  echo "[!] DEVELOPMENT_TEAM env var not set." >&2
+  echo "    Add 'export DEVELOPMENT_TEAM=ABCDE12345' to your shell rc" >&2
+  echo "    (10-char Team ID from developer.apple.com → Membership)" >&2
+  exit 1
+fi
+
 # ---- Resolve paths ---------------------------------------------------
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

@@ -222,6 +222,11 @@
     const deadline = Date.now() + 30000;
     while (Date.now() < deadline) {
       try {
+        // v2.5.42 — re-check store.client per iteration so a mid-loop
+        // disconnect (user navigated away, swapped phones, store
+        // cleared from elsewhere) breaks the loop cleanly instead of
+        // spinning for 30 s throwing on a null client.
+        if (!store.client) { reconnectErr = 'Lost client mid-reconnect'; break; }
         await store.client.connect(() => { store.connected = false; });
         // Re-read info — the new firmware's BUILD_VERSION will now
         // reflect the just-installed version, which is what makes the

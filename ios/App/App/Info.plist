@@ -31,6 +31,12 @@
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>AXIS Companion connects to your AXIS knob over Bluetooth to send quick controls and receive live telemetry.</string>
+	<!-- iOS 12 fallback. NSBluetoothAlwaysUsageDescription only
+	     applies on iOS 13+; on iOS 12 the system reads the
+	     Peripheral key instead. Same wording for both so user
+	     experience is consistent regardless of OS version. -->
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>AXIS Companion connects to your AXIS knob over Bluetooth to send quick controls and receive live telemetry.</string>
 	<!-- App Store export-compliance declaration. AXIS Companion uses
 	     only OS-provided crypto (BLE Secure Connections, HTTPS) — no
 	     proprietary or non-standard encryption — which qualifies for
