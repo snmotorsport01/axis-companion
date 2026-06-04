@@ -33,7 +33,10 @@ set -euo pipefail
 
 # ---- Knobs you might tweak per-release -------------------------------
 SCHEME="App"
-WORKSPACE_PATH="ios/App/App.xcworkspace"
+# Capacitor 8.x uses Swift Package Manager, not CocoaPods, so there is
+# no separate .xcworkspace — xcodebuild reads the .xcodeproj directly.
+# (Older Capacitor docs still mention App.xcworkspace; ignore those.)
+PROJECT_PATH="ios/App/App.xcodeproj"
 EXPORT_OPTIONS="scripts/ExportOptions.plist"
 APPLE_ID="${APPLE_ID:-}"                      # set in env or below
 KEYCHAIN_PROFILE="${KEYCHAIN_PROFILE:-axis-altool}"  # `xcrun notarytool store-credentials` profile name
@@ -82,7 +85,7 @@ IPA_DIR="$BUILD_DIR/AxisCompanion-$NEW_BUILD"
 # without baking the team ID into project.pbxproj. Set DEVELOPMENT_TEAM
 # once in your shell rc and it carries across every release.
 xcodebuild \
-  -workspace "$WORKSPACE_PATH" \
+  -project "$PROJECT_PATH" \
   -scheme "$SCHEME" \
   -configuration Release \
   -destination "generic/platform=iOS" \
