@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.6.7",
+      "date":       "2026-06-05",
+      "notes":      "AMS protocol fixes cross-checked against Moddable's canonical amsclient.js (github.com/Moddable-OpenSource/moddable/blob/public/modules/network/ble/ams-client/amsclient.js). Three concrete bugs in our AmsClient that would have prevented subscribe even with the v2.6.6 solicitation working: (1) Entity Attribute UUID had typos — was C6B2F38C-23AB-46C8-A6B5-FBE6AE96F9CF, corrected to C6B2F38C-23AB-46D8-A6AB-A3A870BBD5D7 per Apple spec; (2) Entity Update selector format was wrong — was (entity,attr) pairs as one 12-byte buffer, corrected to two separate writes [EntityID, attr, attr, ...] one per entity (Track + Player); (3) subscribe order — was subscribe both then write selector in one go, corrected to sequential subscribe + selector writes after CCCD ack. Verbose [AMS] logging from v2.6.5 retained. After flashing should see [AMS] subscribed and track info populates on iPhone music playback.",
+      "url":        "firmware/smart_knob_shifter-v2.6.7.bin",
+      "size_bytes": 1840064
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.6.6",
       "date":       "2026-06-05",
       "notes":      "AMS Service Solicitation — confirmed working pattern from Adafruit + Moddable. The missing piece in every prior v2.6.x attempt: iOS only exposes its AMS service to peers that explicitly SOLICIT it in their advertisement (AD type 0x15, 'List of 128-bit Service Solicitation UUIDs'). Without solicitation iOS treats us as a generic peer and never publishes AMS even on a bonded link — that's why v2.5/v2.6.0–v2.6.5 always hit 'service not found' after pairing. v2.6.6 iOS-mode advertisement: Flags + AMS solicitation (18 B) + short name 'AXIS' (6 B) = 27 B of the 31-byte budget. Brand name moves to scan response (still discoverable for PWA Web Bluetooth). Android-HID path unchanged. Verbose AmsClient logging from v2.6.5 retained — should now see [AMS] subscribed instead of [AMS] FAIL: service not found.",
