@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.6.4",
+      "date":       "2026-06-05",
+      "notes":      "iOS Bluetooth visibility fix for the iOS_AMS profile. After v2.6.3 split, iOS users picked the iOS profile but AXIS never showed up under iPhone Settings → Bluetooth → Other Devices. Root cause: iOS HID host shortlists scans by Appearance + known service UUIDs in the primary advertisement; v2.6.3 iOS mode stripped both (since HID was off) and was left with just a name in the advert — iOS filtered the device out of the pair list entirely. Fix: set Appearance = 0x0180 (Generic Remote Control) in iOS mode. iOS treats this as a normal Bluetooth accessory (the pair sheet says 'Pair Bluetooth accessory', NOT 'Pair as keyboard'), AXIS lands in Other Devices, user taps + bonds, AmsClient does reverse GATT discovery and subscribes to AMS on iPhone — no HID service exposed. Android HID path unchanged.",
+      "url":        "firmware/smart_knob_shifter-v2.6.4.bin",
+      "size_bytes": 1838256
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.6.3",
       "date":       "2026-06-05",
       "notes":      "Media profile split — iOS gets AMS-only path, Android gets HID-only path, OFF skips both. New Tunable mediaProfile (NVS-backed) decides which BLE stack BleMedia brings up at boot: OFF (default) = no media stack, no 'Pair as keyboard' prompt on iPhone, ~6 KB heap saved; iOS_AMS = no HID service, advertise as generic accessory (AirPods-style pair UX), AmsClient subscribes after bond and drives both metadata (title/artist/position) and commands (play/pause/next/prev/vol/skip) via Apple Media Service; Android_HID = full HID consumer-control profile (existing path), no AMS attempt. ScreenMusic shows a two-card profile picker on first entry (SWIPE_UP = iOS, SWIPE_DOWN = Android, LONGPRESS = back); selection persists to NVS and device reboots to bring up the chosen stack. NimBLE advertising packet shape and HID service presence can't be safely restructured mid-session — reboot is required when switching profiles. v2.6.2's delay(25) between press and release in HID sendKey is retained for Android users.",
