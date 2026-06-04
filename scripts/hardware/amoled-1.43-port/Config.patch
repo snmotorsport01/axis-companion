@@ -1,0 +1,70 @@
+# Config.h diff — apply when switching to AMOLED-1.43
+
+Apply the changes below to `src/Config.h` in the firmware tree. These
+are the only Config changes needed; everything else (touch lock,
+gear-shift thresholds, BLE intervals, screensaver behaviour) stays
+the same so the user feel is identical across hardware variants.
+
+```diff
+--- a/src/Config.h
++++ b/src/Config.h
+@@ display ---------------------------------------------
+-  constexpr int      LCD_W            = 240;
+-  constexpr int      LCD_H            = 240;
++  constexpr int      LCD_W            = 466;
++  constexpr int      LCD_H            = 466;
+   constexpr uint32_t I2C_FREQ_HZ      = 400000;
+   constexpr int      RENDER_FPS       = 60;
+-  // 3D-printed bezel hides ~28px on top and bottom — keep important UI inside.
+-  constexpr int      UI_SAFE_TOP      = 30;
+-  constexpr int      UI_SAFE_BOTTOM   = LCD_H - 30;
++  // AMOLED has no bezel — but a round 466 px display has corners
++  // physically cut. Keep ~12% safe margin so text doesn't clip on
++  // the chord. (30/240 = 12.5% → 58/466 = 12.4%.)
++  constexpr int      UI_SAFE_TOP      = 58;
++  constexpr int      UI_SAFE_BOTTOM   = LCD_H - 58;
+
+@@ brightness -----------------------------------------
+-  constexpr uint8_t  BRIGHT_FULL      = 255;
+-  constexpr uint8_t  BRIGHT_DIM       = 80;
++  // AMOLED 0x51 register is also 0-255 but the perceived brightness
++  // curve differs from LCD backlight. Cap at 200 for non-OLED-burn
++  // safety; user can dial up via Brightness screen if they really
++  // want full punch.
++  constexpr uint8_t  BRIGHT_FULL      = 200;
++  constexpr uint8_t  BRIGHT_DIM       = 60;
+
+@@ build version --------------------------------------
+-  constexpr const char* BUILD_VERSION = "v2.6.0";
++  constexpr const char* BUILD_VERSION = "v2.6.0-amoled";
+```
+
+## What stays the same
+
+- All gear-shift logic (dwell, dead-band, hysteresis, gyro-intent gate)
+- All BLE service UUIDs, characteristic layout, MTU, conn params
+- Calibration thresholds
+- Touch lock timing
+- Screensaver wake-on-motion
+- WiFi STA config
+- OTA partition layout (partitions.csv unchanged — same 16 MB flash)
+
+## What to expect at boot
+
+- Splash renders sharp at 466×466 (vector logo scales fine; bitmap
+  splash assets will look softer — re-export at 466 if you want
+  pixel-perfect)
+- Boot zero IMU sequence: identical (QMI8658 same as before)
+- BLE pair: identical
+- Gear digit centre will look ~1.94× larger in physical size — may
+  feel almost too bold; we'll tune the digit font size in a follow-up
+  patch once you've seen it on hardware
+
+## Arduino IDE settings — required change
+
+```
+PSRAM:  "OPI PSRAM"      (← changed from "QSPI PSRAM")
+```
+
+Everything else (Board, USB Mode, Flash Size 16MB, Partition,
+LoopCore, EventsCore) stays the same as the LCD-1.28 build.
