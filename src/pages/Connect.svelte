@@ -57,6 +57,12 @@
   }
 
   async function connectBle(hit: BleScanHit) {
+    // v2.5.41 — same double-connect guard as Devices.svelte. A rapid
+    // double-tap on the same row used to spawn two concurrent
+    // CapBle.connect calls; the second one's onDisconnect hook
+    // overwrites the first's, breaking store.connected tracking when
+    // either link actually drops.
+    if (connecting !== null) return;
     connecting = hit.id;
     bleErr     = null;
     try {

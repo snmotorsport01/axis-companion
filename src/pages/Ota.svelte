@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { store } from '../lib/store.svelte';
   import {
     fetchReleaseManifest, resolveReleaseUrl,
@@ -181,6 +181,13 @@
   //      (a stale connect handle without a working ATT channel would
   //      otherwise leave the UI in a half-connected state). Give up
   //      after 30 s and tell the user to pair manually.
+  // v2.5.41 — track the in-flight countdown timer so onDestroy can
+  // cancel it. The recursive setTimeout chain previously had no
+  // handle; if the user backed out of OTA mid-countdown, ticks kept
+  // firing on a destroyed component (state mutations were dropped but
+  // attemptReconnect() at t=0 would still try to talk to a torn-down
+  // client).
+  let tickTimerId: ReturnType<typeof setTimeout> | undefined;
   function startPostFlashFlow() {
     reconnectErr = null;
     rebootCountdown = 5;
@@ -188,13 +195,20 @@
       rebootCountdown -= 1;
       if (rebootCountdown <= 0) {
         rebootCountdown = 0;
+        tickTimerId = undefined;
         attemptReconnect();
         return;
       }
-      setTimeout(tick, 1000);
+      tickTimerId = setTimeout(tick, 1000);
     };
-    setTimeout(tick, 1000);
+    tickTimerId = setTimeout(tick, 1000);
   }
+  onDestroy(() => {
+    if (tickTimerId !== undefined) {
+      clearTimeout(tickTimerId);
+      tickTimerId = undefined;
+    }
+  });
 
   async function attemptReconnect() {
     if (!store.client) return;

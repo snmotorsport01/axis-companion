@@ -31,6 +31,14 @@
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>AXIS Companion connects to your AXIS knob over Bluetooth to send quick controls and receive live telemetry.</string>
+	<!-- App Store export-compliance declaration. AXIS Companion uses
+	     only OS-provided crypto (BLE Secure Connections, HTTPS) — no
+	     proprietary or non-standard encryption — which qualifies for
+	     the standard exemption. Setting this key removes the manual
+	     "Did you use any encryption?" prompt on every TestFlight /
+	     App Store upload. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>AXIS Companion connects to your AXIS knob over its Wi-Fi network to update firmware, customize settings, and stream telemetry.</string>
 	<key>UILaunchStoryboardName</key>

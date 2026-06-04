@@ -119,11 +119,23 @@ class BleFakeSocket {
     };
     // Fire-and-forget subscribe — emits onopen once the GATT subscribe
     // round-trip is confirmed, onerror if the plugin rejects.
-    CapBle.startNotifications(deviceId, AXIS_SVC, TELEM_CHAR, (v: DataView) => {
-      try { onFrame(viewToJson<TelemetryFrame>(v)); } catch { /* malformed frame, skip */ }
-    })
-    .then(() => { setTimeout(() => this.onopen?.(new Event('open')), 0); })
-    .catch(()  => { setTimeout(() => this.onerror?.(new Event('error')), 0); });
+    //
+    // v2.5.41: wrap the startNotifications call itself in try/catch.
+    // The native Capacitor plugin can throw SYNCHRONOUSLY (not just
+    // reject) when the BLE link is already dead — in which case the
+    // .catch() below never runs and the socket sits in limbo waiting
+    // for a notify that will never arrive. Surface the error
+    // immediately via onerror (deferred to next tick so the caller has
+    // time to wire up the handler).
+    try {
+      CapBle.startNotifications(deviceId, AXIS_SVC, TELEM_CHAR, (v: DataView) => {
+        try { onFrame(viewToJson<TelemetryFrame>(v)); } catch { /* malformed frame, skip */ }
+      })
+      .then(() => { setTimeout(() => this.onopen?.(new Event('open')), 0); })
+      .catch(()  => { setTimeout(() => this.onerror?.(new Event('error')), 0); });
+    } catch {
+      setTimeout(() => this.onerror?.(new Event('error')), 0);
+    }
   }
 
   close() {
@@ -367,19 +379,33 @@ export class BleClient extends DeviceClient {
 
   private async ensureCalibSubscribed_(): Promise<void> {
     if (this.calibCache_.subscribed) return;
-    this.calibCache_.subscribed = true;
+    // v2.5.41 — flip the flag only after BOTH startNotifications and
+    // the seed read have succeeded. Previously the flag flipped first,
+    // and a seed-read failure left us with an active subscription on
+    // the radio but subscribed=false in cache — the next caller would
+    // call startNotifications a SECOND time on the same characteristic,
+    // which the Capacitor plugin reports as success but the underlying
+    // GATT layer silently drops the duplicate descriptor write.
+    let notificationsStarted = false;
     try {
       await CapBle.startNotifications(this.deviceId, AXIS_SVC, CALIB_STATE_CHAR,
         (v: DataView) => {
           try { this.calibCache_.snap = this.inflateCalib_(viewToJson<any>(v)); } catch {}
         });
+      notificationsStarted = true;
       // Seed the cache with a one-shot read so the first poll has data
       // before the first notify lands (which can lag the subscribe by
       // up to one connection interval).
       const seed = await CapBle.read(this.deviceId, AXIS_SVC, CALIB_STATE_CHAR);
       try { this.calibCache_.snap = this.inflateCalib_(viewToJson<any>(seed)); } catch {}
+      this.calibCache_.subscribed = true;
     } catch (e) {
-      this.calibCache_.subscribed = false;   // allow retry next call
+      // Roll back a partial subscribe so the retry path starts clean.
+      if (notificationsStarted) {
+        try {
+          await CapBle.stopNotifications(this.deviceId, AXIS_SVC, CALIB_STATE_CHAR);
+        } catch { /* tolerate */ }
+      }
       throw e;
     }
   }

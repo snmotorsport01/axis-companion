@@ -51,6 +51,13 @@
   }
 
   async function pickDevice(hit: BleScanHit) {
+    // v2.5.41 — guard against a second tap landing while the first
+    // connect is still in-flight. The Capacitor BLE plugin can hold
+    // two simultaneous connect handles to the same deviceId, which on
+    // iOS leads to undefined behaviour (one connect succeeds, the
+    // other returns success too but the GATT service handles point at
+    // a stale link).
+    if (connecting !== null) return;
     connecting = hit.id;
     scanErr = null;
     try {

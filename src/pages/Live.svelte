@@ -17,6 +17,15 @@
 
   onMount(() => {
     if (!store.client) return;
+    // v2.5.41 — Svelte page navigations can re-mount this component
+    // before the previous instance's onDestroy fires (back-button
+    // gestures on iOS, route restoration, etc.). If a prior sock
+    // reference is still alive, close it before opening a new one;
+    // otherwise the firmware ends up with two notify subscriptions
+    // on the same char and either rejects the second or doubles up
+    // its emit traffic.
+    try { sock?.close(); } catch { /* tolerate close-while-pending */ }
+    sock = null;
     sock = store.client.openTelemetry(
       f => {
         if (paused) return;
@@ -31,7 +40,10 @@
     sock.onclose = () => { status = 'closed'; };
   });
 
-  onDestroy(() => { sock?.close(); });
+  onDestroy(() => {
+    try { sock?.close(); } catch {}
+    sock = null;
+  });
 
   function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
   function dotXY(f: TelemetryFrame): { x: number; y: number } {

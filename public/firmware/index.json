@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.5.41",
+      "date":       "2026-06-04",
+      "notes":      "Diagnostic-audit Phase-1 fixes — 7 latent bugs cleaned up across firmware + companion app. Firmware: snapshot current_ before deref to close a two-core race where a BLE GOTO_SLEEP could re-target screens between the null-check and the call. App: BleFakeSocket now handles a synchronously-throwing startNotifications cleanly (used to sit waiting for a notify that never came); double-tap pair guard in Devices and Connect pages; Live page closes a prior telemetry socket before opening a new one on re-mount; Brand page wifiPoll / feelTimer moved into onDestroy (they were leaking past navigation because Svelte ignores async-onMount return cleanups); Ota page countdown timer now cancellable; calibration subscribe flag only flips after both subscribe + seed-read succeed. iOS Info.plist gets ITSAppUsesNonExemptEncryption=false so TestFlight uploads stop prompting for export-compliance every time.",
+      "url":        "firmware/smart_knob_shifter-v2.5.41.bin",
+      "size_bytes": 1671760
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.5.40",
       "date":       "2026-06-04",
       "notes":      "Critical PSRAM mode fix. Previous releases were built with PSRAM=OPI (Octal) for the ESP32-S3R8 module, but the actual hardware in the field is ESP32-S3R2 (QSPI 2MB) — those bins booted with PSRAM init silently failing, so every screensaver decode-buffer alloc returned null and the device only ever showed the AXIS fallback logo (recently surfaced as 'decode buffer alloc failed' after the v2.5.37 diagnostic patch). v2.5.40 rebuilds with PSRAM=enabled (QSPI). After install + reboot the boot log should show 'PSRAM init: SPI3 CS1' and screensaver uploads should land for real. A merged.bin variant is bundled alongside for one-shot USB recovery if OTA is stuck (esptool write_flash 0x0 merged.bin).",

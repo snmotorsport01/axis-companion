@@ -28,6 +28,13 @@
   onDestroy(() => {
     try { liveSock?.close(); } catch {}
     liveSock = null;
+    // v2.5.41 — wifiPoll and feelTimer were leaking. The async onMount
+    // below tried to return a cleanup function for wifiPoll, but
+    // Svelte's onMount doesn't await async returns — the cleanup was
+    // a Promise<() => void> the runtime ignored. Move both to here
+    // so navigation away actually stops the timers.
+    if (wifiPoll) { window.clearInterval(wifiPoll); wifiPoll = undefined; }
+    if (feelTimer) { window.clearTimeout(feelTimer); feelTimer = undefined; }
   });
 
   // ============================================================
@@ -127,9 +134,11 @@
     } catch {/* tunables optional on this page */}
     await reloadWifi();
     // Poll WiFi state while on this page so the user can see the device
-    // associate after they save creds.
+    // associate after they save creds. Cleanup happens in onDestroy
+    // above — the return-from-async-onMount cleanup path Svelte uses
+    // for sync callbacks doesn't apply here (Svelte ignores the
+    // Promise<() => void> shape).
     wifiPoll = window.setInterval(reloadWifi, 3000);
-    return () => { if (wifiPoll) window.clearInterval(wifiPoll); };
   });
 
   async function reloadWifi() {
