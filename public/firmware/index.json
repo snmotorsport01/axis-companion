@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.6.9",
+      "date":       "2026-06-05",
+      "notes":      "iOS-mode advertising now carries BOTH Appearance AND Service Solicitation. v2.6.8 had only solicitation; iOS filtered AXIS out of Settings → Bluetooth → Other Devices because no Appearance hint was present in the packet. v2.6.9 puts Appearance = 0x0180 (Generic Remote Control) back alongside the AMS solicitation — iOS classifies as a normal Bluetooth accessory (pair sheet says 'Pair Bluetooth accessory', not keyboard) AND honours the AMS request. 31-byte ad budget fits exactly: Flags 3 + Appearance 4 + Solicitation 18 + Short name 6 = 31. Full brand name moved to scan response so PWA Web Bluetooth discovery still works.",
+      "url":        "firmware/smart_knob_shifter-v2.6.9.bin",
+      "size_bytes": 1839088
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.6.8",
       "date":       "2026-06-05",
       "notes":      "ScreenMusic minimalist redesign — Apple-Watch-Now-Playing style. Removed position bar, mm:ss labels, side prev/next/vol glyphs, artist text row, and bottom-left MUSIC page signature. The screen is now four things: a 3 px status dot at the very top (PAIRED/AMS/WAITING), a 140 px album-art disc (or vinyl-spin fallback) centred at y=90, the track title as a single line under the art (marquee on overflow), and a single big play/pause glyph centred at y=210. Gesture map unchanged — swipe up/down still does next/prev, swipe left/right still does volume ±, long-press still backs to menu — the hint icons are just no longer drawn. Apple Watch's Now Playing works the same way; muscle memory carries the gestures. The album art now dominates the visual identity as intended.",
