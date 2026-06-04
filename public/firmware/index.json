@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.6.8",
+      "date":       "2026-06-05",
+      "notes":      "ScreenMusic minimalist redesign — Apple-Watch-Now-Playing style. Removed position bar, mm:ss labels, side prev/next/vol glyphs, artist text row, and bottom-left MUSIC page signature. The screen is now four things: a 3 px status dot at the very top (PAIRED/AMS/WAITING), a 140 px album-art disc (or vinyl-spin fallback) centred at y=90, the track title as a single line under the art (marquee on overflow), and a single big play/pause glyph centred at y=210. Gesture map unchanged — swipe up/down still does next/prev, swipe left/right still does volume ±, long-press still backs to menu — the hint icons are just no longer drawn. Apple Watch's Now Playing works the same way; muscle memory carries the gestures. The album art now dominates the visual identity as intended.",
+      "url":        "firmware/smart_knob_shifter-v2.6.8.bin",
+      "size_bytes": 1839072
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.6.7",
       "date":       "2026-06-05",
       "notes":      "AMS protocol fixes cross-checked against Moddable's canonical amsclient.js (github.com/Moddable-OpenSource/moddable/blob/public/modules/network/ble/ams-client/amsclient.js). Three concrete bugs in our AmsClient that would have prevented subscribe even with the v2.6.6 solicitation working: (1) Entity Attribute UUID had typos — was C6B2F38C-23AB-46C8-A6B5-FBE6AE96F9CF, corrected to C6B2F38C-23AB-46D8-A6AB-A3A870BBD5D7 per Apple spec; (2) Entity Update selector format was wrong — was (entity,attr) pairs as one 12-byte buffer, corrected to two separate writes [EntityID, attr, attr, ...] one per entity (Track + Player); (3) subscribe order — was subscribe both then write selector in one go, corrected to sequential subscribe + selector writes after CCCD ack. Verbose [AMS] logging from v2.6.5 retained. After flashing should see [AMS] subscribed and track info populates on iPhone music playback.",
