@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.6.2",
+      "date":       "2026-06-04",
+      "notes":      "Music HID timing fix — 'tap once works, tap 2+ silently fails' bug. v2.5.1's BleMedia rewrite fired press + release notifies in the same call stack with zero delay, on the theory that ESP32-BLE-Keyboard does the same. In practice iOS HID host needs at least one BLE connection event (~15–20 ms at Apple's 15 ms conn interval) between key-down and key-up. With no delay both notifies hit the NimBLE outbound queue in the same connection event; iOS coalesces them (losing the down state) or drops the release. The HID state machine stays 'pressed' and the next identical press report is ignored as duplicate. v2.6.2 inserts an explicit 25 ms delay between the press and release notify in BleMedia::sendKey_ — one+ Apple conn interval guarantee. delay() blocks the main loop for 25 ms which is one dropped render frame at 60 FPS, no perceptible UI freeze. All five gestures (play/pause, next, prev, vol+, vol−) repaired by this one change.",
+      "url":        "firmware/smart_knob_shifter-v2.6.2.bin",
+      "size_bytes": 1837552
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.6.1",
       "date":       "2026-06-04",
       "notes":      "Music HID discoverability fix. v2.6.0 added BleMedia (HID consumer-control) on top of the always-on BleAxis (GATT) but iOS Settings → Bluetooth never saw AXIS in its HID list. Root cause: NimBLE's getAdvertising() returns a singleton; in v2.6.0 we just called addServiceUUID(HID) on the running advertising object, which left the 31-byte advertisement packet unchanged — HID UUID never landed in the air, only the AXIS custom 128-bit UUID did. iOS HID host filters scans by HID appearance + 0x1812 service UUID in the PRIMARY advertisement and ignored AXIS. v2.6.1 takes over advertising explicitly: PRIMARY ad now carries Flags + Appearance(HID_KEYBOARD) + Name + Complete-16-bit-services(HID 0x1812). The AXIS custom 128-bit UUID moves to the SCAN RESPONSE so Web Bluetooth (PWA) can still find it. Also moved bleMedia.enable() from lazy ScreenMusic.onEnter to boot in App::begin so HID is in the initial advertisement from the first scan iOS sees — pairing as keyboard works without entering the Music screen first. Recovery if anything goes sideways: bundled merged.bin for USB flash.",
