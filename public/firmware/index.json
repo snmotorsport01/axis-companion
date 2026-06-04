@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.6.5",
+      "date":       "2026-06-05",
+      "notes":      "AMS bring-up — move trigger to onAuthenticationComplete + verbose log. Following the Moddable AMS-client architectural pattern (moddable.com/blog/ams-client/) which says 'switch from server to client AFTER pairing completes', not after link-layer connect. v2.6.x triggered AmsClient from onConnect + a 1.5 s timer; v2.6.5 triggers it from onAuthenticationComplete only when bond is confirmed. Also adds verbose per-step logging in AmsClient::advanceStage_ — every NimBLE call (getClientByPeerAddress, createClient, isConnected, connect, secureConnection, getService) now logs its return value with a [AMS] tag. Test pair, watch serial log, and the exact step that fails is now visible. Behaviour change is small (timing of discovery start) — main value is diagnostic.",
+      "url":        "firmware/smart_knob_shifter-v2.6.5.bin",
+      "size_bytes": 1839584
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.6.4",
       "date":       "2026-06-05",
       "notes":      "iOS Bluetooth visibility fix for the iOS_AMS profile. After v2.6.3 split, iOS users picked the iOS profile but AXIS never showed up under iPhone Settings → Bluetooth → Other Devices. Root cause: iOS HID host shortlists scans by Appearance + known service UUIDs in the primary advertisement; v2.6.3 iOS mode stripped both (since HID was off) and was left with just a name in the advert — iOS filtered the device out of the pair list entirely. Fix: set Appearance = 0x0180 (Generic Remote Control) in iOS mode. iOS treats this as a normal Bluetooth accessory (the pair sheet says 'Pair Bluetooth accessory', NOT 'Pair as keyboard'), AXIS lands in Other Devices, user taps + bonds, AmsClient does reverse GATT discovery and subscribes to AMS on iPhone — no HID service exposed. Android HID path unchanged.",
