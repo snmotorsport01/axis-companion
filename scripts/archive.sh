@@ -55,6 +55,25 @@ fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# Defensive: Xcode (15+) sometimes auto-renames the .xcodeproj folder to
+# match CFBundleDisplayName if the user accepts a "Modernize Project"
+# prompt or hits F2 on the project node. Every external tool (Capacitor
+# sync, this script, CI) expects the project to stay at App.xcodeproj.
+# If we see the renamed copy, abort with recovery instructions rather
+# than building against a half-broken layout.
+if [ -d "ios/App/SN AXIS.xcodeproj" ] || [ ! -f "ios/App/App.xcodeproj/project.pbxproj" ]; then
+  echo "[!] ios/App/App.xcodeproj is broken or has been renamed." >&2
+  echo "    Probable cause: Xcode prompted to rename project — answer was 'Yes'." >&2
+  echo "    To recover:" >&2
+  echo "      1. Quit Xcode entirely (Cmd+Q)" >&2
+  echo "      2. cd $(pwd)" >&2
+  echo "      3. git restore --source=HEAD -- ios/App/App.xcodeproj/" >&2
+  echo "      4. rm -rf 'ios/App/SN AXIS.xcodeproj'" >&2
+  echo "      5. Reopen the project: open ios/App/App.xcodeproj" >&2
+  echo "      6. If Xcode asks to rename — click 'Don't Rename'" >&2
+  exit 1
+fi
+
 INFO_PLIST="ios/App/App/Info.plist"
 BUILD_DIR="build"
 mkdir -p "$BUILD_DIR"
