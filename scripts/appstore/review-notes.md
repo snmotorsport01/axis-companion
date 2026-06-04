@@ -17,7 +17,7 @@ Information** → **Notes**. (Field accepts up to 4,000 chars; this is
 ```
 HARDWARE-FREE REVIEW PATH
 
-AXIS Companion is the controller app for the AXIS Smart Knob Shifter,
+SN AXIS is the controller app for the AXIS Smart Knob Shifter,
 a Bluetooth Low Energy accessory built by SN Motorsports. Because the
 reviewer is unlikely to have access to the physical device, we have
 built a complete DEMO MODE that exercises every screen and gesture
@@ -25,7 +25,7 @@ without any hardware.
 
 TO EVALUATE WITHOUT HARDWARE
 
-1. Launch AXIS Companion.
+1. Launch SN AXIS.
 2. On the first screen ("Devices"), tap the "DEMO MODE" button at
    the bottom. (No Bluetooth permission is required for this path.)
 3. The bottom navigation bar appears. Every tab is now interactive

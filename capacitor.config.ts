@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.snmotorsports.axis',
-  appName: 'AXIS Companion',
+  appName: 'SN AXIS',
   // Capacitor serves the webview from capacitor://localhost/, so the bundle
   // must be built with base '/' (NOT '/axis-companion/' which the github.io
   // build uses). The existing `npm run build:device` target already builds

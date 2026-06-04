@@ -21,8 +21,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icons/*.png'],
       manifest: {
-        name: 'AXIS Companion',
-        short_name: 'AXIS',
+        name: 'SN AXIS',
+        short_name: 'SN AXIS',
         description: 'Tune and update your AXIS smart-knob shifter.',
         theme_color: '#0a0a0a',
         background_color: '#0a0a0a',

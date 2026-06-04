@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <!--
-    ExportOptions.plist for AXIS Companion
+    ExportOptions.plist for SN AXIS
     ======================================
     Consumed by `xcodebuild -exportArchive` to control how the
     .xcarchive becomes an .ipa. Tuned for the App Store Connect /

@@ -1,7 +1,7 @@
-# App Store submission pack — AXIS Companion
+# App Store submission pack — SN AXIS
 
 Everything you need to copy-paste into App Store Connect (ASC) to ship
-AXIS Companion to the App Store. Files in this folder:
+SN AXIS to the App Store. Files in this folder:
 
 - `metadata.md` — Text fields you paste into the ASC app listing (title,
   description, keywords, etc.).

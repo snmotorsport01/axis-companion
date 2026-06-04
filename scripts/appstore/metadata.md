@@ -9,7 +9,7 @@ heading so you know how much headroom is left if you want to edit.
 ## App Name  (30 chars max)
 
 ```
-AXIS Companion
+SN AXIS
 ```
 
 ASC also has a "Subtitle" field (30 chars). One short value:
@@ -32,7 +32,7 @@ customise the screensaver, and control music — all from your phone.
 ## Description  (4000 chars max)
 
 ```
-AXIS Companion is the official remote for the AXIS Smart Knob Shifter
+SN AXIS is the official remote for the AXIS Smart Knob Shifter
 — a precision, IMU-driven gear shifter built by SN Motorsports for
 simulators, custom builds, and tactile-control enthusiasts.
 
@@ -110,7 +110,7 @@ shifter,knob,sim racing,bluetooth,gear,smart shifter,custom,axis,esp32,sim,h-pat
 This is set when you upload a new build. For v1.0 first submission:
 
 ```
-First release of AXIS Companion. Pair, tune, calibrate, customise, and
+First release of SN AXIS. Pair, tune, calibrate, customise, and
 OTA-update your AXIS Smart Knob Shifter. Includes DEMO MODE for trying
 out the experience without hardware.
 ```

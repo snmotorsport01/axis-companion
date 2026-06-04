@@ -1,7 +1,7 @@
 # App Privacy "nutrition label" — answers
 
 ASC → App Privacy → "Get Started". A long form. Below is every question
-and the correct answer for AXIS Companion.
+and the correct answer for SN AXIS.
 
 The short version: **"Data Not Collected"** for every category. That
 is the strongest possible privacy statement on the store, and the

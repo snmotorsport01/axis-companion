@@ -42,7 +42,7 @@ Browser path:
 Fields to set on this first screen:
 
 - **Platforms**: iOS (only)
-- **Name**: `AXIS Companion`
+- **Name**: `SN AXIS`
 - **Primary Language**: English (U.S.)
 - **Bundle ID**: select `com.snmotorsports.axis`
   (If it's not in the dropdown, you need to register it first at
