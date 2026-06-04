@@ -7,9 +7,9 @@ Strikethrough as you complete.
 
 ## 0. Prerequisites (one-time)
 
-- [ ] Apple Developer Program enrolled. Team ID is **BPA82FXJ4L**.
+- [ ] Apple Developer Program enrolled. Team ID is **U9UCS2VKK2**.
       (Confirmed already wired into `ios/App/App.xcodeproj/project.pbxproj`.)
-- [ ] `DEVELOPMENT_TEAM=BPA82FXJ4L` exported in your shell rc
+- [ ] `DEVELOPMENT_TEAM=U9UCS2VKK2` exported in your shell rc
       (`~/.zshrc` or `~/.bashrc`). `scripts/archive.sh` will fail
       fast without it.
 - [ ] Xcode 15+ installed. `xcodebuild -version` should print
