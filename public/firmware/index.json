@@ -3,6 +3,14 @@
   "releases": [
     {
       "version":    "AXIS V1.0.0",
+      "build":      "v2.6.6",
+      "date":       "2026-06-05",
+      "notes":      "AMS Service Solicitation — confirmed working pattern from Adafruit + Moddable. The missing piece in every prior v2.6.x attempt: iOS only exposes its AMS service to peers that explicitly SOLICIT it in their advertisement (AD type 0x15, 'List of 128-bit Service Solicitation UUIDs'). Without solicitation iOS treats us as a generic peer and never publishes AMS even on a bonded link — that's why v2.5/v2.6.0–v2.6.5 always hit 'service not found' after pairing. v2.6.6 iOS-mode advertisement: Flags + AMS solicitation (18 B) + short name 'AXIS' (6 B) = 27 B of the 31-byte budget. Brand name moves to scan response (still discoverable for PWA Web Bluetooth). Android-HID path unchanged. Verbose AmsClient logging from v2.6.5 retained — should now see [AMS] subscribed instead of [AMS] FAIL: service not found.",
+      "url":        "firmware/smart_knob_shifter-v2.6.6.bin",
+      "size_bytes": 1839744
+    },
+    {
+      "version":    "AXIS V1.0.0",
       "build":      "v2.6.5",
       "date":       "2026-06-05",
       "notes":      "AMS bring-up — move trigger to onAuthenticationComplete + verbose log. Following the Moddable AMS-client architectural pattern (moddable.com/blog/ams-client/) which says 'switch from server to client AFTER pairing completes', not after link-layer connect. v2.6.x triggered AmsClient from onConnect + a 1.5 s timer; v2.6.5 triggers it from onAuthenticationComplete only when bond is confirmed. Also adds verbose per-step logging in AmsClient::advanceStage_ — every NimBLE call (getClientByPeerAddress, createClient, isConnected, connect, secureConnection, getService) now logs its return value with a [AMS] tag. Test pair, watch serial log, and the exact step that fails is now visible. Behaviour change is small (timing of discovery start) — main value is diagnostic.",
