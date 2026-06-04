@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:device": "VITE_TARGET=device vite build",
+    "build:device": "VITE_TARGET=device vite build && rm -rf dist-device/firmware",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "embed": "node tools/embed-assets.mjs"
