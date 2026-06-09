@@ -1,19 +1,19 @@
 <script lang="ts">
   // =====================================================================
-  //  Connect — BLE-only pairing screen (v0.5).
+  //  Connect — BLE-only pairing screen.
+  //
+  //  v2.8.4-PWA: "How to pair" instructions removed — firmware v2.8.4
+  //  fixed the disconnect → silent radio bug, so AXIS always advertises
+  //  out of the box. No more 5-tap → APP → ADVERTISING choreography for
+  //  the user to memorise. Button label simplified to "Connect to AXIS".
   //
   //  Wi-Fi entry was removed in v0.5: BLE Phase 2/3 (v2.5.21 firmware)
   //  added chunked-transfer support for screensaver + OTA uploads, so
   //  BLE now covers every feature in the app. The Connect screen
   //  surfaces:
-  //   • PAIR VIA BLUETOOTH — primary path
-  //   • DEMO MODE          — synthesised data for iOS simulator /
-  //                          App Store screenshots / UI development
-  //  No more "Use Wi-Fi instead" fallback. If the user really needs
-  //  Wi-Fi (eg. emergency recovery), the device's SETUP MODE on the
-  //  LCD still surfaces the BLE pairing prompt, and any browser can
-  //  still hit 192.168.4.1 directly from Safari for an HTML status
-  //  page if the firmware decides to expose one in the future.
+  //   • Connect to AXIS — primary path
+  //   • DEMO MODE       — synthesised data for iOS simulator /
+  //                       App Store screenshots / UI development
   // =====================================================================
   import { onMount } from 'svelte';
   import { MockClient, SCENES, type DemoScene } from '../lib/mockClient';
@@ -99,28 +99,25 @@
   </p>
 </header>
 
-<div class="card">
-  <h3>How to pair</h3>
-  <ol>
-    <li>On the device: <strong>5-tap</strong> the main screen → <strong>APP</strong>.</li>
-    <li>Wait for "<strong>ADVERTISING</strong>" to appear on the device LCD.</li>
-    <li>Tap <strong>PAIR VIA BLUETOOTH</strong> below.</li>
-  </ol>
-</div>
-
 <!-- ============================================================
-     BLE pair — only path to a real device now (Phase 2/3 made BLE
-     the carrier for screensaver + OTA too). Only renders when the
-     Capacitor BLE plugin reports the radio is available, so the
-     iOS simulator and any GitHub Pages browser view get DEMO MODE
-     instead of a dead button.
+     BLE connect — only path to a real device now (Phase 2/3 made
+     BLE the carrier for screensaver + OTA too). Only renders when
+     the Capacitor BLE plugin reports the radio is available, so
+     the iOS simulator and any GitHub Pages browser view get DEMO
+     MODE instead of a dead button.
+
+     v2.8.4-PWA — old "How to pair" instructions removed. The
+     v2.8.4 firmware always advertises (no more 5-tap → APP →
+     ADVERTISING dance), so the device is discoverable straight
+     from the box. Button label also simplified from "PAIR VIA
+     BLUETOOTH" → "Connect to AXIS".
      ============================================================ -->
 {#if bleAvailable}
   <div class="card">
-    <h3>Pair via Bluetooth</h3>
+    <h3>Connect to AXIS</h3>
     <button class="primary connect" on:click={scanBle}
             disabled={scanning || !!connecting}>
-      {scanning ? 'SCANNING…' : 'PAIR VIA BLUETOOTH'}
+      {scanning ? 'SCANNING…' : 'Connect to AXIS'}
     </button>
 
     {#if bleErr}<p class="err">{bleErr}</p>{/if}
