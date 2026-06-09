@@ -3,6 +3,14 @@
   "releases": [
     {
       "version": "AXIS V1.0.0",
+      "build": "v2.8.12",
+      "date": "2026-06-09",
+      "notes": "LAST-RESORT accel recovery + chip identity check. After v2.8.11 + full power-cycle the field accel readings stayed frozen (AY=+4.00 saturated, AX=+3.26, AZ=-0.89, no tilt response). Gyro recovered perfectly (3 axes different, ~3.5 dps stationary noise) so the chip's I2C + digital interface are healthy \u2014 just the accel module sticks. Strong hardware-fault smell but three more firmware tricks before declaring it: (1) WHO_AM_I + Revision read so the user can confirm we're really on a QMI8658 (response should be 0x05). (2) Issue CTRL9 = ACCEL_HOST_DELTA_OFFSET (0x09) + GYRO_HOST_DELTA_OFFSET (0x0A) via raw I2C with the proper STATUS_INT bit-7 handshake. The QMI8658 has a per-axis host-supplied accel offset feature where offsets ADD to every sample and are sticky across soft-reset and power-cycle per datasheet \u2014 only this command's handshake clears them. (3) DIRECT full-byte writes to CTRL2 = 0x14 + CTRL3 = 0x54, bypassing SensorLib's masked RMW entirely so any stray bit the lib preserved gets stomped clean. ScreenMain strip extended to 4 lines: 'WHO=05 REV=XX DO=ok' (chip identity + delta-offset clear ACK), then the existing sc/C2/C3 + ax/ay/az + gx/gy/gz lines. If THIS doesn't bring accel back, the accel MEMS die is hardware-failed and the only path is board replacement or 1.43 migration.",
+      "url": "firmware/smart_knob_shifter-v2.8.12.bin",
+      "size_bytes": 1707552
+    },
+    {
+      "version": "AXIS V1.0.0",
       "build": "v2.8.11",
       "date": "2026-06-09",
       "notes": "REVERT my own bug \u2014 v2.8.8 'CAL_x zero' loop was based on a wrong QMI8658 register map assumption. Field after v2.8.10: gyro fully fixed (3 axes different, magnitude ~3.5 dps stationary, ADDR_AI restore worked) but accel output STUCK at non-live values (AX=+3.26 AY=+4.00 saturated AZ=-0.89, no response to tilt). Diagnosis: v2.8.8 wrote 0x00 to registers 0x0A-0x0F under the assumption those were accel offset-compensation bytes (the convention on MPU6050/BMI160). On the QMI8658 those addresses are completely different \u2014 0x0A = CTRL9 (Host Commands), 0x0B-0x10 = CAL1/CAL2/CAL3 = WOM threshold + Tap detection + Step counter (Motion Detection control, NOT accel calibration). Writing 0x00 to the tap-detection bytes silently switched the chip's accel output path to a tap-result mode, freezing AY at the saturation rail. v2.8.11 deletes the entire loop. The actual fixes stay: v2.8.5 CTRL2.aST clear (accel self-test), v2.8.9 CTRL3.gST clear (gyro self-test), v2.8.10 CTRL1.ADDR_AI restore (auto-increment). Accel should respond to tilt again after this build.",
