@@ -2,422 +2,430 @@
   "_schema": "axis-firmware-manifest/v2",
   "releases": [
     {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.8.6",
-      "date":       "2026-06-09",
-      "notes":      "IMU FIX ROUND 2 — v2.8.5 didn't actually fix the gear-frozen-at-N bug (confirmed in field after OTA: PWA Live still showed Accel = 5.1 g while stationary). The CTRL2 aST self-test bit wasn't the stuck register after all. v2.8.6 widens the hammer: full QMI8658 soft-reset via REG_RESET (0x60 ← 0xB0) BEFORE configAccelerometer touches the chip, with a 50 ms settle delay. This puts EVERY control register back to power-on defaults — no chance of inherited bad state from a previous flash, brownout, or warm boot leaking through. Plus the v2.8.5 CTRL2 aST clear stays in as cheap insurance and as a confirmation diagnostic. To verify the fix landed without Serial Monitor (which the field user can't reliably open due to USB-CDC re-enumeration), ScreenMain now renders a top-strip IMU debug line: 'v2.8.6 sc=0.000122 C2=14 |a|=1.00' — scale should equal 4/32768 = 0.000122 (ACC_RANGE_4G applied), CTRL2 should equal 0x14 (aFS=001 aODR=4 aST=0), magnitude should be ~1.00 g stationary. Strip turns green when healthy, amber when |a| outside ±0.3 g of 1.0. User can snap a photo of MAIN screen after boot and ship the actual numbers if anything still looks off.",
-      "url":        "firmware/smart_knob_shifter-v2.8.6.bin",
-      "size_bytes": 1705904
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.8.5",
-      "date":       "2026-06-09",
-      "notes":      "CRITICAL IMU FIX — gear logic was frozen at N. Field report from v2.8.4: PWA Live showed Accel = 5.099 g while the knob sat stationary on a desk, roll/pitch read correct (~0°), gear logic permanently locked at N with 'motion · frozen' indicator. Root cause: SensorLib 0.4.1's configAccelerometer() writes CTRL2 via a masked read-modify-write (mask 0x8F) that PRESERVES bit 7 — the Accel Self-Test enable bit (aST). If the QMI8658 came up with aST=1 (a brownout / dirty-reset state that v2.8.x makes more likely because the new BLE Music stack draws more current at radio-on, dipping the 3V3 rail harder at boot), the chip's self-test signal — ~5 g per axis per datasheet — stayed baked into every accel reading. atan2-based roll/pitch are scale-invariant so they looked normal; magnitude was 5× → motion-rejection tripped permanently → gear refused to leave N. Fix: after configAccelerometer, Imu::begin() now reads CTRL2 directly over Wire, masks off bit 7, and writes back if found set. Also re-asserts 400 kHz I2C clock (qmi.begin can reset it to library default 100 kHz) and logs scale + first accel reading to Serial for unambiguous future diagnosis. v2.8.5 additionally retires the G-meter flashlight cone — replaced by a single brand-accent dot at the live G position (red above 1.5 G as the warning marker). Direction reads from position, magnitude from distance off centre — cleaner than the 3-arc gradient, easier to read precise direction on the round LCD.",
-      "url":        "firmware/smart_knob_shifter-v2.8.5.bin",
-      "size_bytes": 1705408
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.8.4",
-      "date":       "2026-06-09",
-      "notes":      "Music is BACK + PWA reconnect bug FIXED. The v2.6.x AMS reverse-GATT failures that forced v2.7.0 to retire Music were solved during the axis_music_remote spike (standalone AMOLED board, 17 firmware iterations). Root cause was a 5-bug stack: (1) advertising interval set 7.5 ms which NimBLE silently rejected — must be >=20 ms = 0x20 in 0.625 ms units, (2) iPhone cached the old device name by MAC, (3) GATT discovery deadlocked inside onAuthenticationComplete — fixed via pendingDiscovery flag processed in loop() on Core 1, (4) CCCD + selector writes defaulted to WRITE_NO_RESPONSE which Apple BT §2.4 forbids, (5) NimBLE PR #774 path required getClient(connHandle) not getClient(NimBLEAddress). v2.8.0-v2.8.4 port the working stack back into the knob — AMS reverse-GATT now drives Apple Music on iPhone, HID Consumer Control drives Android, both stacks share one NimBLE server with combined advertising (BleAxis svc + AMS Solicit + HID UUID across primary + scan response). v2.8.4 additionally fixes the field bug where PWA could not re-discover AXIS on 2nd+ connect after a clean disconnect — BleAms::onDisconnect was gated by cfg.ownsAdvertising which is false in co-resident mode, so nothing restarted the radio. Fix: always restart advertising post-disconnect (payload was composed at boot). ScreenMusic rebuilt as line art (prev/play/next as 2-px stroke outlines in brand fg colour, no filled circle behind play, 5-px status dot grey=disconnected / green=connected), marquee scroll for long titles, Galaxy-Watch swipe stack (LEFT=next, RIGHT=prev, UP/DOWN=volume, TAP=play/pause), Noto Sans Thai font hook for non-ASCII track names. ScreenMainMenu icons + labels switched to brand accent (orange). Splash CI-locked. Companion PWA dropped the stale 'How to pair' instructions and renamed the BLE button from 'PAIR VIA BLUETOOTH' to 'Connect to AXIS'.",
-      "url":        "firmware/smart_knob_shifter-v2.8.4.bin",
-      "size_bytes": 1706448
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.7.0",
-      "date":       "2026-06-05",
-      "notes":      "Music subsystem retired. After nine iterations (v2.6.1 → v2.6.9) trying to get Apple Media Service over a reverse-GATT client running on NimBLE-Arduino, AXIS still wouldn't appear reliably in iPhone Settings → Bluetooth — even with Service Solicitation + Appearance both in the advertisement. The reverse-GATT central-on-an-already-connected-peer flow has limitations in this stack that proper role-switch refactoring couldn't paper over in a release timeframe. v2.7.0 deletes ScreenMusic / BleMedia / AmsClient / MusicArt entirely (~174 KB of code) and removes MUSIC from the main menu. SETUP is also hidden from the menu (the ScreenApp pairing screen remains for the first-boot wizard). BleAxis is now the sole BLE service. Firmware drops from 1.84 MB → 1.66 MB. Music will return if/when a different transport lands (native MFi chip, or an upstream NimBLE fix that exposes proper central-while-peripheral discovery).",
-      "url":        "firmware/smart_knob_shifter-v2.7.0.bin",
-      "size_bytes": 1660864
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.6.9",
-      "date":       "2026-06-05",
-      "notes":      "iOS-mode advertising now carries BOTH Appearance AND Service Solicitation. v2.6.8 had only solicitation; iOS filtered AXIS out of Settings → Bluetooth → Other Devices because no Appearance hint was present in the packet. v2.6.9 puts Appearance = 0x0180 (Generic Remote Control) back alongside the AMS solicitation — iOS classifies as a normal Bluetooth accessory (pair sheet says 'Pair Bluetooth accessory', not keyboard) AND honours the AMS request. 31-byte ad budget fits exactly: Flags 3 + Appearance 4 + Solicitation 18 + Short name 6 = 31. Full brand name moved to scan response so PWA Web Bluetooth discovery still works.",
-      "url":        "firmware/smart_knob_shifter-v2.6.9.bin",
-      "size_bytes": 1839088
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.6.8",
-      "date":       "2026-06-05",
-      "notes":      "ScreenMusic minimalist redesign — Apple-Watch-Now-Playing style. Removed position bar, mm:ss labels, side prev/next/vol glyphs, artist text row, and bottom-left MUSIC page signature. The screen is now four things: a 3 px status dot at the very top (PAIRED/AMS/WAITING), a 140 px album-art disc (or vinyl-spin fallback) centred at y=90, the track title as a single line under the art (marquee on overflow), and a single big play/pause glyph centred at y=210. Gesture map unchanged — swipe up/down still does next/prev, swipe left/right still does volume ±, long-press still backs to menu — the hint icons are just no longer drawn. Apple Watch's Now Playing works the same way; muscle memory carries the gestures. The album art now dominates the visual identity as intended.",
-      "url":        "firmware/smart_knob_shifter-v2.6.8.bin",
-      "size_bytes": 1839072
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.6.7",
-      "date":       "2026-06-05",
-      "notes":      "AMS protocol fixes cross-checked against Moddable's canonical amsclient.js (github.com/Moddable-OpenSource/moddable/blob/public/modules/network/ble/ams-client/amsclient.js). Three concrete bugs in our AmsClient that would have prevented subscribe even with the v2.6.6 solicitation working: (1) Entity Attribute UUID had typos — was C6B2F38C-23AB-46C8-A6B5-FBE6AE96F9CF, corrected to C6B2F38C-23AB-46D8-A6AB-A3A870BBD5D7 per Apple spec; (2) Entity Update selector format was wrong — was (entity,attr) pairs as one 12-byte buffer, corrected to two separate writes [EntityID, attr, attr, ...] one per entity (Track + Player); (3) subscribe order — was subscribe both then write selector in one go, corrected to sequential subscribe + selector writes after CCCD ack. Verbose [AMS] logging from v2.6.5 retained. After flashing should see [AMS] subscribed and track info populates on iPhone music playback.",
-      "url":        "firmware/smart_knob_shifter-v2.6.7.bin",
-      "size_bytes": 1840064
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.6.6",
-      "date":       "2026-06-05",
-      "notes":      "AMS Service Solicitation — confirmed working pattern from Adafruit + Moddable. The missing piece in every prior v2.6.x attempt: iOS only exposes its AMS service to peers that explicitly SOLICIT it in their advertisement (AD type 0x15, 'List of 128-bit Service Solicitation UUIDs'). Without solicitation iOS treats us as a generic peer and never publishes AMS even on a bonded link — that's why v2.5/v2.6.0–v2.6.5 always hit 'service not found' after pairing. v2.6.6 iOS-mode advertisement: Flags + AMS solicitation (18 B) + short name 'AXIS' (6 B) = 27 B of the 31-byte budget. Brand name moves to scan response (still discoverable for PWA Web Bluetooth). Android-HID path unchanged. Verbose AmsClient logging from v2.6.5 retained — should now see [AMS] subscribed instead of [AMS] FAIL: service not found.",
-      "url":        "firmware/smart_knob_shifter-v2.6.6.bin",
-      "size_bytes": 1839744
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.6.5",
-      "date":       "2026-06-05",
-      "notes":      "AMS bring-up — move trigger to onAuthenticationComplete + verbose log. Following the Moddable AMS-client architectural pattern (moddable.com/blog/ams-client/) which says 'switch from server to client AFTER pairing completes', not after link-layer connect. v2.6.x triggered AmsClient from onConnect + a 1.5 s timer; v2.6.5 triggers it from onAuthenticationComplete only when bond is confirmed. Also adds verbose per-step logging in AmsClient::advanceStage_ — every NimBLE call (getClientByPeerAddress, createClient, isConnected, connect, secureConnection, getService) now logs its return value with a [AMS] tag. Test pair, watch serial log, and the exact step that fails is now visible. Behaviour change is small (timing of discovery start) — main value is diagnostic.",
-      "url":        "firmware/smart_knob_shifter-v2.6.5.bin",
-      "size_bytes": 1839584
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.6.4",
-      "date":       "2026-06-05",
-      "notes":      "iOS Bluetooth visibility fix for the iOS_AMS profile. After v2.6.3 split, iOS users picked the iOS profile but AXIS never showed up under iPhone Settings → Bluetooth → Other Devices. Root cause: iOS HID host shortlists scans by Appearance + known service UUIDs in the primary advertisement; v2.6.3 iOS mode stripped both (since HID was off) and was left with just a name in the advert — iOS filtered the device out of the pair list entirely. Fix: set Appearance = 0x0180 (Generic Remote Control) in iOS mode. iOS treats this as a normal Bluetooth accessory (the pair sheet says 'Pair Bluetooth accessory', NOT 'Pair as keyboard'), AXIS lands in Other Devices, user taps + bonds, AmsClient does reverse GATT discovery and subscribes to AMS on iPhone — no HID service exposed. Android HID path unchanged.",
-      "url":        "firmware/smart_knob_shifter-v2.6.4.bin",
-      "size_bytes": 1838256
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.6.3",
-      "date":       "2026-06-05",
-      "notes":      "Media profile split — iOS gets AMS-only path, Android gets HID-only path, OFF skips both. New Tunable mediaProfile (NVS-backed) decides which BLE stack BleMedia brings up at boot: OFF (default) = no media stack, no 'Pair as keyboard' prompt on iPhone, ~6 KB heap saved; iOS_AMS = no HID service, advertise as generic accessory (AirPods-style pair UX), AmsClient subscribes after bond and drives both metadata (title/artist/position) and commands (play/pause/next/prev/vol/skip) via Apple Media Service; Android_HID = full HID consumer-control profile (existing path), no AMS attempt. ScreenMusic shows a two-card profile picker on first entry (SWIPE_UP = iOS, SWIPE_DOWN = Android, LONGPRESS = back); selection persists to NVS and device reboots to bring up the chosen stack. NimBLE advertising packet shape and HID service presence can't be safely restructured mid-session — reboot is required when switching profiles. v2.6.2's delay(25) between press and release in HID sendKey is retained for Android users.",
-      "url":        "firmware/smart_knob_shifter-v2.6.3.bin",
-      "size_bytes": 1838224
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.6.2",
-      "date":       "2026-06-04",
-      "notes":      "Music HID timing fix — 'tap once works, tap 2+ silently fails' bug. v2.5.1's BleMedia rewrite fired press + release notifies in the same call stack with zero delay, on the theory that ESP32-BLE-Keyboard does the same. In practice iOS HID host needs at least one BLE connection event (~15–20 ms at Apple's 15 ms conn interval) between key-down and key-up. With no delay both notifies hit the NimBLE outbound queue in the same connection event; iOS coalesces them (losing the down state) or drops the release. The HID state machine stays 'pressed' and the next identical press report is ignored as duplicate. v2.6.2 inserts an explicit 25 ms delay between the press and release notify in BleMedia::sendKey_ — one+ Apple conn interval guarantee. delay() blocks the main loop for 25 ms which is one dropped render frame at 60 FPS, no perceptible UI freeze. All five gestures (play/pause, next, prev, vol+, vol−) repaired by this one change.",
-      "url":        "firmware/smart_knob_shifter-v2.6.2.bin",
-      "size_bytes": 1837552
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.6.1",
-      "date":       "2026-06-04",
-      "notes":      "Music HID discoverability fix. v2.6.0 added BleMedia (HID consumer-control) on top of the always-on BleAxis (GATT) but iOS Settings → Bluetooth never saw AXIS in its HID list. Root cause: NimBLE's getAdvertising() returns a singleton; in v2.6.0 we just called addServiceUUID(HID) on the running advertising object, which left the 31-byte advertisement packet unchanged — HID UUID never landed in the air, only the AXIS custom 128-bit UUID did. iOS HID host filters scans by HID appearance + 0x1812 service UUID in the PRIMARY advertisement and ignored AXIS. v2.6.1 takes over advertising explicitly: PRIMARY ad now carries Flags + Appearance(HID_KEYBOARD) + Name + Complete-16-bit-services(HID 0x1812). The AXIS custom 128-bit UUID moves to the SCAN RESPONSE so Web Bluetooth (PWA) can still find it. Also moved bleMedia.enable() from lazy ScreenMusic.onEnter to boot in App::begin so HID is in the initial advertisement from the first scan iOS sees — pairing as keyboard works without entering the Music screen first. Recovery if anything goes sideways: bundled merged.bin for USB flash.",
-      "url":        "firmware/smart_knob_shifter-v2.6.1.bin",
-      "size_bytes": 1837536
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.6.0",
-      "date":       "2026-06-04",
-      "notes":      "Music mode full rebuild — three new subsystems all wired through ScreenMusic. AmsClient is a new Apple Media Service GATT central layered onto the existing peripheral connection from BleMedia; it discovers AMS on the iPhone side post-bond, subscribes to Track + Player entity updates, and exposes live title/artist/album/duration/elapsed/playback-state to the renderer plus a one-shot remote-command queue for play/pause/next/prev/vol±/skip±. MusicArt is a new best-effort album-art lookup pipeline — when AMS gives us a (title,artist), a pinned-to-core-0 FreeRTOS task queries MusicBrainz for the release MBID then Cover Art Archive for a 250-px JPEG, holds it in PSRAM and lets LovyanGFX's drawJpg blit it under the title; falls back to a 33⅓ RPM vinyl-spin animation on lookup miss / no-WiFi. ScreenMusic itself is now a 240×240 layout with status chip, album art / vinyl, marquee title, artist, position bar interpolated at render rate, mm:ss labels, and a four-way gesture map (TAP=play/pause, swipe up/down=next/prev, swipe left/right=vol-/vol+, longpress=back). HID path retained as the unconditional fallback so even with AMS down the transport keeps working. UNTESTED on real iPhone — code compiles clean, all paths laid out, but neither AMS subscription nor the lookup chain has been exercised on hardware. Treat as alpha. Bundled merged.bin lets a USB recovery flash skip the OTA dance if anything misbehaves.",
-      "url":        "firmware/smart_knob_shifter-v2.6.0.bin",
-      "size_bytes": 1836576
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.43",
-      "date":       "2026-06-04",
-      "notes":      "Closes the last two HIGH-severity findings from the 4-domain audit so the campaign hits 12/14 fixed + 2/14 verified-safe. Firmware: emitXferState_ now snapshots g_xferSubscribed to a local before the setValue + notify sequence — onSubscribe runs on the connection task and could flip the flag between the check and the notify on the pinned-core ESP32-S3, leading to a missed notify for a just-subscribed client. App: the defensive ABORT before every XFER START used to swallow its own error silently; now logs via console.warn so when XE_BUSY surfaces on the START itself there's a breadcrumb pointing at the abort-failure rather than sending us hunting in firmware state. Behaviour is unchanged in the happy path — the START still surfaces the real link error if traffic is genuinely broken. No new features.",
-      "url":        "firmware/smart_knob_shifter-v2.5.43.bin",
-      "size_bytes": 1672000
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.42",
-      "date":       "2026-06-04",
-      "notes":      "Phase-2 audit cleanup — non-conflicting remaining findings. Firmware: WiFi-OTA path now aborts the in-progress write if the stream produced fewer bytes than the manifest promised (a mid-download drop used to call Update.end on a truncated image); Tunables logs a clear WARNING if a stored WiFi SSID or password exceeds the in-memory buffer rather than silently truncating. App: Ota.svelte's reconnect loop now re-checks store.client on every iteration so a mid-loop disconnect breaks cleanly instead of spinning for 30 s on null. iOS: NSBluetoothPeripheralUsageDescription added for iOS 12 fallback; archive.sh fails fast with a readable message if DEVELOPMENT_TEAM env var is missing instead of spending two minutes building before xcodebuild's codesign step.",
-      "url":        "firmware/smart_knob_shifter-v2.5.42.bin",
-      "size_bytes": 1672000
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.41",
-      "date":       "2026-06-04",
-      "notes":      "Diagnostic-audit Phase-1 fixes — 7 latent bugs cleaned up across firmware + companion app. Firmware: snapshot current_ before deref to close a two-core race where a BLE GOTO_SLEEP could re-target screens between the null-check and the call. App: BleFakeSocket now handles a synchronously-throwing startNotifications cleanly (used to sit waiting for a notify that never came); double-tap pair guard in Devices and Connect pages; Live page closes a prior telemetry socket before opening a new one on re-mount; Brand page wifiPoll / feelTimer moved into onDestroy (they were leaking past navigation because Svelte ignores async-onMount return cleanups); Ota page countdown timer now cancellable; calibration subscribe flag only flips after both subscribe + seed-read succeed. iOS Info.plist gets ITSAppUsesNonExemptEncryption=false so TestFlight uploads stop prompting for export-compliance every time.",
-      "url":        "firmware/smart_knob_shifter-v2.5.41.bin",
-      "size_bytes": 1671760
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.40",
-      "date":       "2026-06-04",
-      "notes":      "Critical PSRAM mode fix. Previous releases were built with PSRAM=OPI (Octal) for the ESP32-S3R8 module, but the actual hardware in the field is ESP32-S3R2 (QSPI 2MB) — those bins booted with PSRAM init silently failing, so every screensaver decode-buffer alloc returned null and the device only ever showed the AXIS fallback logo (recently surfaced as 'decode buffer alloc failed' after the v2.5.37 diagnostic patch). v2.5.40 rebuilds with PSRAM=enabled (QSPI). After install + reboot the boot log should show 'PSRAM init: SPI3 CS1' and screensaver uploads should land for real. A merged.bin variant is bundled alongside for one-shot USB recovery if OTA is stuck (esptool write_flash 0x0 merged.bin).",
-      "url":        "firmware/smart_knob_shifter-v2.5.40.bin",
-      "size_bytes": 1671760
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.39",
-      "date":       "2026-06-03",
-      "notes":      "Companion-app G-meter preview now mirrors the device pixel-exactly. The firmware already does the accelerometer → gx/gy maths and applies its own axis-flip flags, so v2.5.39 sends the final dot pixel coordinates over telemetry. The app plots the dot at the same coordinate the LCD is showing — no more 'preview is correct but device is wrong' or vice-versa loop after a flip-flag tweak. Older firmware that doesn't send the new fields still falls back to the previous roll/pitch math.",
-      "url":        "firmware/smart_knob_shifter-v2.5.39.bin",
-      "size_bytes": 1674032
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.38",
-      "date":       "2026-06-03",
-      "notes":      "G-meter on the device: (1) pitch axis flipped back so nose-down now pushes the dot up the radar plane in race-convention direction instead of opposite. (2) The two main rings and the four cardinal tick marks now follow the user's meter colour from BRAND — the Custom-page meter slot actually affects what the G-meter screen looks like for the first time. The dimmer graticule range rings stay grey so the instrument still reads as one.",
-      "url":        "firmware/smart_knob_shifter-v2.5.38.bin",
-      "size_bytes": 1673872
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.37",
-      "date":       "2026-06-03",
-      "notes":      "Screensaver upload errors now tell you why. Previously a failed load surfaced in the companion app as a generic 'Device rejected upload: commit' with no further detail. The device now stamps a short human-readable reason at every loadFile_ failure point (bad header, wrong format, palette read short, body truncated, alloc failed, ...) and exposes it over BLE so the Screensaver page can show the specific cause instead.",
-      "url":        "firmware/smart_knob_shifter-v2.5.37.bin",
-      "size_bytes": 1673856
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.36",
-      "date":       "2026-06-03",
-      "notes":      "BLE upload self-recovery. Fixes the 'Device rejected upload: busy' failure that hit when a previous BLE upload dropped mid-stream and left the device's transfer state pinned at RECEIVING/COMMITTING — every subsequent attempt then returned XE_BUSY until a reboot. Two-layer fix: (1) firmware now watches xfer state in the main loop and auto-aborts back to IDLE after 30 s of no chunk activity; (2) the app sends a defensive ABORT opcode before every START so any stale prior state gets cleared regardless of how it got stuck. No-op when the device is already idle.",
-      "url":        "firmware/smart_knob_shifter-v2.5.36.bin",
-      "size_bytes": 1672960
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.35",
-      "date":       "2026-06-03",
-      "notes":      "Screensaver upload reliability — root-cause fix. Pre-reserves the two 115 KB RGB565 decode buffers (230 KB total) in PSRAM at boot and never frees them, so subsequent uploads always reuse the same slots instead of fighting BLE / display chrome for a contiguous block. Fixes the failure mode where the file made it to flash but the in-memory reload silently failed, leaving the device showing the default AXIS logo on sleep. The variable-size raw-frames buffer (only used for animations) still allocs on demand. Each loadFile_ failure path now also logs a specific reason over USB serial to make debugging future weirdness one read of the log.",
-      "url":        "firmware/smart_knob_shifter-v2.5.35.bin",
-      "size_bytes": 1672768
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.34",
-      "date":       "2026-06-03",
-      "notes":      "Screensaver upload now auto-previews. After the upload finishes the companion app pushes the device into its sleep/screensaver screen via a new BLE command (0x20 GOTO_SLEEP), so you immediately see the image you just uploaded instead of waiting for the 2-minute idle timeout or long-pressing the device. Touch the knob to wake back to MAIN. Also: screensaver upload now propagates a 'commit' error to the app if the file made it to flash but couldn't reload into PSRAM — previously this case silently reported success but left the device with no visible image until reboot.",
-      "url":        "firmware/smart_knob_shifter-v2.5.34.bin",
-      "size_bytes": 1672016
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.33",
-      "date":       "2026-06-03",
-      "notes":      "Touch-lock indicator now silent at rest. MAIN and the gear-pattern screen no longer show a persistent padlock badge — the locked state stays invisible until you actually touch the screen, at which point a 'LOCKED · hold to unlock' toast flashes for 1.5s telling you how to recover. Keeps the gear screens clean while driving but doesn't leave a tester wondering why a tap did nothing.",
-      "url":        "firmware/smart_knob_shifter-v2.5.33.bin",
-      "size_bytes": 1672032
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.32",
-      "date":       "2026-06-03",
-      "notes":      "Stationary IMU jitter fix. When the knob is sitting still (no chassis motion detected), roll/pitch now snap to zero through a 0.6° dead-band — accel micro-noise that used to leak through as a constant wiggle of the G-meter dot is filtered out completely. Heavy 0.04 EMA still catches slow real drift (mounting settling, temperature) so a genuinely-tilted knob does eventually re-zero on its own. Snappy response while actually moving the knob is unchanged.",
-      "url":        "firmware/smart_knob_shifter-v2.5.32.bin",
-      "size_bytes": 1672240
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.31",
-      "date":       "2026-06-03",
-      "notes":      "OTA reboot delay + auto-reconnect. After a firmware update finishes streaming, the device now waits 5 seconds before rebooting and shows 'OTA OK · rebooting in 5s' on screen — gives you visual confirmation the flash actually landed and time to put the knob down before the LCD goes dark. The companion app shows a matching countdown, then automatically tries to reconnect to the same device for up to 30 seconds. When the device comes back, it pairs itself and drops you onto the Live screen without you tapping anything. Same flow on the local-upload path (UPLOAD .BIN) too.",
-      "url":        "firmware/smart_knob_shifter-v2.5.31.bin",
-      "size_bytes": 1672176
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.30",
-      "date":       "2026-06-03",
-      "notes":      "SET ZERO menu row + G-meter preview pitch fix. (1) New 'SET ZERO' option right under CALIBRATE in the main menu — long-press to snap the IMU origin to whatever pose the knob is in right now, without going through the full calibration wizard. Useful when the knob has shifted in its mount but the gear targets are still good. (2) DevicePreview G-meter now also inverts the pitch axis (front/back) to match the device's GMETER_FLIP_Y=true convention — v2.5.29 only flipped roll, so the dot was still landing in the wrong forward/back quadrant when the knob was stationary on a slope or being pitched intentionally.",
-      "url":        "firmware/smart_knob_shifter-v2.5.30.bin",
-      "size_bytes": 1672048
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.29",
-      "date":       "2026-06-03",
-      "notes":      "Touch lock + screensaver gyro-wake + BOOT menu entry. (1) Tap the screen three times on MAIN or PATTERN to LOCK touch — every subsequent gesture is suppressed except a long-press, which unlocks. Useful for resting a finger on the knob without bouncing gears or popping the menu. Small padlock badge shows on locked screens. (2) New 'Wake screensaver on motion' toggle under Custom → Animation & feel. When on, wiggling the knob exits the screensaver back to whichever gear screen you were on (MAIN or PATTERN), so you don't have to tap. Off by default — vibration on rough roads can cross the wake threshold. (3) BOOT row added to the main menu (between INFO and BACK) — long-press to soft-reboot the device without unplugging.",
-      "url":        "firmware/smart_knob_shifter-v2.5.29.bin",
-      "size_bytes": 1671792
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.28",
-      "date":       "2026-06-03",
-      "notes":      "Touch sensitivity overhaul. (1) Dropped the 2-of-2 I2C debounce — concurrent BLE writes + display SPI bursts were making the two reads disagree, dropping the touch entirely. Single-read poll is sufficient since the chip's FingerNum==1 check already rejects bus noise. (2) Active-area gate widened to the full 240×240 panel (was 220×220 inner box). Centre-of-screen touches that landed when the I2C bus was contended were being treated as edge-grip false touches and rejected. (3) readXY() at touch-down retries up to 3× — if the initial coordinate read failed, the swipe baseline used to get re-seeded mid-drag, producing the 'must swipe to the screen edge' complaint. (4) Swipe distance threshold dropped 6 → 4 px for snappier centre-launched swipes.",
-      "url":        "firmware/smart_knob_shifter-v2.5.28.bin",
-      "size_bytes": 1670288
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.27",
-      "date":       "2026-06-03",
-      "notes":      "Calibrate page now lets you switch between PRND / SEQ / HPATTERN and pick gear count (4/5/6) for HPAT + SEQ — no more on-device wizard scrolling. JSON over BLE was getting truncated at NimBLE's 512-byte ATT cap, so config + calibration shapes are trimmed and the PWA fills in static metadata client-side. Screensaver upload chunks now go via WRITE (with ATT response) — fixes the silent packet drops that triggered XE_SIZE after upload. BleAxis transfer-buf char now declares WRITE | WRITE_NR so iOS can pick the reliable path. WebCodecs VideoDecoder fallback added for 4K HEVC clips iPhone Photos exports — pipes through MP4Box + hardware decode. Custom page preview now mirrors the device's live gear + tilt over BLE telemetry.",
-      "url":        "firmware/smart_knob_shifter-v2.5.27.bin",
-      "size_bytes": 1667856
-    },
-    {
-      "version":    "AXIS V1.0.0",
-      "build":      "v2.5.23",
-      "date":       "2026-06-02",
-      "notes":      "BLE-first release. All daily features (config, calibration, custom name + colours, telemetry) now go over BLE — no more Wi-Fi AP join. New BLE chunked-transfer protocol carries screensaver uploads (~12 s) and OTA firmware (~3 min) so Wi-Fi is no longer needed for ANY feature. SETUP MODE screen rewritten — single 'PAIR' page, no SoftAP / QR / HTTP server (fixes the SETUP-MODE-causes-reboot crash). G-meter axes inverted to match race convention (left-turn pulls dot right). Companion app: Connect screen is BLE-only, Wi-Fi entry removed. ⚠ ONE-TIME USB FLASH — your current firmware doesn't have the new BLE chunked-transfer chars, so this jump can't OTA. After this install, all future updates flow over BLE OTA.",
-      "url":        "firmware/smart_knob_shifter-v2.5.23.bin",
-      "size_bytes": 0,
-      "status":     "preview"
+      "version": "AXIS V1.0.0",
+      "build": "v2.8.7",
+      "date": "2026-06-09",
+      "notes": "IMU debug strip polish \u2014 field-feedback patch on top of v2.8.6's IMU fix. Confirmed in field: v2.8.6 QMI8658 soft-reset DID fix the 5.1 g stuck-accel issue (sc=0.000122 stable, |a| \u2248 1.0 g while stationary). v2.8.7 cleans up the diagnostic strip's UX: (1) moved from y=4 (top of round LCD where the visible chord is only ~120 px, right edge of the string was eaten by the bezel mask) down to y=UI_SAFE_TOP+24 (under the mode label, where the chord is closer to the full 240 px). (2) Dropped the BUILD_VERSION prefix from the string (it's in the INFO screen anyway) to free up room for the actual diagnostic values. (3) Widened the colour health threshold from \u00b10.3 g to \u00b10.5 g so normal stationary accel noise no longer strobes the strip green/amber every frame. (4) Healthy colour is now brand.mutedColor() (subtle grey) instead of green \u2014 confirms readings are fine without screaming about it. Amber still fires when |a| drifts > 0.5 g from 1.0 (the v2.8.x stuck-register symptom). (5) Strip hidden while the SETUP MODE banner is up (avoids overlap on the same Y band).",
+      "url": "firmware/smart_knob_shifter-v2.8.7.bin",
+      "size_bytes": 1705888
     },
     {
       "version": "AXIS V1.0.0",
-      "build":   "v2.5.12",
-      "date":    "2026-06-02",
-      "notes":   "Pre-release — companion now shows release notes again. Touch active area limited to inner 220×220 (no more edge-grip misfires). WiFi reliability fixes (no power-save, max TX) — OTA + screensaver upload should stay connected on iPhone. Gear shift delay minimum raised to 120 ms (fixes the bounce-back-and-forth bug). G-meter gets a red gyro-rate dot with a ghost trail. Boot now waits for the knob to be still before zero-cal. New: companion is also shipping as a native iOS app via Capacitor.",
-      "url":     null,
+      "build": "v2.8.6",
+      "date": "2026-06-09",
+      "notes": "IMU FIX ROUND 2 \u2014 v2.8.5 didn't actually fix the gear-frozen-at-N bug (confirmed in field after OTA: PWA Live still showed Accel = 5.1 g while stationary). The CTRL2 aST self-test bit wasn't the stuck register after all. v2.8.6 widens the hammer: full QMI8658 soft-reset via REG_RESET (0x60 \u2190 0xB0) BEFORE configAccelerometer touches the chip, with a 50 ms settle delay. This puts EVERY control register back to power-on defaults \u2014 no chance of inherited bad state from a previous flash, brownout, or warm boot leaking through. Plus the v2.8.5 CTRL2 aST clear stays in as cheap insurance and as a confirmation diagnostic. To verify the fix landed without Serial Monitor (which the field user can't reliably open due to USB-CDC re-enumeration), ScreenMain now renders a top-strip IMU debug line: 'v2.8.6 sc=0.000122 C2=14 |a|=1.00' \u2014 scale should equal 4/32768 = 0.000122 (ACC_RANGE_4G applied), CTRL2 should equal 0x14 (aFS=001 aODR=4 aST=0), magnitude should be ~1.00 g stationary. Strip turns green when healthy, amber when |a| outside \u00b10.3 g of 1.0. User can snap a photo of MAIN screen after boot and ship the actual numbers if anything still looks off.",
+      "url": "firmware/smart_knob_shifter-v2.8.6.bin",
+      "size_bytes": 1705904
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.8.5",
+      "date": "2026-06-09",
+      "notes": "CRITICAL IMU FIX \u2014 gear logic was frozen at N. Field report from v2.8.4: PWA Live showed Accel = 5.099 g while the knob sat stationary on a desk, roll/pitch read correct (~0\u00b0), gear logic permanently locked at N with 'motion \u00b7 frozen' indicator. Root cause: SensorLib 0.4.1's configAccelerometer() writes CTRL2 via a masked read-modify-write (mask 0x8F) that PRESERVES bit 7 \u2014 the Accel Self-Test enable bit (aST). If the QMI8658 came up with aST=1 (a brownout / dirty-reset state that v2.8.x makes more likely because the new BLE Music stack draws more current at radio-on, dipping the 3V3 rail harder at boot), the chip's self-test signal \u2014 ~5 g per axis per datasheet \u2014 stayed baked into every accel reading. atan2-based roll/pitch are scale-invariant so they looked normal; magnitude was 5\u00d7 \u2192 motion-rejection tripped permanently \u2192 gear refused to leave N. Fix: after configAccelerometer, Imu::begin() now reads CTRL2 directly over Wire, masks off bit 7, and writes back if found set. Also re-asserts 400 kHz I2C clock (qmi.begin can reset it to library default 100 kHz) and logs scale + first accel reading to Serial for unambiguous future diagnosis. v2.8.5 additionally retires the G-meter flashlight cone \u2014 replaced by a single brand-accent dot at the live G position (red above 1.5 G as the warning marker). Direction reads from position, magnitude from distance off centre \u2014 cleaner than the 3-arc gradient, easier to read precise direction on the round LCD.",
+      "url": "firmware/smart_knob_shifter-v2.8.5.bin",
+      "size_bytes": 1705408
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.8.4",
+      "date": "2026-06-09",
+      "notes": "Music is BACK + PWA reconnect bug FIXED. The v2.6.x AMS reverse-GATT failures that forced v2.7.0 to retire Music were solved during the axis_music_remote spike (standalone AMOLED board, 17 firmware iterations). Root cause was a 5-bug stack: (1) advertising interval set 7.5 ms which NimBLE silently rejected \u2014 must be >=20 ms = 0x20 in 0.625 ms units, (2) iPhone cached the old device name by MAC, (3) GATT discovery deadlocked inside onAuthenticationComplete \u2014 fixed via pendingDiscovery flag processed in loop() on Core 1, (4) CCCD + selector writes defaulted to WRITE_NO_RESPONSE which Apple BT \u00a72.4 forbids, (5) NimBLE PR #774 path required getClient(connHandle) not getClient(NimBLEAddress). v2.8.0-v2.8.4 port the working stack back into the knob \u2014 AMS reverse-GATT now drives Apple Music on iPhone, HID Consumer Control drives Android, both stacks share one NimBLE server with combined advertising (BleAxis svc + AMS Solicit + HID UUID across primary + scan response). v2.8.4 additionally fixes the field bug where PWA could not re-discover AXIS on 2nd+ connect after a clean disconnect \u2014 BleAms::onDisconnect was gated by cfg.ownsAdvertising which is false in co-resident mode, so nothing restarted the radio. Fix: always restart advertising post-disconnect (payload was composed at boot). ScreenMusic rebuilt as line art (prev/play/next as 2-px stroke outlines in brand fg colour, no filled circle behind play, 5-px status dot grey=disconnected / green=connected), marquee scroll for long titles, Galaxy-Watch swipe stack (LEFT=next, RIGHT=prev, UP/DOWN=volume, TAP=play/pause), Noto Sans Thai font hook for non-ASCII track names. ScreenMainMenu icons + labels switched to brand accent (orange). Splash CI-locked. Companion PWA dropped the stale 'How to pair' instructions and renamed the BLE button from 'PAIR VIA BLUETOOTH' to 'Connect to AXIS'.",
+      "url": "firmware/smart_knob_shifter-v2.8.4.bin",
+      "size_bytes": 1706448
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.7.0",
+      "date": "2026-06-05",
+      "notes": "Music subsystem retired. After nine iterations (v2.6.1 \u2192 v2.6.9) trying to get Apple Media Service over a reverse-GATT client running on NimBLE-Arduino, AXIS still wouldn't appear reliably in iPhone Settings \u2192 Bluetooth \u2014 even with Service Solicitation + Appearance both in the advertisement. The reverse-GATT central-on-an-already-connected-peer flow has limitations in this stack that proper role-switch refactoring couldn't paper over in a release timeframe. v2.7.0 deletes ScreenMusic / BleMedia / AmsClient / MusicArt entirely (~174 KB of code) and removes MUSIC from the main menu. SETUP is also hidden from the menu (the ScreenApp pairing screen remains for the first-boot wizard). BleAxis is now the sole BLE service. Firmware drops from 1.84 MB \u2192 1.66 MB. Music will return if/when a different transport lands (native MFi chip, or an upstream NimBLE fix that exposes proper central-while-peripheral discovery).",
+      "url": "firmware/smart_knob_shifter-v2.7.0.bin",
+      "size_bytes": 1660864
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.6.9",
+      "date": "2026-06-05",
+      "notes": "iOS-mode advertising now carries BOTH Appearance AND Service Solicitation. v2.6.8 had only solicitation; iOS filtered AXIS out of Settings \u2192 Bluetooth \u2192 Other Devices because no Appearance hint was present in the packet. v2.6.9 puts Appearance = 0x0180 (Generic Remote Control) back alongside the AMS solicitation \u2014 iOS classifies as a normal Bluetooth accessory (pair sheet says 'Pair Bluetooth accessory', not keyboard) AND honours the AMS request. 31-byte ad budget fits exactly: Flags 3 + Appearance 4 + Solicitation 18 + Short name 6 = 31. Full brand name moved to scan response so PWA Web Bluetooth discovery still works.",
+      "url": "firmware/smart_knob_shifter-v2.6.9.bin",
+      "size_bytes": 1839088
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.6.8",
+      "date": "2026-06-05",
+      "notes": "ScreenMusic minimalist redesign \u2014 Apple-Watch-Now-Playing style. Removed position bar, mm:ss labels, side prev/next/vol glyphs, artist text row, and bottom-left MUSIC page signature. The screen is now four things: a 3 px status dot at the very top (PAIRED/AMS/WAITING), a 140 px album-art disc (or vinyl-spin fallback) centred at y=90, the track title as a single line under the art (marquee on overflow), and a single big play/pause glyph centred at y=210. Gesture map unchanged \u2014 swipe up/down still does next/prev, swipe left/right still does volume \u00b1, long-press still backs to menu \u2014 the hint icons are just no longer drawn. Apple Watch's Now Playing works the same way; muscle memory carries the gestures. The album art now dominates the visual identity as intended.",
+      "url": "firmware/smart_knob_shifter-v2.6.8.bin",
+      "size_bytes": 1839072
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.6.7",
+      "date": "2026-06-05",
+      "notes": "AMS protocol fixes cross-checked against Moddable's canonical amsclient.js (github.com/Moddable-OpenSource/moddable/blob/public/modules/network/ble/ams-client/amsclient.js). Three concrete bugs in our AmsClient that would have prevented subscribe even with the v2.6.6 solicitation working: (1) Entity Attribute UUID had typos \u2014 was C6B2F38C-23AB-46C8-A6B5-FBE6AE96F9CF, corrected to C6B2F38C-23AB-46D8-A6AB-A3A870BBD5D7 per Apple spec; (2) Entity Update selector format was wrong \u2014 was (entity,attr) pairs as one 12-byte buffer, corrected to two separate writes [EntityID, attr, attr, ...] one per entity (Track + Player); (3) subscribe order \u2014 was subscribe both then write selector in one go, corrected to sequential subscribe + selector writes after CCCD ack. Verbose [AMS] logging from v2.6.5 retained. After flashing should see [AMS] subscribed and track info populates on iPhone music playback.",
+      "url": "firmware/smart_knob_shifter-v2.6.7.bin",
+      "size_bytes": 1840064
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.6.6",
+      "date": "2026-06-05",
+      "notes": "AMS Service Solicitation \u2014 confirmed working pattern from Adafruit + Moddable. The missing piece in every prior v2.6.x attempt: iOS only exposes its AMS service to peers that explicitly SOLICIT it in their advertisement (AD type 0x15, 'List of 128-bit Service Solicitation UUIDs'). Without solicitation iOS treats us as a generic peer and never publishes AMS even on a bonded link \u2014 that's why v2.5/v2.6.0\u2013v2.6.5 always hit 'service not found' after pairing. v2.6.6 iOS-mode advertisement: Flags + AMS solicitation (18 B) + short name 'AXIS' (6 B) = 27 B of the 31-byte budget. Brand name moves to scan response (still discoverable for PWA Web Bluetooth). Android-HID path unchanged. Verbose AmsClient logging from v2.6.5 retained \u2014 should now see [AMS] subscribed instead of [AMS] FAIL: service not found.",
+      "url": "firmware/smart_knob_shifter-v2.6.6.bin",
+      "size_bytes": 1839744
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.6.5",
+      "date": "2026-06-05",
+      "notes": "AMS bring-up \u2014 move trigger to onAuthenticationComplete + verbose log. Following the Moddable AMS-client architectural pattern (moddable.com/blog/ams-client/) which says 'switch from server to client AFTER pairing completes', not after link-layer connect. v2.6.x triggered AmsClient from onConnect + a 1.5 s timer; v2.6.5 triggers it from onAuthenticationComplete only when bond is confirmed. Also adds verbose per-step logging in AmsClient::advanceStage_ \u2014 every NimBLE call (getClientByPeerAddress, createClient, isConnected, connect, secureConnection, getService) now logs its return value with a [AMS] tag. Test pair, watch serial log, and the exact step that fails is now visible. Behaviour change is small (timing of discovery start) \u2014 main value is diagnostic.",
+      "url": "firmware/smart_knob_shifter-v2.6.5.bin",
+      "size_bytes": 1839584
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.6.4",
+      "date": "2026-06-05",
+      "notes": "iOS Bluetooth visibility fix for the iOS_AMS profile. After v2.6.3 split, iOS users picked the iOS profile but AXIS never showed up under iPhone Settings \u2192 Bluetooth \u2192 Other Devices. Root cause: iOS HID host shortlists scans by Appearance + known service UUIDs in the primary advertisement; v2.6.3 iOS mode stripped both (since HID was off) and was left with just a name in the advert \u2014 iOS filtered the device out of the pair list entirely. Fix: set Appearance = 0x0180 (Generic Remote Control) in iOS mode. iOS treats this as a normal Bluetooth accessory (the pair sheet says 'Pair Bluetooth accessory', NOT 'Pair as keyboard'), AXIS lands in Other Devices, user taps + bonds, AmsClient does reverse GATT discovery and subscribes to AMS on iPhone \u2014 no HID service exposed. Android HID path unchanged.",
+      "url": "firmware/smart_knob_shifter-v2.6.4.bin",
+      "size_bytes": 1838256
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.6.3",
+      "date": "2026-06-05",
+      "notes": "Media profile split \u2014 iOS gets AMS-only path, Android gets HID-only path, OFF skips both. New Tunable mediaProfile (NVS-backed) decides which BLE stack BleMedia brings up at boot: OFF (default) = no media stack, no 'Pair as keyboard' prompt on iPhone, ~6 KB heap saved; iOS_AMS = no HID service, advertise as generic accessory (AirPods-style pair UX), AmsClient subscribes after bond and drives both metadata (title/artist/position) and commands (play/pause/next/prev/vol/skip) via Apple Media Service; Android_HID = full HID consumer-control profile (existing path), no AMS attempt. ScreenMusic shows a two-card profile picker on first entry (SWIPE_UP = iOS, SWIPE_DOWN = Android, LONGPRESS = back); selection persists to NVS and device reboots to bring up the chosen stack. NimBLE advertising packet shape and HID service presence can't be safely restructured mid-session \u2014 reboot is required when switching profiles. v2.6.2's delay(25) between press and release in HID sendKey is retained for Android users.",
+      "url": "firmware/smart_knob_shifter-v2.6.3.bin",
+      "size_bytes": 1838224
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.6.2",
+      "date": "2026-06-04",
+      "notes": "Music HID timing fix \u2014 'tap once works, tap 2+ silently fails' bug. v2.5.1's BleMedia rewrite fired press + release notifies in the same call stack with zero delay, on the theory that ESP32-BLE-Keyboard does the same. In practice iOS HID host needs at least one BLE connection event (~15\u201320 ms at Apple's 15 ms conn interval) between key-down and key-up. With no delay both notifies hit the NimBLE outbound queue in the same connection event; iOS coalesces them (losing the down state) or drops the release. The HID state machine stays 'pressed' and the next identical press report is ignored as duplicate. v2.6.2 inserts an explicit 25 ms delay between the press and release notify in BleMedia::sendKey_ \u2014 one+ Apple conn interval guarantee. delay() blocks the main loop for 25 ms which is one dropped render frame at 60 FPS, no perceptible UI freeze. All five gestures (play/pause, next, prev, vol+, vol\u2212) repaired by this one change.",
+      "url": "firmware/smart_knob_shifter-v2.6.2.bin",
+      "size_bytes": 1837552
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.6.1",
+      "date": "2026-06-04",
+      "notes": "Music HID discoverability fix. v2.6.0 added BleMedia (HID consumer-control) on top of the always-on BleAxis (GATT) but iOS Settings \u2192 Bluetooth never saw AXIS in its HID list. Root cause: NimBLE's getAdvertising() returns a singleton; in v2.6.0 we just called addServiceUUID(HID) on the running advertising object, which left the 31-byte advertisement packet unchanged \u2014 HID UUID never landed in the air, only the AXIS custom 128-bit UUID did. iOS HID host filters scans by HID appearance + 0x1812 service UUID in the PRIMARY advertisement and ignored AXIS. v2.6.1 takes over advertising explicitly: PRIMARY ad now carries Flags + Appearance(HID_KEYBOARD) + Name + Complete-16-bit-services(HID 0x1812). The AXIS custom 128-bit UUID moves to the SCAN RESPONSE so Web Bluetooth (PWA) can still find it. Also moved bleMedia.enable() from lazy ScreenMusic.onEnter to boot in App::begin so HID is in the initial advertisement from the first scan iOS sees \u2014 pairing as keyboard works without entering the Music screen first. Recovery if anything goes sideways: bundled merged.bin for USB flash.",
+      "url": "firmware/smart_knob_shifter-v2.6.1.bin",
+      "size_bytes": 1837536
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.6.0",
+      "date": "2026-06-04",
+      "notes": "Music mode full rebuild \u2014 three new subsystems all wired through ScreenMusic. AmsClient is a new Apple Media Service GATT central layered onto the existing peripheral connection from BleMedia; it discovers AMS on the iPhone side post-bond, subscribes to Track + Player entity updates, and exposes live title/artist/album/duration/elapsed/playback-state to the renderer plus a one-shot remote-command queue for play/pause/next/prev/vol\u00b1/skip\u00b1. MusicArt is a new best-effort album-art lookup pipeline \u2014 when AMS gives us a (title,artist), a pinned-to-core-0 FreeRTOS task queries MusicBrainz for the release MBID then Cover Art Archive for a 250-px JPEG, holds it in PSRAM and lets LovyanGFX's drawJpg blit it under the title; falls back to a 33\u2153 RPM vinyl-spin animation on lookup miss / no-WiFi. ScreenMusic itself is now a 240\u00d7240 layout with status chip, album art / vinyl, marquee title, artist, position bar interpolated at render rate, mm:ss labels, and a four-way gesture map (TAP=play/pause, swipe up/down=next/prev, swipe left/right=vol-/vol+, longpress=back). HID path retained as the unconditional fallback so even with AMS down the transport keeps working. UNTESTED on real iPhone \u2014 code compiles clean, all paths laid out, but neither AMS subscription nor the lookup chain has been exercised on hardware. Treat as alpha. Bundled merged.bin lets a USB recovery flash skip the OTA dance if anything misbehaves.",
+      "url": "firmware/smart_knob_shifter-v2.6.0.bin",
+      "size_bytes": 1836576
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.43",
+      "date": "2026-06-04",
+      "notes": "Closes the last two HIGH-severity findings from the 4-domain audit so the campaign hits 12/14 fixed + 2/14 verified-safe. Firmware: emitXferState_ now snapshots g_xferSubscribed to a local before the setValue + notify sequence \u2014 onSubscribe runs on the connection task and could flip the flag between the check and the notify on the pinned-core ESP32-S3, leading to a missed notify for a just-subscribed client. App: the defensive ABORT before every XFER START used to swallow its own error silently; now logs via console.warn so when XE_BUSY surfaces on the START itself there's a breadcrumb pointing at the abort-failure rather than sending us hunting in firmware state. Behaviour is unchanged in the happy path \u2014 the START still surfaces the real link error if traffic is genuinely broken. No new features.",
+      "url": "firmware/smart_knob_shifter-v2.5.43.bin",
+      "size_bytes": 1672000
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.42",
+      "date": "2026-06-04",
+      "notes": "Phase-2 audit cleanup \u2014 non-conflicting remaining findings. Firmware: WiFi-OTA path now aborts the in-progress write if the stream produced fewer bytes than the manifest promised (a mid-download drop used to call Update.end on a truncated image); Tunables logs a clear WARNING if a stored WiFi SSID or password exceeds the in-memory buffer rather than silently truncating. App: Ota.svelte's reconnect loop now re-checks store.client on every iteration so a mid-loop disconnect breaks cleanly instead of spinning for 30 s on null. iOS: NSBluetoothPeripheralUsageDescription added for iOS 12 fallback; archive.sh fails fast with a readable message if DEVELOPMENT_TEAM env var is missing instead of spending two minutes building before xcodebuild's codesign step.",
+      "url": "firmware/smart_knob_shifter-v2.5.42.bin",
+      "size_bytes": 1672000
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.41",
+      "date": "2026-06-04",
+      "notes": "Diagnostic-audit Phase-1 fixes \u2014 7 latent bugs cleaned up across firmware + companion app. Firmware: snapshot current_ before deref to close a two-core race where a BLE GOTO_SLEEP could re-target screens between the null-check and the call. App: BleFakeSocket now handles a synchronously-throwing startNotifications cleanly (used to sit waiting for a notify that never came); double-tap pair guard in Devices and Connect pages; Live page closes a prior telemetry socket before opening a new one on re-mount; Brand page wifiPoll / feelTimer moved into onDestroy (they were leaking past navigation because Svelte ignores async-onMount return cleanups); Ota page countdown timer now cancellable; calibration subscribe flag only flips after both subscribe + seed-read succeed. iOS Info.plist gets ITSAppUsesNonExemptEncryption=false so TestFlight uploads stop prompting for export-compliance every time.",
+      "url": "firmware/smart_knob_shifter-v2.5.41.bin",
+      "size_bytes": 1671760
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.40",
+      "date": "2026-06-04",
+      "notes": "Critical PSRAM mode fix. Previous releases were built with PSRAM=OPI (Octal) for the ESP32-S3R8 module, but the actual hardware in the field is ESP32-S3R2 (QSPI 2MB) \u2014 those bins booted with PSRAM init silently failing, so every screensaver decode-buffer alloc returned null and the device only ever showed the AXIS fallback logo (recently surfaced as 'decode buffer alloc failed' after the v2.5.37 diagnostic patch). v2.5.40 rebuilds with PSRAM=enabled (QSPI). After install + reboot the boot log should show 'PSRAM init: SPI3 CS1' and screensaver uploads should land for real. A merged.bin variant is bundled alongside for one-shot USB recovery if OTA is stuck (esptool write_flash 0x0 merged.bin).",
+      "url": "firmware/smart_knob_shifter-v2.5.40.bin",
+      "size_bytes": 1671760
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.39",
+      "date": "2026-06-03",
+      "notes": "Companion-app G-meter preview now mirrors the device pixel-exactly. The firmware already does the accelerometer \u2192 gx/gy maths and applies its own axis-flip flags, so v2.5.39 sends the final dot pixel coordinates over telemetry. The app plots the dot at the same coordinate the LCD is showing \u2014 no more 'preview is correct but device is wrong' or vice-versa loop after a flip-flag tweak. Older firmware that doesn't send the new fields still falls back to the previous roll/pitch math.",
+      "url": "firmware/smart_knob_shifter-v2.5.39.bin",
+      "size_bytes": 1674032
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.38",
+      "date": "2026-06-03",
+      "notes": "G-meter on the device: (1) pitch axis flipped back so nose-down now pushes the dot up the radar plane in race-convention direction instead of opposite. (2) The two main rings and the four cardinal tick marks now follow the user's meter colour from BRAND \u2014 the Custom-page meter slot actually affects what the G-meter screen looks like for the first time. The dimmer graticule range rings stay grey so the instrument still reads as one.",
+      "url": "firmware/smart_knob_shifter-v2.5.38.bin",
+      "size_bytes": 1673872
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.37",
+      "date": "2026-06-03",
+      "notes": "Screensaver upload errors now tell you why. Previously a failed load surfaced in the companion app as a generic 'Device rejected upload: commit' with no further detail. The device now stamps a short human-readable reason at every loadFile_ failure point (bad header, wrong format, palette read short, body truncated, alloc failed, ...) and exposes it over BLE so the Screensaver page can show the specific cause instead.",
+      "url": "firmware/smart_knob_shifter-v2.5.37.bin",
+      "size_bytes": 1673856
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.36",
+      "date": "2026-06-03",
+      "notes": "BLE upload self-recovery. Fixes the 'Device rejected upload: busy' failure that hit when a previous BLE upload dropped mid-stream and left the device's transfer state pinned at RECEIVING/COMMITTING \u2014 every subsequent attempt then returned XE_BUSY until a reboot. Two-layer fix: (1) firmware now watches xfer state in the main loop and auto-aborts back to IDLE after 30 s of no chunk activity; (2) the app sends a defensive ABORT opcode before every START so any stale prior state gets cleared regardless of how it got stuck. No-op when the device is already idle.",
+      "url": "firmware/smart_knob_shifter-v2.5.36.bin",
+      "size_bytes": 1672960
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.35",
+      "date": "2026-06-03",
+      "notes": "Screensaver upload reliability \u2014 root-cause fix. Pre-reserves the two 115 KB RGB565 decode buffers (230 KB total) in PSRAM at boot and never frees them, so subsequent uploads always reuse the same slots instead of fighting BLE / display chrome for a contiguous block. Fixes the failure mode where the file made it to flash but the in-memory reload silently failed, leaving the device showing the default AXIS logo on sleep. The variable-size raw-frames buffer (only used for animations) still allocs on demand. Each loadFile_ failure path now also logs a specific reason over USB serial to make debugging future weirdness one read of the log.",
+      "url": "firmware/smart_knob_shifter-v2.5.35.bin",
+      "size_bytes": 1672768
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.34",
+      "date": "2026-06-03",
+      "notes": "Screensaver upload now auto-previews. After the upload finishes the companion app pushes the device into its sleep/screensaver screen via a new BLE command (0x20 GOTO_SLEEP), so you immediately see the image you just uploaded instead of waiting for the 2-minute idle timeout or long-pressing the device. Touch the knob to wake back to MAIN. Also: screensaver upload now propagates a 'commit' error to the app if the file made it to flash but couldn't reload into PSRAM \u2014 previously this case silently reported success but left the device with no visible image until reboot.",
+      "url": "firmware/smart_knob_shifter-v2.5.34.bin",
+      "size_bytes": 1672016
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.33",
+      "date": "2026-06-03",
+      "notes": "Touch-lock indicator now silent at rest. MAIN and the gear-pattern screen no longer show a persistent padlock badge \u2014 the locked state stays invisible until you actually touch the screen, at which point a 'LOCKED \u00b7 hold to unlock' toast flashes for 1.5s telling you how to recover. Keeps the gear screens clean while driving but doesn't leave a tester wondering why a tap did nothing.",
+      "url": "firmware/smart_knob_shifter-v2.5.33.bin",
+      "size_bytes": 1672032
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.32",
+      "date": "2026-06-03",
+      "notes": "Stationary IMU jitter fix. When the knob is sitting still (no chassis motion detected), roll/pitch now snap to zero through a 0.6\u00b0 dead-band \u2014 accel micro-noise that used to leak through as a constant wiggle of the G-meter dot is filtered out completely. Heavy 0.04 EMA still catches slow real drift (mounting settling, temperature) so a genuinely-tilted knob does eventually re-zero on its own. Snappy response while actually moving the knob is unchanged.",
+      "url": "firmware/smart_knob_shifter-v2.5.32.bin",
+      "size_bytes": 1672240
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.31",
+      "date": "2026-06-03",
+      "notes": "OTA reboot delay + auto-reconnect. After a firmware update finishes streaming, the device now waits 5 seconds before rebooting and shows 'OTA OK \u00b7 rebooting in 5s' on screen \u2014 gives you visual confirmation the flash actually landed and time to put the knob down before the LCD goes dark. The companion app shows a matching countdown, then automatically tries to reconnect to the same device for up to 30 seconds. When the device comes back, it pairs itself and drops you onto the Live screen without you tapping anything. Same flow on the local-upload path (UPLOAD .BIN) too.",
+      "url": "firmware/smart_knob_shifter-v2.5.31.bin",
+      "size_bytes": 1672176
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.30",
+      "date": "2026-06-03",
+      "notes": "SET ZERO menu row + G-meter preview pitch fix. (1) New 'SET ZERO' option right under CALIBRATE in the main menu \u2014 long-press to snap the IMU origin to whatever pose the knob is in right now, without going through the full calibration wizard. Useful when the knob has shifted in its mount but the gear targets are still good. (2) DevicePreview G-meter now also inverts the pitch axis (front/back) to match the device's GMETER_FLIP_Y=true convention \u2014 v2.5.29 only flipped roll, so the dot was still landing in the wrong forward/back quadrant when the knob was stationary on a slope or being pitched intentionally.",
+      "url": "firmware/smart_knob_shifter-v2.5.30.bin",
+      "size_bytes": 1672048
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.29",
+      "date": "2026-06-03",
+      "notes": "Touch lock + screensaver gyro-wake + BOOT menu entry. (1) Tap the screen three times on MAIN or PATTERN to LOCK touch \u2014 every subsequent gesture is suppressed except a long-press, which unlocks. Useful for resting a finger on the knob without bouncing gears or popping the menu. Small padlock badge shows on locked screens. (2) New 'Wake screensaver on motion' toggle under Custom \u2192 Animation & feel. When on, wiggling the knob exits the screensaver back to whichever gear screen you were on (MAIN or PATTERN), so you don't have to tap. Off by default \u2014 vibration on rough roads can cross the wake threshold. (3) BOOT row added to the main menu (between INFO and BACK) \u2014 long-press to soft-reboot the device without unplugging.",
+      "url": "firmware/smart_knob_shifter-v2.5.29.bin",
+      "size_bytes": 1671792
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.28",
+      "date": "2026-06-03",
+      "notes": "Touch sensitivity overhaul. (1) Dropped the 2-of-2 I2C debounce \u2014 concurrent BLE writes + display SPI bursts were making the two reads disagree, dropping the touch entirely. Single-read poll is sufficient since the chip's FingerNum==1 check already rejects bus noise. (2) Active-area gate widened to the full 240\u00d7240 panel (was 220\u00d7220 inner box). Centre-of-screen touches that landed when the I2C bus was contended were being treated as edge-grip false touches and rejected. (3) readXY() at touch-down retries up to 3\u00d7 \u2014 if the initial coordinate read failed, the swipe baseline used to get re-seeded mid-drag, producing the 'must swipe to the screen edge' complaint. (4) Swipe distance threshold dropped 6 \u2192 4 px for snappier centre-launched swipes.",
+      "url": "firmware/smart_knob_shifter-v2.5.28.bin",
+      "size_bytes": 1670288
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.27",
+      "date": "2026-06-03",
+      "notes": "Calibrate page now lets you switch between PRND / SEQ / HPATTERN and pick gear count (4/5/6) for HPAT + SEQ \u2014 no more on-device wizard scrolling. JSON over BLE was getting truncated at NimBLE's 512-byte ATT cap, so config + calibration shapes are trimmed and the PWA fills in static metadata client-side. Screensaver upload chunks now go via WRITE (with ATT response) \u2014 fixes the silent packet drops that triggered XE_SIZE after upload. BleAxis transfer-buf char now declares WRITE | WRITE_NR so iOS can pick the reliable path. WebCodecs VideoDecoder fallback added for 4K HEVC clips iPhone Photos exports \u2014 pipes through MP4Box + hardware decode. Custom page preview now mirrors the device's live gear + tilt over BLE telemetry.",
+      "url": "firmware/smart_knob_shifter-v2.5.27.bin",
+      "size_bytes": 1667856
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.23",
+      "date": "2026-06-02",
+      "notes": "BLE-first release. All daily features (config, calibration, custom name + colours, telemetry) now go over BLE \u2014 no more Wi-Fi AP join. New BLE chunked-transfer protocol carries screensaver uploads (~12 s) and OTA firmware (~3 min) so Wi-Fi is no longer needed for ANY feature. SETUP MODE screen rewritten \u2014 single 'PAIR' page, no SoftAP / QR / HTTP server (fixes the SETUP-MODE-causes-reboot crash). G-meter axes inverted to match race convention (left-turn pulls dot right). Companion app: Connect screen is BLE-only, Wi-Fi entry removed. \u26a0 ONE-TIME USB FLASH \u2014 your current firmware doesn't have the new BLE chunked-transfer chars, so this jump can't OTA. After this install, all future updates flow over BLE OTA.",
+      "url": "firmware/smart_knob_shifter-v2.5.23.bin",
       "size_bytes": 0,
-      "status":  "preview"
+      "status": "preview"
+    },
+    {
+      "version": "AXIS V1.0.0",
+      "build": "v2.5.12",
+      "date": "2026-06-02",
+      "notes": "Pre-release \u2014 companion now shows release notes again. Touch active area limited to inner 220\u00d7220 (no more edge-grip misfires). WiFi reliability fixes (no power-save, max TX) \u2014 OTA + screensaver upload should stay connected on iPhone. Gear shift delay minimum raised to 120 ms (fixes the bounce-back-and-forth bug). G-meter gets a red gyro-rate dot with a ghost trail. Boot now waits for the knob to be still before zero-cal. New: companion is also shipping as a native iOS app via Capacitor.",
+      "url": null,
+      "size_bytes": 0,
+      "status": "preview"
     },
     {
       "version": "AXIS V1.0.0",
       "date": "2026-05-28",
-      "notes": "AXIS V1.0.0 — Public release. SYS panel is now wired up (live device stats, RESTART, FACTORY RESET). Companion-app copy reworked to be customer-facing only: no Arduino IDE / BOOT-button / Sketch references anywhere. Firmware label rebranded from dev tags to 'AXIS V1.0.0' on the device INFO screen and across the API.",
+      "notes": "AXIS V1.0.0 \u2014 Public release. SYS panel is now wired up (live device stats, RESTART, FACTORY RESET). Companion-app copy reworked to be customer-facing only: no Arduino IDE / BOOT-button / Sketch references anywhere. Firmware label rebranded from dev tags to 'AXIS V1.0.0' on the device INFO screen and across the API.",
       "url": "firmware/AXIS_V1.0.0.bin",
       "size_bytes": 1631456
     },
     {
       "version": "v1.2.4",
       "date": "2026-05-28",
-      "notes": "v1.2.4 — Re-embed PWA into firmware. The device's bundled PWA hadn't been re-baked since v1.1.x, so opening the companion at 192.168.4.1 (or via captive portal on an AXIS-XXXX-only connection) showed the old single-Accent Brand panel even after the firmware itself was upgraded. Re-ran npm run build:device + embed so the on-device PWA matches the github.io one (per-element colour slots, frame scrubber, transition + gear-anim dropdowns).",
+      "notes": "v1.2.4 \u2014 Re-embed PWA into firmware. The device's bundled PWA hadn't been re-baked since v1.1.x, so opening the companion at 192.168.4.1 (or via captive portal on an AXIS-XXXX-only connection) showed the old single-Accent Brand panel even after the firmware itself was upgraded. Re-ran npm run build:device + embed so the on-device PWA matches the github.io one (per-element colour slots, frame scrubber, transition + gear-anim dropdowns).",
       "url": "firmware/smart_knob_shifter-v1.2.4.bin",
       "size_bytes": 1627088
     },
     {
       "version": "v1.2.3",
       "date": "2026-05-28",
-      "notes": "v1.2.3 — Two upgrade-path fixes. (1) Gear / meter / name / fg / muted / warn render as solid BLACK after upgrading from v1.2.1 → v1.2.2. Cause: v1.2.1 stored 0 in NVS to mean 'inherit'; v1.2.2 took 0 literally. Fix: on load, treat 0 the same as 'key missing' and use the slot's seeded default. (2) PWA Brand panel still shows only the old single Accent picker. Cause: service worker cached the v1.2.0 bundle and won't activate the new one until the standalone app is fully killed. Fix: skipWaiting + clientsClaim so the new SW takes over on the next page load.",
+      "notes": "v1.2.3 \u2014 Two upgrade-path fixes. (1) Gear / meter / name / fg / muted / warn render as solid BLACK after upgrading from v1.2.1 \u2192 v1.2.2. Cause: v1.2.1 stored 0 in NVS to mean 'inherit'; v1.2.2 took 0 literally. Fix: on load, treat 0 the same as 'key missing' and use the slot's seeded default. (2) PWA Brand panel still shows only the old single Accent picker. Cause: service worker cached the v1.2.0 bundle and won't activate the new one until the standalone app is fully killed. Fix: skipWaiting + clientsClaim so the new SW takes over on the next page load.",
       "url": "firmware/smart_knob_shifter-v1.2.3.bin",
       "size_bytes": 1628272
     },
     {
       "version": "v1.2.2",
       "date": "2026-05-28",
-      "notes": "v1.2.2 — Colour slots fully independent + setup-exit shortcut. (1) Every per-element slot (gear, meter, name, fg, muted, warn) is now its own pickable colour with no Linked/inherit toggle — changing Accent doesn't cascade. Sensible defaults seed each slot on first boot. (2) 5-tap on MAIN while in SETUP MODE persists tunables + branding to NVS and tears down the SoftAP, so you can step away from the PWA without rebooting (5-tap outside setup mode still opens the menu).",
+      "notes": "v1.2.2 \u2014 Colour slots fully independent + setup-exit shortcut. (1) Every per-element slot (gear, meter, name, fg, muted, warn) is now its own pickable colour with no Linked/inherit toggle \u2014 changing Accent doesn't cascade. Sensible defaults seed each slot on first boot. (2) 5-tap on MAIN while in SETUP MODE persists tunables + branding to NVS and tears down the SoftAP, so you can step away from the PWA without rebooting (5-tap outside setup mode still opens the menu).",
       "url": "firmware/smart_knob_shifter-v1.2.2.bin",
       "size_bytes": 1628224
     },
     {
       "version": "v1.2.1",
       "date": "2026-05-28",
-      "notes": "v1.2.1 — Every text on the device is now themeable. Three new semantic-role colour slots: fg (titles + body text — \"APP\", \"MENU\", \"BRIGHTNESS\", SSID, version), muted (hints + secondary info — \"Safari: 192.168.4.1\", footer device name default, \"HOLD TO EXIT\"), and warn (errors + exit prompts — \"HOLD: EXIT\", \"AP FAILED\", \"WAIT - STILL...\"). Each defaults to its current static colour so behaviour matches v1.2.0 until you pick. Brand panel now has 6 slot rows.",
+      "notes": "v1.2.1 \u2014 Every text on the device is now themeable. Three new semantic-role colour slots: fg (titles + body text \u2014 \"APP\", \"MENU\", \"BRIGHTNESS\", SSID, version), muted (hints + secondary info \u2014 \"Safari: 192.168.4.1\", footer device name default, \"HOLD TO EXIT\"), and warn (errors + exit prompts \u2014 \"HOLD: EXIT\", \"AP FAILED\", \"WAIT - STILL...\"). Each defaults to its current static colour so behaviour matches v1.2.0 until you pick. Brand panel now has 6 slot rows.",
       "url": "firmware/smart_knob_shifter-v1.2.1.bin",
       "size_bytes": 1628560
     },
     {
       "version": "v1.2.0",
       "date": "2026-05-28",
-      "notes": "v1.2.0 — Five PWA-driven customisation features. (1) APP screen auto-collapses to MAIN once the PWA actually pairs; MAIN shows a small SETUP MODE tag while the SoftAP is still up. (2) Per-element colours: gear digit, G-meter grid, and brand name footer each get their own colour slot (defaults inherit from accent). (3) Page transitions: pick between Fade-to-black (default), Iris zoom, and Instant in TUNE. (4) Gear digit animations: None / Slide / Fade. (5) Media preview now scrubs through every quantised frame of an animated screensaver before upload.",
+      "notes": "v1.2.0 \u2014 Five PWA-driven customisation features. (1) APP screen auto-collapses to MAIN once the PWA actually pairs; MAIN shows a small SETUP MODE tag while the SoftAP is still up. (2) Per-element colours: gear digit, G-meter grid, and brand name footer each get their own colour slot (defaults inherit from accent). (3) Page transitions: pick between Fade-to-black (default), Iris zoom, and Instant in TUNE. (4) Gear digit animations: None / Slide / Fade. (5) Media preview now scrubs through every quantised frame of an animated screensaver before upload.",
       "url": "firmware/smart_knob_shifter-v1.2.0.bin",
       "size_bytes": 1627936
     },
     {
       "version": "v1.1.8",
       "date": "2026-05-28",
-      "notes": "v1.1.8 — Live setting feedback. When the PWA mutates anything (TUNE slider drags, BRAND colour/name, screensaver upload, WIFI), the knob screen pops a 2.5 s toast banner at the bottom edge so you actually see your edit landing on the device. Toast renders over every screen via a Display::push() overlay hook — no per-screen wiring. brightFull/brightDim now re-push to the backlight immediately after patch (previously you had to wait for an FSM transition for the new value to land).",
+      "notes": "v1.1.8 \u2014 Live setting feedback. When the PWA mutates anything (TUNE slider drags, BRAND colour/name, screensaver upload, WIFI), the knob screen pops a 2.5 s toast banner at the bottom edge so you actually see your edit landing on the device. Toast renders over every screen via a Display::push() overlay hook \u2014 no per-screen wiring. brightFull/brightDim now re-push to the backlight immediately after patch (previously you had to wait for an FSM transition for the new value to land).",
       "url": "firmware/smart_knob_shifter-v1.1.8.bin",
       "size_bytes": 1623056
     },
     {
       "version": "v1.1.7",
       "date": "2026-05-28",
-      "notes": "v1.1.7 — CRITICAL: fix PSRAM init failure on v1.1.6. v1.1.6 was built with PSRAM=opi (Octal), but the ESP32-S3R2 chip on this board has QSPI (Quad) 2MB PSRAM. Boot logged 'PSRAM chip is not connected, or wrong PSRAM line mode' and bailed → screensaver alloc returned null → image never loaded (logo fell through). Rebuilt with PSRAM=enabled. Re-flash via USB; existing screensaver file on flash will load on first boot.",
+      "notes": "v1.1.7 \u2014 CRITICAL: fix PSRAM init failure on v1.1.6. v1.1.6 was built with PSRAM=opi (Octal), but the ESP32-S3R2 chip on this board has QSPI (Quad) 2MB PSRAM. Boot logged 'PSRAM chip is not connected, or wrong PSRAM line mode' and bailed \u2192 screensaver alloc returned null \u2192 image never loaded (logo fell through). Rebuilt with PSRAM=enabled. Re-flash via USB; existing screensaver file on flash will load on first boot.",
       "url": "firmware/smart_knob_shifter-v1.1.7.bin",
       "size_bytes": 1618064
     },
     {
       "version": "v1.1.6",
       "date": "2026-05-28",
-      "notes": "v1.1.6 — Fix swapped/teal colours on uploaded screensavers. LovyanGFX's pushImage(uint16_t*) default treats the input buffer as big-endian RGB565, but the PWA writes little-endian (natural ESP32 byte order) — so red pixels were rendering as teal. setSwapBytes(true) around the screensaver blit makes both formats (raw RGB565 stills + AXSV animations) display correctly. No re-upload needed — your existing screensaver fixes itself after OTA.",
+      "notes": "v1.1.6 \u2014 Fix swapped/teal colours on uploaded screensavers. LovyanGFX's pushImage(uint16_t*) default treats the input buffer as big-endian RGB565, but the PWA writes little-endian (natural ESP32 byte order) \u2014 so red pixels were rendering as teal. setSwapBytes(true) around the screensaver blit makes both formats (raw RGB565 stills + AXSV animations) display correctly. No re-upload needed \u2014 your existing screensaver fixes itself after OTA.",
       "url": "firmware/smart_knob_shifter-v1.1.6.bin",
       "size_bytes": 1620320
     },
     {
       "version": "v1.1.5",
       "date": "2026-05-28",
-      "notes": "v1.1.5 — Image decoder hardening. PWA now uses createImageBitmap() with explicit sRGB colour-space conversion (was HTMLImageElement which iOS Safari fed wide-gamut/HDR pixels for some AVIFs → shifted colours on device). Better fidelity across formats.",
+      "notes": "v1.1.5 \u2014 Image decoder hardening. PWA now uses createImageBitmap() with explicit sRGB colour-space conversion (was HTMLImageElement which iOS Safari fed wide-gamut/HDR pixels for some AVIFs \u2192 shifted colours on device). Better fidelity across formats.",
       "url": "firmware/smart_knob_shifter-v1.1.5.bin",
       "size_bytes": 1618080
     },
     {
       "version": "v1.1.4",
       "date": "2026-05-28",
-      "notes": "v1.1.4 — Free FS space BEFORE accepting screensaver upload. Was leaving the existing 115 KB screensaver in place while writing a 115 KB tmp, overflowing the 128 KB partition users get when v1.1.1 was OTA-installed instead of USB-flashed. Now removes the old file + reports free space first.",
+      "notes": "v1.1.4 \u2014 Free FS space BEFORE accepting screensaver upload. Was leaving the existing 115 KB screensaver in place while writing a 115 KB tmp, overflowing the 128 KB partition users get when v1.1.1 was OTA-installed instead of USB-flashed. Now removes the old file + reports free space first.",
       "url": "firmware/smart_knob_shifter-v1.1.4.bin",
       "size_bytes": 1617968
     },
     {
       "version": "v1.1.3",
       "date": "2026-05-28",
-      "notes": "v1.1.3 — Screensaver upload tolerance. Disk write now decoupled from PSRAM reload: HTTP 200 returned as soon as the file is on flash, even if the in-memory reload fails (image still shows on next reboot). Serial.printf at every failure point so 400s become diagnosable. Response now includes frames/fps/animated.",
+      "notes": "v1.1.3 \u2014 Screensaver upload tolerance. Disk write now decoupled from PSRAM reload: HTTP 200 returned as soon as the file is on flash, even if the in-memory reload fails (image still shows on next reboot). Serial.printf at every failure point so 400s become diagnosable. Response now includes frames/fps/animated.",
       "url": "firmware/smart_knob_shifter-v1.1.3.bin",
       "size_bytes": 1617632
     },
     {
       "version": "v1.1.2",
       "date": "2026-05-28",
-      "notes": "v1.1.2 — Fix funky static-image colours. Stills now go through the legacy raw RGB565 path (full 16-bit colour, no palette quantization). Animations still use AXSV/16-colour (necessary to fit ~20 frames in FS). PWA preview shows decoded result before upload.",
+      "notes": "v1.1.2 \u2014 Fix funky static-image colours. Stills now go through the legacy raw RGB565 path (full 16-bit colour, no palette quantization). Animations still use AXSV/16-colour (necessary to fit ~20 frames in FS). PWA preview shows decoded result before upload.",
       "url": "firmware/smart_knob_shifter-v1.1.2.bin",
       "size_bytes": 1616896
     },
     {
       "version": "v1.1.1",
       "date": "2026-05-28",
-      "notes": "v1.1.1 — Animation screensaver (AXSV format). Custom partition: 640 KB LittleFS (was 128 KB), 1664 KB app slots. Upload video/GIF/image via BRAND → Screensaver; PWA quantises to 16 colours + 4-bit indexed format. Up to ~22 frames @ 240×240, configurable FPS. ⚠ ONE-TIME USB FLASH — partition table change cannot OTA. After this install, OTA continues normally.",
+      "notes": "v1.1.1 \u2014 Animation screensaver (AXSV format). Custom partition: 640 KB LittleFS (was 128 KB), 1664 KB app slots. Upload video/GIF/image via BRAND \u2192 Screensaver; PWA quantises to 16 colours + 4-bit indexed format. Up to ~22 frames @ 240\u00d7240, configurable FPS. \u26a0 ONE-TIME USB FLASH \u2014 partition table change cannot OTA. After this install, OTA continues normally.",
       "url": "firmware/smart_knob_shifter-v1.1.1.bin",
       "size_bytes": 1616720
     },
     {
       "version": "v1.1.0",
       "date": "2026-05-28",
-      "notes": "v1.1.0 — Station-mode OTA. Configure home WiFi in BRAND tab, device joins AP+STA. OTA RELEASES → INSTALL then makes the DEVICE download the .bin via its own WiFi (HTTPClient/TLS), bypassing iOS Safari's cross-origin binary fetch issues entirely.",
+      "notes": "v1.1.0 \u2014 Station-mode OTA. Configure home WiFi in BRAND tab, device joins AP+STA. OTA RELEASES \u2192 INSTALL then makes the DEVICE download the .bin via its own WiFi (HTTPClient/TLS), bypassing iOS Safari's cross-origin binary fetch issues entirely.",
       "url": "firmware/smart_knob_shifter-v1.1.0.bin",
       "size_bytes": 1614352
     },
     {
       "version": "v1.0.6",
       "date": "2026-05-28",
-      "notes": "v1.0.6 — Kill DNS hijack entirely. Was breaking OTA fetches by caching the spoofed reply on iOS. Lose: iOS captive-portal auto-popup. Gain: every OTA fetch now reliably reaches github.io. Open Safari manually → 192.168.4.1 (URL shown on APP screen).",
+      "notes": "v1.0.6 \u2014 Kill DNS hijack entirely. Was breaking OTA fetches by caching the spoofed reply on iOS. Lose: iOS captive-portal auto-popup. Gain: every OTA fetch now reliably reaches github.io. Open Safari manually \u2192 192.168.4.1 (URL shown on APP screen).",
       "url": "firmware/smart_knob_shifter-v1.0.6.bin",
       "size_bytes": 1522432
     },
     {
       "version": "v1.0.5",
       "date": "2026-05-28",
-      "notes": "v1.0.5 — OTA fallback: each release has a DOWNLOAD link (Safari native) alongside INSTALL. iOS Safari silently blocks XHR cross-origin binary fetches from HTTP origin; the link bypasses that, save to Files, UPLOAD tab to flash. Also includes v1.0.4 Main screen polish.",
+      "notes": "v1.0.5 \u2014 OTA fallback: each release has a DOWNLOAD link (Safari native) alongside INSTALL. iOS Safari silently blocks XHR cross-origin binary fetches from HTTP origin; the link bypasses that, save to Files, UPLOAD tab to flash. Also includes v1.0.4 Main screen polish.",
       "url": "firmware/smart_knob_shifter-v1.0.5.bin",
       "size_bytes": 1526848
     },
     {
       "version": "v1.0.4",
       "date": "2026-05-28",
-      "notes": "v1.0.4 — Polish: Main screen mode label now uses your brand accent colour; device name shown at the bottom. First release intended for OTA install via RELEASES tab end-to-end.",
+      "notes": "v1.0.4 \u2014 Polish: Main screen mode label now uses your brand accent colour; device name shown at the bottom. First release intended for OTA install via RELEASES tab end-to-end.",
       "url": "firmware/smart_knob_shifter-v1.0.4.bin",
       "size_bytes": 1526416
     },
     {
       "version": "v1.0.3",
       "date": "2026-05-28",
-      "notes": "v1.0.3 — DNS hijack TTL 60s → 1s. Was caching bogus reply on iOS, blocking github.io fetch for ~1 min after hijack window closed. Also added 'Safari: 192.168.4.1' hint on APP screen.",
+      "notes": "v1.0.3 \u2014 DNS hijack TTL 60s \u2192 1s. Was caching bogus reply on iOS, blocking github.io fetch for ~1 min after hijack window closed. Also added 'Safari: 192.168.4.1' hint on APP screen.",
       "url": "firmware/smart_knob_shifter-v1.0.3.bin",
       "size_bytes": 1524528
     },
     {
       "version": "v1.0.2",
       "date": "2026-05-28",
-      "notes": "v1.0.2 — fix OTA download (Safari ReadableStream → XHR arraybuffer).",
+      "notes": "v1.0.2 \u2014 fix OTA download (Safari ReadableStream \u2192 XHR arraybuffer).",
       "url": "firmware/smart_knob_shifter-v1.0.2.bin",
       "size_bytes": 1524464
     },
     {
       "version": "v1.0.1",
       "date": "2026-05-28",
-      "notes": "v1.0.1 — DNS hijack auto-stops after 30s (was preventing OTA from fetching github.io). USB flash this once, then future updates via OTA.",
+      "notes": "v1.0.1 \u2014 DNS hijack auto-stops after 30s (was preventing OTA from fetching github.io). USB flash this once, then future updates via OTA.",
       "url": "firmware/smart_knob_shifter-v1.0.1.bin",
       "size_bytes": 1524464
     },
     {
       "version": "v1.0.0",
       "date": "2026-05-28",
-      "notes": "v1.0.0 — Stable baseline. P1 pairing + captive portal · P2 tune · P3 calibrate · P4 telemetry · P5 brand · P6 screensaver. Digit-only WiFi pwd. iOS: open in Safari for OTA (not Captive Wi-Fi popup).",
+      "notes": "v1.0.0 \u2014 Stable baseline. P1 pairing + captive portal \u00b7 P2 tune \u00b7 P3 calibrate \u00b7 P4 telemetry \u00b7 P5 brand \u00b7 P6 screensaver. Digit-only WiFi pwd. iOS: open in Safari for OTA (not Captive Wi-Fi popup).",
       "url": "firmware/smart_knob_shifter-v1.0.0.bin",
       "size_bytes": 1524352
     }
