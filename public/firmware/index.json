@@ -3,6 +3,14 @@
   "releases": [
     {
       "version": "AXIS V1.0.0",
+      "build": "v2.8.11",
+      "date": "2026-06-09",
+      "notes": "REVERT my own bug \u2014 v2.8.8 'CAL_x zero' loop was based on a wrong QMI8658 register map assumption. Field after v2.8.10: gyro fully fixed (3 axes different, magnitude ~3.5 dps stationary, ADDR_AI restore worked) but accel output STUCK at non-live values (AX=+3.26 AY=+4.00 saturated AZ=-0.89, no response to tilt). Diagnosis: v2.8.8 wrote 0x00 to registers 0x0A-0x0F under the assumption those were accel offset-compensation bytes (the convention on MPU6050/BMI160). On the QMI8658 those addresses are completely different \u2014 0x0A = CTRL9 (Host Commands), 0x0B-0x10 = CAL1/CAL2/CAL3 = WOM threshold + Tap detection + Step counter (Motion Detection control, NOT accel calibration). Writing 0x00 to the tap-detection bytes silently switched the chip's accel output path to a tap-result mode, freezing AY at the saturation rail. v2.8.11 deletes the entire loop. The actual fixes stay: v2.8.5 CTRL2.aST clear (accel self-test), v2.8.9 CTRL3.gST clear (gyro self-test), v2.8.10 CTRL1.ADDR_AI restore (auto-increment). Accel should respond to tilt again after this build.",
+      "url": "firmware/smart_knob_shifter-v2.8.11.bin",
+      "size_bytes": 1706528
+    },
+    {
+      "version": "AXIS V1.0.0",
       "build": "v2.8.10",
       "date": "2026-06-09",
       "notes": "ACTUAL ROOT CAUSE FOUND \u2014 self-inflicted address-auto-increment bug. Field photo from v2.8.9 boot showed AX=AY=AZ=+0.55 and GX=GY=GZ=-20.1 simultaneously. Mathematically impossible from a real IMU (3 axes have independent noise floors, can never be bit-identical) so the burst read itself had to be broken. QMI8658 CTRL1 bit 6 (ADDR_AI = Address Auto-Increment) defaults to 0 (auto-inc DISABLED) at power-on. SensorLib's reset() sets bit 6 to 1 (auto-inc ON) inside qmi.begin() \u2014 but our v2.8.6 raw soft-reset (0x60 \u2190 0xB0) wipes CTRL1 back to default AFTER qmi.begin() ran, leaving auto-increment OFF. From that point every burst read returns [AX_L, AX_H] looped 3 times instead of advancing through AY_L/AY_H/AZ_L/AZ_H \u2014 the library reconstructs the SAME int16 for all three axes. v2.8.10 fix: after our soft-reset, explicitly write CTRL1 = 0x40 (bit 6 = ADDR_AI ON, bit 5 = LE matching the lib's byte-order). The soft-reset machinery stays \u2014 still useful for clearing other inherited state \u2014 we just stop undoing the lib's setup at the same time. This is the single bug behind every IMU symptom in v2.8.x (5g accel, 110 dps gyro, 2.5g, identical-axis 0.55). After v2.8.10 the strip should show ax\u22480 ay\u22480 az\u22481 stationary, gyro all 3 < 5 dps.",
