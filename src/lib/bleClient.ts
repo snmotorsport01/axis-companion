@@ -514,16 +514,27 @@ export class BleClient extends DeviceClient {
     await CapBle.write(this.deviceId, AXIS_SVC, XFER_CTL_CHAR,
       new DataView(startBuf.buffer));
 
-    // 2) DATA chunks — reliable WRITE (with ATT response). v0.5.2
-    //    flipped from writeWithoutResponse to write after a string of
-    //    upload failures: iOS BLE has no built-in flow control for
-    //    WRITE_NR, so the plugin's writes pile up faster than the
-    //    radio can drain, silently dropping packets once a per-
-    //    connection buffer fills. WRITE round-trips an ATT response
-    //    for each chunk — slower (~30 ms/chunk) but guaranteed
-    //    delivery. A 100 KB screensaver takes ~12 s at 240 byte
-    //    chunks; user-visible enough to want a progress bar but well
-    //    inside the patience budget.
+    // 2) DATA chunks — WINDOWED write-without-response + periodic barrier.
+    //    v0.5.2 used pure write-with-response (every chunk waits an ATT
+    //    response), which is reliable but ~85-127 ms/chunk on iOS due
+    //    to BLE connection-interval rounding. A 1.7 MB OTA at 240 B/
+    //    chunk = ~7,100 chunks → 10-15 minutes. Field unacceptable.
+    //
+    //    The fix balances throughput against the historic iOS BLE-NR
+    //    overflow bug:
+    //      • Bulk chunks use writeWithoutResponse — iOS can queue many
+    //        per connection interval (~12-15 vs 1 with response).
+    //      • Every XFER_FLOW_WINDOW writes (default 16), we emit ONE
+    //        write-with-response as a barrier — forces iOS to drain
+    //        the radio queue before we feed it more, so we never
+    //        outrun the controller buffer the way pure-NR did.
+    //      • Last chunk is always with-response so END never overtakes
+    //        an in-flight data write.
+    //
+    //    Expected throughput: ~16 chunks per connection interval ≈
+    //    16 × 240 = 3,840 B / 30 ms = 128 KB/s → 1.7 MB in ~13 s
+    //    (theoretical). Conservative real-world: 1-2 minutes including
+    //    iOS rate-limiting, vs 10-15 prior.
     //
     // CRITICAL: pass a FRESH ArrayBuffer per chunk (`.slice()` copies,
     // `.subarray()` only views). The Capacitor BLE plugin marshals
@@ -531,12 +542,22 @@ export class BleClient extends DeviceClient {
     // entire underlying ArrayBuffer — if we pass a `.subarray()`
     // view, it ignores byteOffset/byteLength and dumps the WHOLE
     // source file on every chunk write.
+    const XFER_FLOW_WINDOW = 16;
     let sent = 0;
+    let burst = 0;
     while (sent < total) {
       const end = Math.min(sent + XFER_CHUNK_BYTES, total);
       const chunk = bytes.slice(sent, end);          // fresh buffer
       const dv = new DataView(chunk.buffer);
-      await CapBle.write(this.deviceId, AXIS_SVC, XFER_BUF_CHAR, dv);
+
+      const isBarrier = (++burst >= XFER_FLOW_WINDOW) || (end === total);
+      if (isBarrier) {
+        await CapBle.write(this.deviceId, AXIS_SVC, XFER_BUF_CHAR, dv);
+        burst = 0;
+      } else {
+        await CapBle.writeWithoutResponse(
+          this.deviceId, AXIS_SVC, XFER_BUF_CHAR, dv);
+      }
       sent = end;
       onProgress?.(sent / total);
     }
