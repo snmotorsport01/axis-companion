@@ -3,6 +3,14 @@
   "releases": [
     {
       "version": "AXIS V1.0.0",
+      "build": "v3.1.1",
+      "date": "2026-06-22",
+      "notes": "Real-car gear-detection tuning. FASTER gear entry: the motion-freeze was split so the shift TWIST (which spikes the knob gyro 40-60dps) no longer resets the dwell timer — the dwell now runs concurrently with the twist (and the default dropped 180→120ms). The intent-gate still rejects pure car-physics tilt. FIXED adjacent-column misreads (e.g. shifting 3→4 but reading 2): a cross-column settle gate now requires the chassis to be accel-calm for 60ms before committing a column change, so lateral cornering G can't corrupt the accel-derived roll and latch the wrong column; same-column up/downshifts stay snappy. G-meter live dot Pitch (fore/aft) axis corrected. Tuning levers via PWA if needed: gearDwellMs, motionAccelDead.",
+      "url": "firmware/knob_v3_1.43-v3.1.1.bin",
+      "size_bytes": 2070336
+    },
+    {
+      "version": "AXIS V1.0.0",
       "build": "v3.1.0",
       "date": "2026-06-20",
       "notes": "Showroom DEMO mode (main menu → DEMO: gear auto-shifts with the shift-light winding up, then auto-tours G-meter / Music / Gear-pattern; any touch exits). New 14-segment rev-ring shift light (amber wind-up, red strobe at the shift point) with an 80° gap at the top so it never overlaps the gear-mode header. 'C' instrument-minimal menu icon set (single-ring calibrate reticle, inward-chevron SET ZERO, crosshair G-meter, circular-arrow restart). 1.43-inch AMOLED board.",
