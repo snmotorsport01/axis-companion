@@ -3,6 +3,14 @@
   "releases": [
     {
       "version": "AXIS V1.0.0",
+      "build": "v3.1.3",
+      "date": "2026-06-22",
+      "notes": "Gyro-stabilised tilt fusion — the real fix for mid-corner gear misreads (the v3.1.2 'known limit'). Researched actual circuit + street G-force data: vehicle lateral/braking G corrupts the accel-derived tilt (0.9g street corner -> 42deg roll error, GT3 1.1-1.4g -> 54deg, F1 4.5g -> 77deg, and the friction circle keeps it large for the WHOLE 2-8s corner) — that was the root cause of '3->4 reads as 2'. Replaced the accel-only roll/pitch with a complementary filter: roll/pitch are now GYRO-INTEGRATED (immune to linear G) and pulled toward the accel gravity tilt only when the accel is trustworthy (‖a‖≈1g AND the knob isn't rotating AND it agrees with the estimate). Through a corner that trust falls to ~0 so the filter coasts on the (quiet) gyro and HOLDS the true gear orientation; a real shift spikes the gyro then re-anchors to the new gear. ONE auto-adapting profile serves street + circuit (gentle street driving behaves like before; G events coast then snap back). Accel-only fallback if the gyro never bias-calibrates, so a bad gyro can't strand gear detection. VALIDATE ON-CAR: confirm no mid-corner misread + measure real gyro drift; tuning constants (IMU_ACCEL_MAG_DEAD/SPAN, GYRO_QUIET/SPAN, REJECT_DEG, BASE_BETA, COAST_TIMEOUT) are in Config.h.",
+      "url": "firmware/knob_v3_1.43-v3.1.3.bin",
+      "size_bytes": 2193936
+    },
+    {
+      "version": "AXIS V1.0.0",
       "build": "v3.1.2",
       "date": "2026-06-22",
       "notes": "Deep-audit fix sweep — 30+ verified bug fixes + main optimizations (17-agent audit → 6-agent fix, adversarially verified). CONCURRENCY: fixed a CRITICAL AMS now-playing use-after-free (heap corruption on track change — String reassigned on the BLE task while the render core read it); all BLE-command state changes (set-mode / sleep / zero-IMU) now defer off the BLE task onto the render core via a lock-free queue (no torn engine/screen state); BLE media taps no longer block the render loop; factory-reset waits for disconnect before wiping bonds. TOUCH: fixed a phantom triple-tap that could silently LOCK the screen; added contact-bounce debounce + dropped-frame release recovery. DISPLAY: ~halved per-frame cost of fades (dim/blend rewrite + LUT + pre-allocated buffers); toast + lock dot no longer vanish during transitions. SYSTEM: /api/config now CLAMPS every value (a bad POST can no longer persist a black screen across reboot); URL-OTA + reboot/factory-reset handlers no longer block the web server. GEAR: hardened the cross-column settle (gyro-calm + no dwell-starve), SEQ first-shift-after-mode-change, HPattern N-fallback. IMU: health flag + invalid-frame rejection. Plus the v3.1.1 G-meter pitch + rev-ring header-gap. KNOWN: sustained cornering-G gear misread still needs a gyro-fusion follow-up; remote-calibrate-over-BLE still runs on the BLE task.",
