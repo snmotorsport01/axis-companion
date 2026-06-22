@@ -3,6 +3,14 @@
   "releases": [
     {
       "version": "AXIS V1.0.0",
+      "build": "v3.1.2",
+      "date": "2026-06-22",
+      "notes": "Deep-audit fix sweep — 30+ verified bug fixes + main optimizations (17-agent audit → 6-agent fix, adversarially verified). CONCURRENCY: fixed a CRITICAL AMS now-playing use-after-free (heap corruption on track change — String reassigned on the BLE task while the render core read it); all BLE-command state changes (set-mode / sleep / zero-IMU) now defer off the BLE task onto the render core via a lock-free queue (no torn engine/screen state); BLE media taps no longer block the render loop; factory-reset waits for disconnect before wiping bonds. TOUCH: fixed a phantom triple-tap that could silently LOCK the screen; added contact-bounce debounce + dropped-frame release recovery. DISPLAY: ~halved per-frame cost of fades (dim/blend rewrite + LUT + pre-allocated buffers); toast + lock dot no longer vanish during transitions. SYSTEM: /api/config now CLAMPS every value (a bad POST can no longer persist a black screen across reboot); URL-OTA + reboot/factory-reset handlers no longer block the web server. GEAR: hardened the cross-column settle (gyro-calm + no dwell-starve), SEQ first-shift-after-mode-change, HPattern N-fallback. IMU: health flag + invalid-frame rejection. Plus the v3.1.1 G-meter pitch + rev-ring header-gap. KNOWN: sustained cornering-G gear misread still needs a gyro-fusion follow-up; remote-calibrate-over-BLE still runs on the BLE task.",
+      "url": "firmware/knob_v3_1.43-v3.1.2.bin",
+      "size_bytes": 2193136
+    },
+    {
+      "version": "AXIS V1.0.0",
       "build": "v3.1.1",
       "date": "2026-06-22",
       "notes": "Real-car gear-detection tuning. FASTER gear entry: the motion-freeze was split so the shift TWIST (which spikes the knob gyro 40-60dps) no longer resets the dwell timer — the dwell now runs concurrently with the twist (and the default dropped 180→120ms). The intent-gate still rejects pure car-physics tilt. FIXED adjacent-column misreads (e.g. shifting 3→4 but reading 2): a cross-column settle gate now requires the chassis to be accel-calm for 60ms before committing a column change, so lateral cornering G can't corrupt the accel-derived roll and latch the wrong column; same-column up/downshifts stay snappy. G-meter live dot Pitch (fore/aft) axis corrected. Tuning levers via PWA if needed: gearDwellMs, motionAccelDead.",
