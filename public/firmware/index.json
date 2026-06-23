@@ -3,6 +3,14 @@
   "releases": [
     {
       "version": "AXIS V1.0.0",
+      "build": "v3.1.7",
+      "date": "2026-06-22",
+      "notes": "Tune the corner-G gear-misread filter live, no reflash. The 7 gyro-fusion constants behind the v3.1.3 cornering fix (how hard the accel re-anchors the tilt, the gyro 'quiet' trust window, the reject threshold, the coast timeout) are now runtime tunables on the device's web app (Tune page over the AXIS Wi-Fi hotspot) — so the mid-corner gear hold can be dialled in on-car and saved without rebuilding firmware. Every value is range-clamped and NaN-rejected, and the on-screen Tune sliders appear automatically. Defaults are identical to v3.1.6, so behaviour is unchanged until you move a slider. (These advanced IMU controls are web-only — too many to fit the BLE config channel; the everyday gear/feel tunables stay on both Wi-Fi and the Bluetooth app.) No gear/UI behaviour change vs v3.1.6 out of the box. The v3.1.4 dirty-gate, v3.1.5 async present and v3.1.3 gyro-fusion still want their on-hardware confirmation per the validation checklist.",
+      "url": "firmware/knob_v3_1.43-v3.1.7.bin",
+      "size_bytes": 2198144
+    },
+    {
+      "version": "AXIS V1.0.0",
       "build": "v3.1.6",
       "date": "2026-06-22",
       "notes": "Stability hardening — fixes the crash/leak class that only shows up after hours or on edge cases, found by a runtime-stability audit (heap-lifetime / watchdog / boot-resilience / resource-budget) and adversarially verified. FIXES: (1) heap corruption on every FAILED firmware update — a bad/ interrupted OTA upload used to free an invalid pointer and could panic the device; (2) a latent panic on music track changes — the now-playing text was copied while interrupts were disabled (illegal heap use), now guarded by a proper mutex; (3) BLE screensaver/firmware uploads no longer freeze the Bluetooth link at ~99% — the heavy save/verify step moved off the radio task; (4) a second upload starting mid-save can no longer report a false 'failed'. ROBUSTNESS: factory-reset now also wipes gear mode + calibration (it used to leave them behind — matters for resale); a bad/ out-of-range config value (incl. NaN) can no longer slip through and poison gear detection; tighter cross-core ordering on the BLE command queue; a leaked file handle on aborted uploads is closed. DIAGNOSTICS for the field: /api/info now reports the last reset reason + lowest-ever free memory (a downward trend over a long session = a leak), and the boot log prints the reset cause. No UI or gear-behaviour change vs v3.1.5. Pairs with the on-glass/on-car validation checklist. The v3.1.4 dirty-gate, v3.1.5 async present and v3.1.3 gyro-fusion still want their on-hardware confirmation.",
