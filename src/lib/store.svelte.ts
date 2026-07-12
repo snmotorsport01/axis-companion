@@ -4,11 +4,23 @@
 // =====================================================================
 
 import type { DeviceClient, DeviceInfo } from './api';
+import { MockClient } from './mockClient';
+import type { GaugeBleClient } from './gaugeBleClient';
+import type { MonitorBleClient } from './monitorCfg';
 
 const LS_HOST_KEY = 'axis.host';
 
-export type Page = 'connect' | 'dashboard' | 'tune' | 'ota' | 'calibrate'
-                 | 'live' | 'brand' | 'sys' | 'screensaver' | 'devices';
+export type Page = 'connect' | 'tune' | 'ota' | 'calibrate'
+                 | 'live' | 'brand' | 'sys' | 'screensaver' | 'devices'
+                 | 'gaugesetup'
+                 // v3.1 buyer-facing simple surface (Looks/Feel) + Pro door.
+                 | 'looks' | 'feel' | 'pro'
+                 // Diagnostics: fault codes, accel times, logs, bus capture.
+                 | 'diag'
+                 // Drivetrain: pick the car → per-car calc-gear on the monitor.
+                 | 'drivetrain'
+                 // Monitor firmware update + full gauge-display (GaugeCfg) editor.
+                 | 'monota' | 'monconfig';
 
 /**
  * True when the PWA is being served from the AXIS device itself (LittleFS via
@@ -39,8 +51,8 @@ export const IS_CAPACITOR =
 class Store {
   // Live is now the landing page (was Dashboard). The companion app is meant
   // to feel like an instrument cluster — open it, see live data, with the
-  // bottom nav as the navigation surface. Dashboard's tile grid is obsolete
-  // for that pattern, but the page is still wired so deep links survive.
+  // bottom nav as the navigation surface. Dashboard's tile grid was obsolete
+  // for that pattern, so the page has been removed.
   // Auto-land on Live only when the PWA is actually served by the
   // firmware (real device embed). In a Capacitor wrapper there's no
   // device on the other end of capacitor://localhost — force the
@@ -51,6 +63,18 @@ class Store {
   connected = $state(false);
   error  = $state<string | null>(null);
 
+  // AXIS Gauge — a SEPARATE BLE peripheral from the knob, configured on the
+  // Gauge Setup page. Held here (not page-local) so the link survives in-app
+  // navigation, exactly like the knob's `client` — re-entering Gauge Setup
+  // reuses it instead of re-scanning. Null until the user connects a gauge.
+  gaugeClient = $state<GaugeBleClient | null>(null);
+
+  // AXIS Monitor — the CAN monitor is its OWN BLE peripheral ("AXIS Monitor",
+  // svc 7e1c0201), distinct from the knob and the gauge. The Drivetrain page
+  // connects here to read/write the monitor's GaugeCfg (per-car calc-gear).
+  // Held here so the link survives navigation. Null until connected.
+  monClient = $state<MonitorBleClient | null>(null);
+
   // Saved host from last connect, for one-tap reconnect on next launch.
   lastHost = $state<string>(loadHost());
 
@@ -59,12 +83,12 @@ class Store {
     try { localStorage.setItem(LS_HOST_KEY, h); } catch {}
   }
 
+  /** True in DEMO MODE (the synthetic MockClient). Pages read this to hide
+   *  device-only / destructive actions a hardware-less reviewer can't use. */
+  get isDemo(): boolean { return this.client instanceof MockClient; }
+
   goConnect()   { this.page = 'connect';   }
   goLive()      { this.page = 'live';      }
-  // Kept so existing "‹ DASHBOARD" back buttons still compile, but routed to
-  // Live so users land on the new home — Dashboard page is deprecated. Will
-  // relabel buttons in a follow-up pass.
-  goDashboard() { this.page = 'live';      }
 }
 
 function loadHost(): string {

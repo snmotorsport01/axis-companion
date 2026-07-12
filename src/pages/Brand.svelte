@@ -18,6 +18,7 @@
   // before / without a paired device. Flip to LIVE to mirror what the
   // physical knob is doing right now. Persisted in-memory only.
   let previewMode = $state<'demo' | 'live'>('demo');
+  let presenting  = $state(false);   // full-screen preview for clean screen recording
   onMount(() => {
     if (!store.client) return;
     liveSock = store.client.openTelemetry(
@@ -247,11 +248,16 @@
 
 </script>
 
-<PageHeader />
+<PageHeader title="Wi-Fi & colours" back="pro" backLabel="Pro" />
 
 {#if err}<div class="card err">{err}</div>{/if}
 
-{#if !snap}
+{#if !store.client}
+  <div class="card">
+    <p class="muted small">Connect your AXIS first to set its colours and Wi-Fi.</p>
+    <button class="ghost wide" on:click={() => (store.page = 'connect')}>Go to Connect →</button>
+  </div>
+{:else if !snap}
   <div class="card muted">Loading…</div>
 {:else}
   <!-- Live preview — round LCD mockup that re-renders every time the
@@ -300,7 +306,34 @@
       liveGmX={previewMode === 'live' ? (liveFrame?.gm_x ?? null) : null}
       liveGmY={previewMode === 'live' ? (liveFrame?.gm_y ?? null) : null}
     />
+    <button class="present-btn" on:click={() => (presenting = true)}>⤢ PRESENT (record)</button>
   </div>
+
+  {#if presenting}
+    <!-- Full-screen, chrome-free preview for clean iOS screen recording. -->
+    <div class="present-overlay">
+      <DevicePreview
+        big
+        name={name}
+        accent={color}
+        gearColor={gearColor}
+        meterColor={meterColor}
+        nameColor={nameColor}
+        fgColor={fgColor}
+        mutedColor={mutedColor}
+        warnColor={warnColor}
+        transitionStyle={feel?.transitionStyle?.v ?? 0}
+        gearAnimStyle={feel?.gearAnimStyle?.v ?? 0}
+        patternChaseMs={Number(feel?.patternChaseMs?.v ?? 220)}
+        liveGearLabel={previewMode === 'live' ? (liveFrame?.label ?? null) : null}
+        liveRoll={previewMode === 'live' ? (liveFrame?.roll ?? null) : null}
+        livePitch={previewMode === 'live' ? (liveFrame?.pitch ?? null) : null}
+        liveGmX={previewMode === 'live' ? (liveFrame?.gm_x ?? null) : null}
+        liveGmY={previewMode === 'live' ? (liveFrame?.gm_y ?? null) : null}
+      />
+      <button class="present-close" on:click={() => (presenting = false)}>✕ CLOSE</button>
+    </div>
+  {/if}
 
   <!-- Animation & feel — three tunables moved from the TUNE tab so
        they live alongside the colour/identity controls they shape.
@@ -481,9 +514,6 @@
 {/if}
 
 <style>
-  .bar { display: flex; align-items: center; gap: var(--s-3); }
-  .bar h1 { margin: 0; }
-  .back  { background: transparent; border: none; color: var(--accent); padding: 0; min-height: 0; }
   .err  { color: var(--danger); }
   .muted { color: var(--muted); text-align: center; }
   label  { margin: 0; }
@@ -491,6 +521,22 @@
 
   .preview-card {
     padding: var(--s-4);
+  }
+  .present-btn {
+    display: block; width: 100%; margin-top: var(--s-3);
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--accent);
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px;
+    padding: var(--s-3); border-radius: var(--r-1); cursor: pointer; min-height: var(--tap-min);
+  }
+  .present-overlay {
+    position: fixed; inset: 0; z-index: 200; background: #000;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  }
+  .present-close {
+    position: fixed; top: calc(env(safe-area-inset-top, 0) + 12px); right: 14px;
+    background: rgba(20,22,25,.7); border: 1px solid var(--border); color: var(--fg);
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px;
+    padding: 8px 12px; border-radius: 999px; cursor: pointer;
   }
   .preview-label {
     margin: 0;
@@ -580,67 +626,9 @@
   }
   .hot { box-shadow: 0 0 0 2px var(--accent); }
 
-  /* ---- Screensaver section --------------------------------- */
-  .ss-row {
-    display: flex; align-items: center; gap: var(--s-3);
-    margin: var(--s-3) 0;
-  }
-  .ss-preview {
-    width: 120px; height: 120px;
-    border-radius: 50%;       /* round to match device LCD shape */
-    border: 1px solid var(--border);
-    background: #000;
-    image-rendering: pixelated;
-  }
-  .ss-preview.ss-empty { opacity: 0.4; }
-  .ss-info { flex: 1; }
-  .ss-info strong { display: block; }
-
-  .ss-anim {
-    background: var(--surface-2);
-    border-radius: var(--r-1);
-    padding: var(--s-3);
-    margin: var(--s-3) 0 var(--s-2);
-  }
-  .ss-anim-row {
-    display: grid;
-    grid-template-columns: 60px 1fr 36px;
-    align-items: center;
-    gap: var(--s-2);
-    margin-bottom: var(--s-1);
-  }
-  .ss-anim-row label { margin: 0; }
-  .ss-anim-row input[type="range"] { accent-color: var(--accent); }
-
-  .file {
-    display: block;
-    background: var(--surface-2);
-    border: 1px dashed var(--border);
-    border-radius: var(--r-1);
-    padding: var(--s-3);
-    text-align: center;
-    cursor: pointer;
-    margin: var(--s-3) 0 var(--s-2);
-  }
-  .file input { display: none; }
-
-  .bar-bg {
-    height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden;
-    margin: var(--s-2) 0 var(--s-1);
-  }
-  .bar-fill { height: 100%; background: var(--accent); transition: width 120ms linear; }
-
   .small { font-size: 13px; }
   .muted { color: var(--muted); }
   .err   { color: var(--danger); margin: var(--s-2) 0 0; font-size: 13px; }
-  .err.multiline { white-space: pre-line; line-height: 1.45; }
-  .warn-hint {
-    color: var(--accent);
-    background: rgba(255, 165, 0, 0.08);
-    border-radius: var(--r-1);
-    padding: var(--s-2) var(--s-3);
-    margin-top: var(--s-2);
-  }
 
   .wifi-status {
     display: flex; align-items: center; gap: var(--s-2);
@@ -662,16 +650,4 @@
   .slot-label { font-size: 14px; }
   .slot-row input[type="color"] { padding: 0; height: 32px; width: 36px; }
 
-  /* Frame scrubber under animated-screensaver preview */
-  .ss-scrub {
-    display: grid;
-    grid-template-columns: 1fr 64px;
-    align-items: center;
-    gap: var(--s-2);
-    margin-top: var(--s-2);
-  }
-  .ss-scrub input[type="range"] {
-    width: 100%;
-    accent-color: var(--accent);
-  }
 </style>

@@ -28,8 +28,19 @@
   let connecting = $state<string | null>(null);    // device id currently connecting
   let bleAvailable = $state<boolean | null>(null);
 
+  let infoTimer: ReturnType<typeof setInterval> | null = null;
   onMount(async () => {
     bleAvailable = await BleClient.isAvailable();
+    // Keep device info fresh while this page is open so the gauge-link badge
+    // tracks the gauge powering on/off (info isn't otherwise re-polled after
+    // the initial connect).
+    const refresh = async () => {
+      if (store.connected && store.client) {
+        try { store.info = await store.client.info(); } catch { /* transient link blip */ }
+      }
+    };
+    refresh();
+    infoTimer = setInterval(refresh, 2000);
   });
 
   async function scan() {
@@ -82,6 +93,7 @@
   }
 
   onDestroy(() => {
+    if (infoTimer) clearInterval(infoTimer);
     // Best-effort stop — fine if scan already ended.
     // (BleClient.scan auto-stops after its window, so this is usually
     //  a no-op, but covers the case where the user navigates away
@@ -90,9 +102,15 @@
 
   // Whether a knob is "active" right now — for the current-device card.
   let knobConnected = $derived(store.connected && store.client !== null);
+
+  // Gauge link — surfaced through the knob's /api/info + BLE info char.
+  // `gauge_linked` is true while ESP-NOW telemetry is arriving from the gauge;
+  // `gauge_mac` lets the user confirm it's THEIR car's gauge (anti cross-car).
+  let gaugeStatusKnown = $derived(knobConnected && store.info?.gauge_linked !== undefined);
+  let gaugeLinked      = $derived(gaugeStatusKnown && store.info?.gauge_linked === true);
 </script>
 
-<PageHeader />
+<PageHeader title="Devices" back="pro" backLabel="Pro" />
 
 <!-- Knob — the one you bought first. Live status if anything's paired,
      otherwise the SCAN/CONNECT entry point. -->
@@ -120,9 +138,8 @@
   {#if !knobConnected}
     {#if bleAvailable === false}
       <p class="muted small">
-        Bluetooth isn't available on this device (the iOS Simulator
-        doesn't have a BLE radio). Use Wi-Fi pairing from the Connect
-        screen instead.
+        Bluetooth isn't available here. Turn it on to connect your AXIS, or
+        explore the app with the live preview from the Connect screen.
       </p>
     {:else}
       <p class="muted small">
@@ -157,26 +174,53 @@
   {/if}
 </div>
 
-<!-- Gauge — coming. Round AMOLED 466×466, IMU + GPS, anti-sleep,
-     AI-character DTC display. Same brand language as the knob. -->
-<div class="card device coming">
+<!-- Gauge — LIVE status via the knob's ESP-NOW shift-light link. Shows
+     CONNECTED + the gauge's MAC (so you can confirm it's YOUR car's gauge,
+     not a neighbour's) once the knob firmware reports gauge_linked. Falls
+     back to the roadmap blurb when the knob isn't connected / is older fw. -->
+<div class="card device">
   <header class="dev-head">
     <div>
       <strong>AXIS Gauge</strong>
       <div class="muted small">1.75" round AMOLED · GPS + IMU</div>
     </div>
-    <span class="badge coming">COMING</span>
+    <span class="badge" class:online={gaugeLinked}>
+      {gaugeLinked ? 'CONNECTED' : 'NOT CONNECTED'}
+    </span>
   </header>
-  <p class="muted small">
-    Dash-mounted G-meter, lap timer, anti-sleep alerts, and the AI agent
-    that turns DTCs into plain language. Paired to the knob over
-    ESP-NOW — set up once, ride together.
-  </p>
+
+  {#if gaugeLinked}
+    <dl class="meta">
+      <dt>MAC</dt>  <dd class="mono">{store.info?.gauge_mac ?? '—'}</dd>
+      <dt>RPM</dt>  <dd class="mono">{store.info?.gauge_rpm ?? 0}</dd>
+    </dl>
+    <p class="muted small">
+      Linked over ESP-NOW. Check the MAC matches your gauge so you're not
+      reading another car's.
+    </p>
+  {:else if gaugeStatusKnown}
+    <p class="muted small">
+      No gauge telemetry. Power on the AXIS gauge — it links to the knob
+      automatically over ESP-NOW.
+    </p>
+  {:else}
+    <p class="muted small">
+      The AXIS Gauge is a dash-mounted display for speed, revs and more. Set
+      its redline, shift light, warnings and colours below — it connects on
+      its own over Bluetooth, no knob required.
+    </p>
+  {/if}
+
+  <!-- Direct-BLE config (redline / shift light / warns) — independent of
+       the knob relay above, so it's available whenever the gauge is on. -->
+  <button class="primary scan-btn" on:click={() => (store.page = 'gaugesetup')}>
+    CONFIGURE GAUGE →
+  </button>
 </div>
 
-<!-- OBD / CAN — coming. MrDIY assembled shield (ESP32 + native TWAI),
-     reads from OBD-II port or wire directly into a standalone ECU's
-     CAN bus (MaxxECU / Haltech / MoTeC / Link / ECUMaster). -->
+<!-- OBD / CAN — roadmap hardware. Hidden in DEMO so a reviewer doesn't see
+     an actionless "COMING" placeholder card (Apple 5.6 placeholder content). -->
+{#if !store.isDemo}
 <div class="card device coming">
   <header class="dev-head">
     <div>
@@ -191,6 +235,7 @@
     so check-engine lights speak plain language without the cloud.
   </p>
 </div>
+{/if}
 
 <style>
   .card { padding: var(--s-4); }

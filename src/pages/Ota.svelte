@@ -6,6 +6,7 @@
     type ReleaseManifest, type ReleaseEntry
   } from '../lib/api';
   import PageHeader from '../lib/PageHeader.svelte';
+  import { DEMO_LATEST_BUILD } from '../lib/mockClient';
 
   // ============================================================
   //  OTA — two install paths:
@@ -33,15 +34,32 @@
   let mLoading   = $state(true);
   let mErr       = $state<string | null>(null);
 
+  // DEMO MODE has no device and must not hit the network — serve a canned,
+  // buyer-friendly "update available" manifest so the UPDATE tab is a
+  // complete, working experience for a hardware-less reviewer.
+  const DEMO_MANIFEST: ReleaseManifest = {
+    _schema: 'demo',
+    releases: [{
+      version: 'AXIS v1.1',
+      build:   DEMO_LATEST_BUILD,
+      date:    'June 2026',
+      notes:   'Smoother animations, faster Bluetooth reconnect, and visual polish across every screen.',
+      url:     '#demo',
+      size_bytes: 1_600_000,
+      status:  'stable'
+    }]
+  };
+
   onMount(() => { refreshManifest(); });
 
   async function refreshManifest() {
     mLoading = true;
     mErr = null;
+    if (store.isDemo) { manifest = DEMO_MANIFEST; mLoading = false; return; }
     try {
       manifest = await fetchReleaseManifest();
-    } catch (e: any) {
-      mErr = e?.message ?? 'Could not reach release server';
+    } catch {
+      mErr = "Couldn't check for updates right now.";
     } finally {
       mLoading = false;
     }
@@ -116,6 +134,16 @@
     installPhase = 'download';
     installPct   = 0;
     try {
+      if (store.isDemo) {
+        // Demo: no real network/flash. Simulate so the reviewer sees a
+        // believable install that ends cleanly on "Update complete".
+        installPhase = 'flash';
+        await store.client.ota(new File([new Uint8Array(8)], 'demo.bin'),
+                               p => { installPct = p; uploadProg = p; });
+        uploadDone = true;
+        startPostFlashFlow();
+        return;
+      }
       const absUrl = resolveReleaseUrl(latest.url);
       // 1) Pull the .bin. fetch() + Response.blob() handles redirect
       //    from GitHub Pages and gives us a real Blob we can wrap.
@@ -212,6 +240,20 @@
 
   async function attemptReconnect() {
     if (!store.client) return;
+    // Only BleClient implements connect(). For MockClient (demo) or a
+    // Wi-Fi DeviceClient there's nothing to re-pair — simulate a clean
+    // recovery instead of throwing connect() errors for 30 s and dumping
+    // a red dead-end that points at a hidden page.
+    if (typeof (store.client as any).connect !== 'function') {
+      reconnecting = true;
+      await new Promise(r => setTimeout(r, 800));
+      try { store.info = await store.client.info(); } catch {}
+      store.connected = true;
+      reconnecting = false;
+      uploadDone = false;
+      store.goLive();
+      return;
+    }
     reconnecting = true;
     reconnectErr = null;
     // Give the device an extra second past its scheduled restart so
@@ -227,7 +269,9 @@
         // cleared from elsewhere) breaks the loop cleanly instead of
         // spinning for 30 s throwing on a null client.
         if (!store.client) { reconnectErr = 'Lost client mid-reconnect'; break; }
-        await store.client.connect(() => { store.connected = false; });
+        // connect() exists only on BleClient; the typeof guard above
+        // proved it's callable here, so the cast is safe.
+        await (store.client as any).connect(() => { store.connected = false; });
         // Re-read info — the new firmware's BUILD_VERSION will now
         // reflect the just-installed version, which is what makes the
         // "Releases" section flip back to "UP TO DATE".
@@ -263,7 +307,7 @@
   <div>
     <span class="muted small">Installed</span>
     <div class="mono ver">{store.info?.version ?? '?'}</div>
-    {#if store.info?.build}
+    {#if store.info?.build && !store.isDemo}
       <div class="muted mono small">build {store.info.build}</div>
     {/if}
   </div>
@@ -289,7 +333,7 @@
     <div class="release">
       <div class="release-head">
         <span class="mono ver">{latest.version}</span>
-        {#if latest.build}
+        {#if latest.build && !store.isDemo}
           <span class="muted mono small">· {latest.build}</span>
         {/if}
         <span class="badge {isPreview ? 'preview' : updateAvailable ? 'available' : 'current'}">
@@ -314,6 +358,8 @@
           PREVIEW — install via USB flash
         {:else if !updateAvailable}
           Already installed
+        {:else if store.isDemo}
+          INSTALL UPDATE
         {:else}
           INSTALL {latest.build ?? latest.version}
         {/if}
@@ -321,8 +367,8 @@
       {#if uploading && installPhase !== 'idle'}
         <p class="muted xs mono">
           {installPhase === 'download'
-            ? 'Pulling .bin from GitHub…'
-            : 'Streaming to device over BLE — keep app open, ~3 min for 1.6 MB.'}
+            ? 'Downloading update…'
+            : 'Installing — keep the app open, this takes a moment.'}
         </p>
       {/if}
       {#if uploadDone && rebootCountdown > 0}
@@ -346,7 +392,9 @@
   {/if}
 </div>
 
-<!-- Local upload (unchanged) ---------------------------------- -->
+{#if !store.isDemo}
+<!-- Local upload — engineer/enthusiast path; hidden in DEMO MODE so a
+     hardware-less reviewer never sees raw .bin / USB-flash jargon. ----- -->
 <div class="card">
   <h3>Local upload</h3>
   <p class="muted small">
@@ -382,12 +430,9 @@
   re-upload — the device falls back to the previous firmware on
   failure.
 </div>
+{/if}
 
 <style>
-  .bar { display: flex; align-items: center; gap: var(--s-3); }
-  .bar h1 { margin: 0; }
-  .back  { background: transparent; border: none; color: var(--accent); padding: 0; min-height: 0; }
-
   .muted { color: var(--muted); }
   .small { font-size: 13px; }
   .xs    { font-size: 11px; }

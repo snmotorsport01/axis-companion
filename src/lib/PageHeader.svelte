@@ -5,7 +5,7 @@
   //  "‹ DASHBOARD" + page-title pattern, since:
   //    · BottomNav already highlights the current page — a literal page
   //      label was redundant.
-  //    · Dashboard the page was deprecated when Live became the home
+  //    · Dashboard the page was removed when Live became the home
   //      landing, so the back link pointed at a ghost.
   //
   //  The default `children` snippet is the right-side slot — Live uses
@@ -16,7 +16,12 @@
   //  Vite ships it as-is at the site root for both PWA and Capacitor.
   // =====================================================================
   import type { Snippet } from 'svelte';
-  let { children }: { children?: Snippet } = $props();
+  import { store, type Page } from './store.svelte';
+  // Optional sub-head: a back chevron (to `back`) + a page title. Used by
+  // pages opened from the Pro door (Tune/Sys/Devices) so they aren't
+  // title-less, back-less dead-ends.
+  let { children, title, back, backLabel = 'Back' }:
+    { children?: Snippet; title?: string; back?: Page; backLabel?: string } = $props();
 </script>
 
 <header class="page-header">
@@ -25,6 +30,14 @@
     <div class="right">{@render children()}</div>
   {/if}
 </header>
+{#if back || title}
+  <div class="page-subhead">
+    {#if back}
+      <button class="ph-back" onclick={() => (store.page = back)}>‹ {backLabel}</button>
+    {/if}
+    {#if title}<h2 class="ph-title">{title}</h2>{/if}
+  </div>
+{/if}
 
 <style>
   .page-header {
@@ -66,4 +79,11 @@
     flex-shrink: 0;
     margin-left: auto;
   }
+  .page-subhead { display: flex; align-items: baseline; gap: var(--s-3); margin-bottom: var(--s-3); }
+  .ph-back {
+    background: none; border: 0; color: var(--accent);
+    font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px;
+    padding: 0; cursor: pointer; flex-shrink: 0;
+  }
+  .ph-title { margin: 0; font-size: 20px; letter-spacing: 0.3px; }
 </style>

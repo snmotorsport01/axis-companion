@@ -30,13 +30,13 @@
 		<true/>
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>SN AXIS connects to your AXIS knob over Bluetooth to send quick controls and receive live telemetry.</string>
+	<string>SN AXIS connects to your AXIS accessories (knob, gauge and CAN monitor) over Bluetooth to configure them and show live driving data.</string>
 	<!-- iOS 12 fallback. NSBluetoothAlwaysUsageDescription only
 	     applies on iOS 13+; on iOS 12 the system reads the
 	     Peripheral key instead. Same wording for both so user
 	     experience is consistent regardless of OS version. -->
 	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>SN AXIS connects to your AXIS knob over Bluetooth to send quick controls and receive live telemetry.</string>
+	<string>SN AXIS connects to your AXIS accessories (knob, gauge and CAN monitor) over Bluetooth to configure them and show live driving data.</string>
 	<!-- App Store export-compliance declaration. SN AXIS uses
 	     only OS-provided crypto (BLE Secure Connections, HTTPS) — no
 	     proprietary or non-standard encryption — which qualifies for
@@ -74,18 +74,13 @@
 	<array>
 		<string>arm64</string>
 	</array>
+	<!-- The UI is a single fixed-portrait phone layout, so the app is
+	     iPhone-only (TARGETED_DEVICE_FAMILY=1) and portrait-locked. This
+	     removes the "looks broken in landscape / on iPad" failure mode that
+	     a fixed layout otherwise produces on unsupported orientations. -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>

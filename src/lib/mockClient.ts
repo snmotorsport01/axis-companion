@@ -40,6 +40,38 @@ const T0 = Date.now();
 // Gear labels for a 5-speed H-pattern — matches the firmware default.
 const LABELS = ['R', 'N', '1', '2', '3', '4', '5'];
 
+// Mode ids → names (index = mode_id), matching the firmware enum order.
+const MODE_NAMES = ['PRND', 'SEQ', 'HPATTERN'];
+
+// Firmware build tags for the demo OTA flow: the device starts one build
+// "behind" the latest so the UPDATE tab offers an installable update;
+// ota() then bumps build_ to LATEST so it flips to "up to date".
+export const DEMO_CURRENT_BUILD = 'v1.0.0';
+export const DEMO_LATEST_BUILD  = 'v1.1.0';
+
+// Default branding the demo starts from. Held per-instance and mutated by
+// setBranding()/uploadScreensaver() so a reviewer's edits actually persist
+// instead of silently no-op'ing (App Store quality requirement).
+const DEFAULT_BRANDING: BrandingSnapshot = {
+  name:        'AXIS',
+  accent565:   0xfd00,
+  accent_hex:  '#ffa500',
+  max_name:    16,
+  gear_hex:    '#ffa500',
+  meter_hex:   '#ffa500',
+  name_hex:    '#ffffff',
+  fg_hex:      '#ffffff',
+  muted_hex:   '#888888',
+  warn_hex:    '#ff3b3b',
+  screensaver: false,
+  screensaver_w:        240,
+  screensaver_h:        240,
+  screensaver_size:     0,
+  screensaver_frames:   0,
+  screensaver_fps:      0,
+  screensaver_animated: false
+};
+
 // =====================================================================
 //  Demo scenes — each is a (gear pattern, IMU character) pairing that
 //  evokes a real driving situation. Pick the one that best showcases
@@ -56,12 +88,12 @@ export type DemoScene =
   | 'default' | 'cruise' | 'spirited' | 'track' | 'stopgo' | 'idle';
 
 export const SCENES: ReadonlyArray<{ id: DemoScene; label: string; hint: string }> = [
-  { id: 'default',  label: 'DEFAULT',  hint: 'Sweep R→N→1-5, gentle drift' },
-  { id: 'cruise',   label: 'CRUISE',   hint: 'Locked in 5, minimal motion' },
-  { id: 'spirited', label: 'SPIRITED', hint: '3↔4↔5, moderate G + pitch' },
-  { id: 'track',    label: 'TRACK',    hint: 'Fast 2-5 sweep, hard G' },
-  { id: 'stopgo',   label: 'STOP & GO',hint: 'N/1/2 cycling, brake pitch' },
-  { id: 'idle',     label: 'IDLE',     hint: 'N gear, near-zero motion' },
+  { id: 'default',  label: 'Overview',          hint: 'A tour of AXIS at an easy pace' },
+  { id: 'cruise',   label: 'Highway cruising',  hint: 'Steady highway speed, top gear' },
+  { id: 'spirited', label: 'Spirited backroad', hint: 'Twisty roads, quick shifts' },
+  { id: 'track',    label: 'Track day',         hint: 'Hard cornering and braking' },
+  { id: 'stopgo',   label: 'City traffic',      hint: 'Stop-and-go around town' },
+  { id: 'idle',     label: 'Parked',            hint: 'Engine idling, sitting still' },
 ];
 
 // Module-level scene so the FakeSocket / info()/sys() all read the same
@@ -228,17 +260,28 @@ export class MockClient extends DeviceClient {
   /** Switch the active demo scene without re-creating the client. */
   setScene(s: DemoScene) { setDemoScene(s); }
 
+  // ---- mutable demo state ------------------------------------------
+  // DEMO MODE is the only path a hardware-less App Store reviewer can
+  // test, so writes must actually take effect — otherwise Save look,
+  // screensaver and mode changes look broken. These hold what the real
+  // device would persist.
+  private branding_: BrandingSnapshot = { ...DEFAULT_BRANDING };
+  private mode_id_ = 2;          // HPATTERN — matches the 5-speed labels
+  private gears_   = 5;
+  private build_   = DEMO_CURRENT_BUILD;
+
   // ---- read-only snapshots -----------------------------------------
   async info(): Promise<DeviceInfo> {
     const g = syntheticGear(Date.now());
     return {
-      name:        'AXIS DEMO',
-      version:     'AXIS V1.0.0',
+      name:        this.branding_.name,
+      version:     'v1.0.0',
+      build:       this.build_,
       uptime_ms:   Date.now() - T0,
       free_heap:   270_000,
-      mode_id:     0,
-      mode_name:   'HPATTERN',
-      gear_count:  5,
+      mode_id:     this.mode_id_,
+      mode_name:   MODE_NAMES[this.mode_id_],
+      gear_count:  this.gears_,
       gear_index:  g.index,
       gear_label:  g.label,
       gear_frozen: false
@@ -248,7 +291,7 @@ export class MockClient extends DeviceClient {
   async sys(): Promise<SysSnapshot> {
     const f = syntheticFrame(Date.now());
     return {
-      version:       'AXIS V1.0.0',
+      version:       'v1.0.0',
       uptime_ms:     Date.now() - T0,
       free_heap:     270_000,
       min_heap:      210_000,
@@ -257,13 +300,13 @@ export class MockClient extends DeviceClient {
       psram_free:    7 * 1024 * 1024,
       flash_size:    16 * 1024 * 1024,
       cpu_mhz:       240,
-      mac:           'AA:BB:CC:DD:EE:FF',
-      ap_ssid:       'SN_AXIS_DEMO',
+      mac:           'A0:B7:65:3C:1F:9E',
+      ap_ssid:       'AXIS-7B3E',
       ap_ip:         '192.168.4.1',
       ap_clients:    1,
       sta_connected: false,
-      mode_name:     'HPATTERN',
-      gear_count:    5,
+      mode_name:     MODE_NAMES[this.mode_id_],
+      gear_count:    this.gears_,
       imu: {
         ax: f.accel * Math.sin(f.roll  * Math.PI / 180),
         ay: f.accel * Math.sin(f.pitch * Math.PI / 180),
@@ -306,25 +349,7 @@ export class MockClient extends DeviceClient {
   }
 
   async branding(): Promise<BrandingSnapshot> {
-    return {
-      name:        'AXIS DEMO',
-      accent565:   0xfd00,
-      accent_hex:  '#ffa500',
-      max_name:    16,
-      gear_hex:    '#ffa500',
-      meter_hex:   '#ffa500',
-      name_hex:    '#ffffff',
-      fg_hex:      '#ffffff',
-      muted_hex:   '#888888',
-      warn_hex:    '#ff3b3b',
-      screensaver: false,
-      screensaver_w:        240,
-      screensaver_h:        240,
-      screensaver_size:     115_200,
-      screensaver_frames:   0,
-      screensaver_fps:      0,
-      screensaver_animated: false
-    };
+    return { ...this.branding_ };
   }
 
   // ---- Calibration wizard session (DEMO MODE only) ------------------
@@ -360,9 +385,9 @@ export class MockClient extends DeviceClient {
     const s = this.calibSession_;
     const now = Date.now();
     return {
-      mode_id:    0,
-      mode_name:  'HPATTERN',
-      gear_count: 5,
+      mode_id:    this.mode_id_,
+      mode_name:  MODE_NAMES[this.mode_id_],
+      gear_count: this.gears_,
       calib_steps: total,
       steps: STEPS,
       imu_zero: { roll: 0, pitch: 0, yaw: 0 },
@@ -431,12 +456,13 @@ export class MockClient extends DeviceClient {
   // and the Calibrate page just needs the await to resolve so it can
   // re-fetch calibration() and re-render the step list.
   async setMode(mode_id: number): Promise<{ ok: boolean; mode_id: number; mode_name: string }> {
-    const names = ['PRND', 'SEQ', 'HPATTERN'];
-    return { ok: true, mode_id, mode_name: names[mode_id] ?? '' };
+    this.mode_id_ = mode_id;
+    return { ok: true, mode_id, mode_name: MODE_NAMES[mode_id] ?? '' };
   }
 
   async setGearCount(count: number): Promise<{ ok: boolean; count: number }> {
     const c = Math.max(4, Math.min(6, Math.round(count)));
+    this.gears_ = c;
     return { ok: true, count: c };
   }
 
@@ -448,21 +474,36 @@ export class MockClient extends DeviceClient {
   async patchConfig(): Promise<{ ok: boolean }>   { return { ok: true }; }
   async saveConfig():  Promise<{ ok: boolean }>   { return { ok: true }; }
   async resetConfig(): Promise<{ ok: boolean }>   { return { ok: true }; }
-  async setBranding(): Promise<{ ok: boolean }>   { return { ok: true }; }
-  async resetBranding(): Promise<{ ok: boolean }> { return { ok: true }; }
+  async setBranding(patch: {
+    name?: string; accent_hex?: string; gear_hex?: string; meter_hex?: string;
+    name_hex?: string; fg_hex?: string; muted_hex?: string; warn_hex?: string;
+  } = {}): Promise<{ ok: boolean }> {
+    this.branding_ = { ...this.branding_, ...patch };
+    return { ok: true };
+  }
+  async resetBranding(): Promise<{ ok: boolean }> {
+    this.branding_ = { ...DEFAULT_BRANDING };
+    return { ok: true };
+  }
   async setWifi():     Promise<{ ok: boolean }>   { return { ok: true }; }
   async reboot():      Promise<{ ok: boolean }>   { return { ok: true }; }
   async factoryReset(): Promise<{ ok: boolean }>  { return { ok: true }; }
   async resetCalibration(): Promise<{ ok: boolean }> { return { ok: true }; }
-  async clearScreensaver(): Promise<{ ok: boolean }> { return { ok: true }; }
+  async clearScreensaver(): Promise<{ ok: boolean }> {
+    this.branding_ = { ...this.branding_, screensaver: false, screensaver_size: 0,
+                       screensaver_frames: 0, screensaver_fps: 0, screensaver_animated: false };
+    return { ok: true };
+  }
 
   // Upload paths — simulate progress, then resolve. Total time scales
   // with byte count so the progress bar moves at a believable rate.
   async uploadScreensaver(bytes: Uint8Array, onProgress?: (frac: number) => void): Promise<void> {
-    return this.fakeUpload(bytes.byteLength, onProgress);
+    await this.fakeUpload(bytes.byteLength, onProgress);
+    this.branding_ = { ...this.branding_, screensaver: true, screensaver_size: bytes.byteLength };
   }
   async ota(file: File, onProgress?: (frac: number) => void): Promise<void> {
-    return this.fakeUpload(file.size, onProgress);
+    await this.fakeUpload(file.size, onProgress);
+    this.build_ = DEMO_LATEST_BUILD;   // demo: the update is now "installed"
   }
 
   private async fakeUpload(bytes: number, onProgress?: (frac: number) => void): Promise<void> {

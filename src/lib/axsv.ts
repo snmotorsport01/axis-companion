@@ -36,18 +36,23 @@
 //  frames inside the device's 2 MB PSRAM cache.
 // =====================================================================
 
-export const AXSV_W = 240;
-export const AXSV_H = 240;
+// 466×466 to match the 1.43 AMOLED (firmware Screensaver::W/H). Was 240
+// for the 1.28 panel; the device rejects an upload whose AXSV header
+// width/height don't equal its native size, so these MUST track the
+// firmware. A static still is one 434 KB RGB565 frame; keep animations
+// modest (≈15 frames) so the device's PSRAM frame cache doesn't overflow.
+export const AXSV_W = 466;
+export const AXSV_H = 466;
 
 // Format 0 (legacy 16-colour) header + frame sizing.
 const HEADER_BYTES_F0 = 48;
-const FRAME_BYTES_F0  = (AXSV_W * AXSV_H) / 2;            // 4-bit packed
+const FRAME_BYTES_F0  = (AXSV_W * AXSV_H) / 2;            // 4-bit packed (108,578)
 
 // Format 2 (128-colour 7-bit packed) header + frame sizing.
 const PAL128_ENTRIES   = 128;
 const HEADER_BYTES_F2  = 16 + PAL128_ENTRIES * 2;         // 272 bytes
-const FRAME_PIXELS     = AXSV_W * AXSV_H;                 // 57,600
-const FRAME_BYTES_F2   = Math.ceil(FRAME_PIXELS * 7 / 8); // 50,400
+const FRAME_PIXELS     = AXSV_W * AXSV_H;                 // 217,156
+const FRAME_BYTES_F2   = Math.ceil(FRAME_PIXELS * 7 / 8); // 190,012
 
 type RGB = [number, number, number];
 

@@ -20,7 +20,7 @@
   // =====================================================================
   import { onDestroy } from 'svelte';
 
-  type View = 'main' | 'pattern' | 'gmeter' | 'info';
+  type View = 'main' | 'shift' | 'pattern' | 'gmeter' | 'info';
 
   // Each colour slot mirrors a real firmware sprite. Defaults keep the
   // preview rendering even if a parent forgets to pass one in.
@@ -49,7 +49,8 @@
     liveRoll        = null,
     livePitch       = null,
     liveGmX         = null,
-    liveGmY         = null
+    liveGmY         = null,
+    big             = false
   } = $props<{
     name?:            string;
     accent?:          string;
@@ -77,6 +78,8 @@
     // firmware doesn't send these → fall back to the roll/pitch path.
     liveGmX?:         number | null;
     liveGmY?:         number | null;
+    // Blow the preview up full-screen (chrome-free) for clean screen recording.
+    big?:             boolean;
   }>();
 
   // ---- View tab + transition state -----------------------------
@@ -236,11 +239,36 @@
   });
   let chaseHighlight = $derived(CHASE_ORDER[chaseStep]);
 
+  // ---- Shift-light demo (SHIFT view) ----------------------------
+  // Drive cycle sweeps RPM → the 4 dots fill toward the shift point and
+  // the whole screen strobes red at/above it — the same cue the knob
+  // shows live from the gauge's ESP-NOW telemetry (now in-phase).
+  let shiftT = $state(0);
+  let shiftRaf: number | undefined;
+  $effect(() => {
+    if (renderView !== 'shift') return;
+    const t0 = performance.now();
+    const step = (now: number) => { shiftT = (now - t0) / 1000; shiftRaf = requestAnimationFrame(step); };
+    shiftRaf = requestAnimationFrame(step);
+    return () => { if (shiftRaf != null) cancelAnimationFrame(shiftRaf); };
+  });
+  function driveRpm(s: number): number {
+    const T = 6.5, x = (s % T) / T;
+    if (x < 0.62) return 850 + (7150 - 850) * (x / 0.62);
+    if (x < 0.74) return 7150;
+    return Math.max(1200, 7150 - (7150 - 1200) * ((x - 0.74) / 0.26));
+  }
+  const SHIFT_RPM = 6200;
+  let shiftRpmNow = $derived(driveRpm(shiftT));
+  let shiftFlash  = $derived(shiftRpmNow >= SHIFT_RPM && (Math.floor(shiftT / 0.09) % 2) === 0);
+  let shiftGear   = $derived(Math.min(6, Math.max(1, Math.floor((shiftRpmNow - 850) / 1050) + 1)));
+
   onDestroy(() => {
     if (dotRaf    != null) cancelAnimationFrame(dotRaf);
     if (transRaf  != null) cancelAnimationFrame(transRaf);
     if (gearRaf   != null) cancelAnimationFrame(gearRaf);
     if (chaseTimer != null) clearInterval(chaseTimer);
+    if (shiftRaf  != null) cancelAnimationFrame(shiftRaf);
   });
 
   // G-meter dot position. Three-tier source priority:
@@ -276,7 +304,7 @@
 </script>
 
 <div class="wrap">
-  <div class="screen-frame" style="--accent: {accent}">
+  <div class="screen-frame" class:big style="--accent: {accent}">
     <svg viewBox="0 0 240 240" class="screen" aria-label="Device screen preview">
       <defs>
         <!-- Clip to the visible round area of the LCD — corners outside
@@ -423,6 +451,20 @@
           <text x="120" y="200" text-anchor="middle"
                 font-family="var(--font-device)"
                 font-size="11" letter-spacing="2" fill={warnColor}>HOLD: EXIT</text>
+        {:else if renderView === 'shift'}
+          <!-- Shift light: gear digit + 4 dots filling toward the shift point;
+               whole screen strobes red at/above shiftRpm (matches the knob). -->
+          {#if shiftFlash}<rect width="240" height="240" fill="#fb1a1a" />{/if}
+          <text x="120" y="34" text-anchor="middle" font-family="var(--font-device)"
+                font-size="13" letter-spacing="2" fill={fgColor}>SEQ</text>
+          <text x="120" y="152" text-anchor="middle" font-family="var(--font-device)"
+                font-size="120" font-weight="700" fill={shiftFlash ? '#ffffff' : gearColor}>{shiftGear}</text>
+          {#each [0, 1, 2, 3] as i}
+            <circle cx={120 + (i - 1.5) * 26} cy="186" r="6"
+                    fill={shiftRpmNow >= SHIFT_RPM - 4000 + 1000 * i ? (shiftFlash ? '#ffffff' : accent) : '#2d2f36'} />
+          {/each}
+          <text x="120" y="216" text-anchor="middle" font-family="var(--font-device)"
+                font-size="11" fill={mutedColor}>{Math.round(shiftRpmNow / 10) * 10} RPM</text>
         {/if}
 
         <!-- ===== Page-transition overlay =================================
@@ -458,10 +500,11 @@
 
   <div class="picker" role="tablist">
     {#each [
-      { id: 'main' as View,    label: 'MAIN'   },
-      { id: 'pattern' as View, label: 'PATTERN'},
-      { id: 'gmeter' as View,  label: 'G-METER'},
-      { id: 'info' as View,    label: 'INFO'   }
+      { id: 'main' as View,    label: 'MAIN'  },
+      { id: 'shift' as View,   label: 'SHIFT' },
+      { id: 'pattern' as View, label: 'H-PAT' },
+      { id: 'gmeter' as View,  label: 'G-MTR' },
+      { id: 'info' as View,    label: 'INFO'  }
     ] as t}
       <button
         type="button"
@@ -497,6 +540,8 @@
       0 0 0 1px var(--border),
       0 0 24px color-mix(in oklab, var(--accent) 35%, transparent);
   }
+  /* Full-screen present mode for clean iOS screen recording. */
+  .screen-frame.big { width: min(86vw, 70vh); }
   .screen {
     width: 100%;
     height: 100%;

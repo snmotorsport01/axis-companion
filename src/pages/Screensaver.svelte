@@ -22,8 +22,8 @@
   import { onMount, tick } from 'svelte';
   import type { BrandingSnapshot } from '../lib/api';
   import { encodeImage, encodeVideo, encodeGif, videoToGifBlob } from '../lib/axsv';
-  import { store } from '../lib/store.svelte';
-  import PageHeader from '../lib/PageHeader.svelte';
+  import { store, IS_CAPACITOR } from '../lib/store.svelte';
+  import Glyph from '../lib/Glyph.svelte';
 
   // Compression presets — each level trades visual quality for upload
   // size. BLE caps practical throughput at ~80 kbps, so a 100 KB
@@ -33,7 +33,7 @@
   type Quality = 'high' | 'medium' | 'low';
   const PRESETS: Record<Quality, { frames: number; fps: number; label: string; hint: string }> = {
     high:   { frames: 12, fps: 6, label: 'HIGH',
-              hint: 'Photo: full 16-bit · Video: 12 frames @ 6 fps' },
+              hint: 'Photo: best quality · Video: 12 frames @ 6 fps' },
     medium: { frames: 8,  fps: 5, label: 'MEDIUM',
               hint: 'Photo: 128 colours · Video: 8 frames @ 5 fps' },
     low:    { frames: 6,  fps: 4, label: 'LOW',
@@ -94,7 +94,7 @@
       ssEncodeMsg =
         kind === 'gif'   ? 'Decoding GIF…' :
         kind === 'video' ? 'Extracting frames…' :
-                           'Quantising colours…';
+                           'Optimising colours…';
       const preset = PRESETS[quality];
       if (kind === 'gif') {
         // GIFs are already palette-quantised by the decoder; the
@@ -114,7 +114,7 @@
       ssEncodeMsg =
         kind === 'gif'   ? `${kb} KB · animated GIF (seamless loop)` :
         kind === 'video' ? `${kb} KB · ${preset.frames} frames @ ${preset.fps} fps · ${preset.label}` :
-                           `${kb} KB · still image · ${quality === 'high' ? 'full 16-bit colour' : 'compressed'}`;
+                           `${kb} KB · still image · ${quality === 'high' ? 'best quality' : 'compressed'}`;
     } catch (e: any) {
       const msg = e?.message ?? 'conversion failed';
       ssErr = /decode|read|fetch/i.test(msg)
@@ -354,268 +354,114 @@
   }
 </script>
 
-<PageHeader />
+<div class="pg">
+  <button class="ss-back" on:click={() => (store.page = 'looks')}
+    style="background:none;border:0;color:var(--accent,#c9a24a);font-family:var(--font-mono,monospace);font-size:12px;letter-spacing:1px;padding:0 0 8px;cursor:pointer;">‹ LOOKS</button>
+  <div class="hd"><span class="wm">AXIS</span><span class="sub">Screensaver</span></div>
 
-{#if !snap}
-  <div class="card muted">Loading…</div>
-{:else}
-  <div class="card">
-    <h2>What plays while the device sleeps</h2>
-    <p class="muted small">
-      Long-press the MAIN screen to enter sleep mode and show your
-      screensaver. AXIS supports stills, animated GIFs, and short
-      videos. Loops close smoothly thanks to per-frame crossfade.
-    </p>
+  {#if !snap}
+    <p class="empty">Loading…</p>
+  {:else}
+    <p class="intro">Pick a photo, GIF or short video to play while your AXIS rests. It shows when the screen sleeps.</p>
 
-    <!-- Preview pane -->
-    <div class="preview">
+    <div class="prev">
       {#if ssBytes}
-        <canvas
-          bind:this={previewCanvas}
-          width={snap.screensaver_w}
-          height={snap.screensaver_h}
-        ></canvas>
+        <canvas bind:this={previewCanvas} width={snap.screensaver_w} height={snap.screensaver_h}></canvas>
         {#if isAnimated()}
           <div class="scrub">
-            <input
-              type="range"
-              min="0"
-              max={totalFrames() - 1}
-              step="1"
-              value={previewFrame}
-              on:input={onScrub}
-              disabled={ssBusy}
-            />
-            <span class="mono small">{previewFrame + 1} / {totalFrames()}</span>
+            <input type="range" min="0" max={totalFrames() - 1} step="1" value={previewFrame} on:input={onScrub} disabled={ssBusy} />
+            <span class="fr">{previewFrame + 1} / {totalFrames()}</span>
           </div>
         {/if}
       {:else}
-        <div class="preview-empty">
-          {ssEncodeMsg ?? (snap.screensaver ? 'Device has a screensaver loaded' : 'No file picked yet')}
+        <div class="prev-empty">
+          {#if ssBusy}<Glyph kind="spinner" size={26} />{/if}
+          <span>{ssEncodeMsg ?? (snap.screensaver ? 'A screensaver is loaded on your AXIS' : 'Nothing picked yet')}</span>
         </div>
       {/if}
     </div>
 
-    <!-- Compression preset — affects both photo + video pipelines. -->
-    <!-- Higher compression = smaller file = faster BLE upload (~12 s -->
-    <!--  → ~4 s for stills, ~12 s → ~6 s for video). LOW + MEDIUM     -->
-    <!-- quantise stills through the AXSV-128 path; HIGH stays raw     -->
-    <!-- RGB565. Re-picking quality after a file is chosen requires    -->
-    <!-- re-picking the file — the encoded buffer doesn't auto-rerun.  -->
-    <div class="quality-row">
-      <span class="quality-label">QUALITY</span>
+    <label class="file">
+      <input type="file" accept="image/*,video/*,image/gif" on:change={onPick} disabled={ssBusy} />
+      <span>{ssFile ? ssFile.name : 'Choose a photo, GIF or video'}</span>
+    </label>
+
+    <div class="lab">Quality</div>
+    <div class="chips">
       {#each (['high','medium','low'] as const) as q}
-        <button
-          type="button"
-          class="quality-chip"
-          class:active={quality === q}
-          on:click={() => quality = q}
-          disabled={ssBusy}
-        >
-          {q.toUpperCase()}
+        <button type="button" class="chip" class:sel={quality === q} on:click={() => quality = q} disabled={ssBusy}>
+          {q === 'high' ? 'Best' : q === 'medium' ? 'Balanced' : 'Smaller'}
         </button>
       {/each}
     </div>
-    <p class="muted small quality-hint">
-      {#if ssFile}
-        ⟳ Re-pick the file to apply — {PRESETS[quality].hint}
-      {:else}
-        {PRESETS[quality].hint}
-      {/if}
+    <p class="hint">
+      {#if ssFile}Re-pick the file to apply a new quality.{:else}Smaller files send faster over Bluetooth. Photos & video up to 4K work — AXIS shrinks them to fit.{/if}
     </p>
 
-    <!-- File picker -->
-    <label class="file">
-      <input
-        type="file"
-        accept="image/*,video/*,image/gif"
-        on:change={onPick}
-        disabled={ssBusy}
-      />
-      <span>{ssFile ? ssFile.name : 'Choose image, GIF, or video'}</span>
-    </label>
-
-    <!-- Spec note: 4K clips now accepted (v0.5.4 rVFC playback path
-         handles iPhone H.264 + HEVC at 4K). Output is still 240×240
-         so anything above 1080p is technically wasted pixels, but
-         users can drop any phone export here and it Just Works. -->
-    <p class="muted small spec-note">
-      * Videos: up to <b>4K (3840 × 2160)</b> accepted. iPhone Photos
-      exports — H.264 + HEVC, any frame rate — work natively. Large 4K
-      files may take 30-60 s to decode the first time.
-    </p>
-
-    {#if ssEncodeMsg && ssBytes}
-      <p class="muted small mono">{ssEncodeMsg}</p>
-    {/if}
-
-    {#if ssErr}
-      <div class="err">{ssErr}</div>
-    {/if}
+    {#if ssEncodeMsg && ssBytes}<p class="enc">{ssEncodeMsg}</p>{/if}
+    {#if ssErr}<div class="err">{ssErr}</div>{/if}
 
     {#if ssBusy && ssProgress > 0}
       <div class="progress"><div style="width:{(ssProgress * 100).toFixed(0)}%"></div></div>
-      <p class="muted small mono">{(ssProgress * 100).toFixed(0)}%</p>
+      <p class="enc">Sending… {(ssProgress * 100).toFixed(0)}%</p>
     {/if}
 
     <div class="actions">
-      <button on:click={clearOnDevice} disabled={!snap.screensaver || ssBusy}>CLEAR</button>
-      {#if ssFile && (ssFile.type.startsWith('video/') || /\.gif$/i.test(ssFile.name))}
-        <button disabled={!ssBytes || ssBusy} on:click={saveAsGif}>SAVE GIF</button>
+      <button class="ghost" on:click={clearOnDevice} disabled={!snap.screensaver || ssBusy}>Remove</button>
+      {#if !IS_CAPACITOR && ssFile && (ssFile.type.startsWith('video/') || /\.gif$/i.test(ssFile.name))}
+        <!-- <a download> is a no-op in the iOS WKWebView, so this is web-only. -->
+        <button class="ghost" disabled={!ssBytes || ssBusy} on:click={saveAsGif}>Save a copy</button>
       {/if}
-      <button class="primary" disabled={!ssBytes || ssBusy} on:click={upload}>
-        {ssBusy ? 'UPLOADING…' : 'UPLOAD'}
+      <button class="save" disabled={!ssBytes || ssBusy} on:click={upload}>
+        {#if ssBusy}<Glyph kind="saving" size={16} /> Adding…{:else}Add to my AXIS{/if}
       </button>
     </div>
-  </div>
 
-  <div class="card muted small">
-    <h3>Tips for the best loop</h3>
-    <ul>
-      <li><b>GIFs</b> usually look best — designers author them to loop.</li>
-      <li><b>Videos</b> get sampled into 12 frames at 6 fps automatically.</li>
-      <li>Any source resolution up to <b>4K</b> works — the encoder
-          downscales to 240 × 240 in the canvas before sampling.
-          Smaller sources (1080p or below) still decode faster.</li>
-      <li>Keep motion smooth and avoid abrupt cuts near the end of the clip.</li>
-      <li>Stills upload as full 16-bit colour — no palette quantisation.</li>
-    </ul>
-  </div>
-{/if}
+    <details class="tips">
+      <summary>Tips for the best loop</summary>
+      <ul>
+        <li>GIFs usually look best — they're made to loop.</li>
+        <li>Videos are auto-sampled into a short smooth loop.</li>
+        <li>Any size up to 4K works; big files just take longer the first time.</li>
+        <li>Avoid an abrupt cut right at the end of a clip.</li>
+      </ul>
+    </details>
+  {/if}
+</div>
 
 <style>
-  .bar {
-    display: flex; align-items: center; gap: 12px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--line);
-  }
-  .bar h1 {
-    margin: 0; font-size: 14px; letter-spacing: 0.18em;
-    color: var(--muted);
-  }
-  .back {
-    background: transparent; border: 0; color: var(--muted);
-    padding: 6px 8px; cursor: pointer; font-size: 13px;
-  }
-  .card {
-    background: var(--card);
-    border-radius: 14px;
-    padding: 16px;
-    margin: 12px 16px;
-  }
-  .card h2 {
-    margin: 0 0 8px; font-size: 15px;
-  }
-  .card h3 {
-    margin: 0 0 6px; font-size: 13px; color: var(--muted);
-    letter-spacing: 0.1em; text-transform: uppercase;
-  }
-  .preview {
-    margin: 14px 0;
-    display: flex; flex-direction: column; align-items: center; gap: 10px;
-  }
-  .preview canvas {
-    width: 200px; height: 200px;
-    border-radius: 50%;
-    background: #000;
-    box-shadow: 0 0 0 4px var(--line);
-    image-rendering: pixelated;
-  }
-  .preview-empty {
-    width: 200px; height: 200px;
-    border-radius: 50%;
-    background: #0e0e10;
-    color: var(--muted);
-    display: flex; align-items: center; justify-content: center;
-    text-align: center; font-size: 12px; padding: 0 18px;
-  }
-  .scrub {
-    display: flex; align-items: center; gap: 8px; width: 100%;
-  }
-  .scrub input[type="range"] {
-    flex: 1; accent-color: var(--accent);
-  }
-  .file {
-    display: block;
-    border: 1px dashed var(--line);
-    border-radius: 10px;
-    padding: 14px;
-    text-align: center;
-    cursor: pointer;
-    color: var(--muted);
-    margin: 8px 0 6px;
-  }
+  .pg { padding: 14px 16px 90px; max-width: 480px; margin: 0 auto; color: var(--fg, #e9e7df); }
+  .hd { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .wm { letter-spacing: 3px; font-weight: 500; }
+  .sub { color: var(--muted, #85826f); font-size: 13px; }
+  .empty { color: var(--muted, #85826f); text-align: center; padding: 40px 0; }
+  .intro { font-size: 14px; margin: 6px 0 16px; line-height: 1.5; }
+  .prev { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .prev canvas { width: 200px; height: 200px; border-radius: 50%; background: #000; box-shadow: 0 0 0 3px var(--border, #26261c); image-rendering: pixelated; }
+  .prev-empty { width: 200px; height: 200px; border-radius: 50%; background: #0e0e10; border: 1px solid var(--border, #26261c); color: var(--muted, #85826f); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; font-size: 12px; padding: 0 22px; }
+  .scrub { display: flex; align-items: center; gap: 8px; width: 100%; }
+  .scrub input[type="range"] { flex: 1; accent-color: var(--accent, #c9a24a); }
+  .fr { font-family: var(--font-mono, monospace); font-size: 11px; color: var(--muted, #85826f); }
+  .file { display: block; border: 1px dashed var(--border, #3a382f); border-radius: 11px; padding: 14px; text-align: center; cursor: pointer; color: var(--muted, #85826f); font-size: 13px; }
   .file input { display: none; }
-  .file:hover { color: var(--fg); border-color: var(--accent); }
-  /* ---- Quality chip selector ---- */
-  .quality-row {
-    display: flex; align-items: center; gap: 6px;
-    margin: 10px 2px 4px;
-  }
-  .quality-label {
-    font-family: ui-monospace, monospace;
-    font-size: 11px; letter-spacing: 1px;
-    color: var(--muted);
-    margin-right: 6px;
-  }
-  .quality-chip {
-    flex: 1;
-    background: transparent;
-    border: 1px solid var(--line);
-    color: var(--muted);
-    padding: 6px 10px;
-    border-radius: 999px;
-    font-family: ui-monospace, monospace;
-    font-size: 11px; letter-spacing: 1px;
-    cursor: pointer;
-    transition: background 120ms ease, color 120ms ease;
-  }
-  .quality-chip:hover:not(:disabled) { color: var(--fg); border-color: var(--accent); }
-  .quality-chip.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #000;
-  }
-  .quality-chip:disabled { opacity: 0.4; cursor: not-allowed; }
-  .quality-hint {
-    margin: 4px 2px 8px;
-    line-height: 1.4;
-  }
-  .spec-note {
-    margin: 6px 2px 4px;
-    line-height: 1.4;
-  }
-  .spec-note b { color: var(--fg); }
-  .err {
-    color: #ff6e6e;
-    font-size: 13px;
-    white-space: pre-wrap;
-    margin: 8px 0;
-  }
-  .progress {
-    height: 6px; border-radius: 3px; background: var(--line); overflow: hidden;
-  }
-  .progress > div {
-    height: 100%; background: var(--accent); transition: width 200ms;
-  }
-  .actions {
-    display: flex; gap: 8px; justify-content: flex-end;
-    margin-top: 12px;
-  }
-  .actions button {
-    background: var(--line);
-    color: var(--fg);
-    border: 0;
-    border-radius: 8px;
-    padding: 10px 14px;
-    font-size: 13px;
-    cursor: pointer;
-  }
-  .actions button:disabled { opacity: 0.4; cursor: not-allowed; }
-  .actions button.primary { background: var(--accent); color: #000; font-weight: 600; }
-  ul { margin: 4px 0 0 18px; padding: 0; }
-  ul li { margin: 4px 0; }
-  .small { font-size: 12px; }
-  .muted { color: var(--muted); }
-  .mono  { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .file:hover { color: var(--fg, #e9e7df); border-color: var(--accent, #c9a24a); }
+  .lab { font-size: 11px; letter-spacing: 1.5px; color: var(--muted, #8f8a79); margin: 16px 0 8px 1px; }
+  .chips { display: flex; gap: 7px; }
+  .chip { flex: 1; background: var(--surface-2, #15151a); border: 1px solid var(--border, #26261c); color: inherit; padding: 9px 4px; border-radius: 10px; font-size: 12.5px; cursor: pointer; }
+  .chip.sel { border-color: var(--accent, #c9a24a); background: #1a1710; }
+  .chip:disabled { opacity: .4; cursor: not-allowed; }
+  .hint { font-size: 11px; color: var(--muted, #75726a); line-height: 1.45; margin: 8px 1px 0; }
+  .enc { font-size: 11.5px; color: var(--muted, #85826f); font-family: var(--font-mono, monospace); margin: 10px 1px 0; }
+  .err { color: var(--warn, #e24b4a); font-size: 12.5px; white-space: pre-wrap; margin: 10px 0 0; line-height: 1.5; }
+  .progress { height: 6px; border-radius: 3px; background: var(--border, #26261c); overflow: hidden; margin-top: 12px; }
+  .progress > div { height: 100%; background: var(--accent, #c9a24a); transition: width 200ms; }
+  .actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
+  .actions .ghost { background: var(--surface-2, #15151a); color: inherit; border: 1px solid var(--border, #33312a); border-radius: 10px; padding: 11px 14px; font-size: 13px; cursor: pointer; }
+  .actions .ghost:disabled { opacity: .4; cursor: not-allowed; }
+  .save { flex: 1; border: 1px solid var(--accent, #c9a24a); background: var(--accent, #c9a24a); color: #1c1607; font-weight: 500; border-radius: 11px; padding: 11px; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+  .save:disabled { opacity: .45; cursor: default; }
+  .tips { margin-top: 18px; }
+  .tips summary { font-size: 12px; color: var(--muted, #85826f); cursor: pointer; padding: 8px 0; }
+  .tips ul { margin: 4px 0 0 18px; padding: 0; font-size: 12px; color: var(--muted, #85826f); }
+  .tips li { margin: 5px 0; }
 </style>

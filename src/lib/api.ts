@@ -17,6 +17,12 @@ export interface DeviceInfo {
   gear_index?: number;
   gear_label?: string;
   gear_frozen?: boolean;
+  /** ESP-NOW shift-light link to the AXIS gauge. Optional — only firmware
+   *  that supports the gauge link reports these. `gauge_linked` is true while
+   *  telemetry is arriving; `gauge_mac` identifies WHICH gauge (anti cross-car). */
+  gauge_linked?: boolean;
+  gauge_rpm?: number;
+  gauge_mac?: string;
 }
 
 // ============================================================

@@ -24,11 +24,11 @@
       help:  'How fast the glowing light runs through the gears on the H-pattern screen.',
     },
     intentGyroDps: {
-      label: 'Gear sensitive',
+      label: 'Shift sensitivity',
       help:  'How sharp a knob movement is needed to register as a shift. Higher = ignores more car bumps and brake dive.',
     },
     intentWindowMs: {
-      label: 'Gear threshold',
+      label: 'Shift detection window',
       help:  'After moving the knob, how long the device keeps accepting the new gear before timing out.',
     },
     motionAccelDead: {
@@ -157,16 +157,24 @@
   function fmt(key: string, v: number): string {
     const e = config?.[key];
     if (!e) return String(v);
-    if (e.unit === 'g')   return v.toFixed(2) + ' g';
-    if (e.unit === 'dps') return v.toFixed(0) + ' dps';
+    // Brightness ships as raw 0-255 (unit ''); show a friendly % so a
+    // buyer never sees a debug float like "255.00".
+    if (key === 'brightFull' || key === 'brightDim') return Math.round((v / 255) * 100) + '%';
+    // "Feel" sliders carry units meaningless to a buyer (g-force, deg/s, bare
+    // response floats). Show a plain 0-100% of the slider's own range — like
+    // brightness — instead of "0.15 g" / "12 dps" / "0.50".
+    if (e.unit === 'g' || e.unit === 'dps' || e.unit === '') {
+      const span = (e.max - e.min) || 1;
+      return Math.round(((v - e.min) / span) * 100) + '%';
+    }
     if (e.unit === 'deg') return v.toFixed(0) + '°';
     if (e.unit === 'ms')  return v.toFixed(0) + ' ms';
-    if (e.unit === '')    return v.toFixed(2);
     return v + ' ' + e.unit;
   }
 
   // Step size for sliders — sensible per-unit defaults.
   function step(key: string): number {
+    if (key === 'brightFull' || key === 'brightDim') return 1;
     const u = config?.[key]?.unit;
     if (u === 'g')   return 0.01;
     if (u === '')    return 0.01;
@@ -175,7 +183,7 @@
   }
 </script>
 
-<PageHeader />
+<PageHeader title="Fine-tuning" back="pro" backLabel="Pro" />
 
 {#if err}
   <div class="card err">{err}</div>
@@ -239,9 +247,6 @@
 {/if}
 
 <style>
-  .bar { display: flex; align-items: center; gap: var(--s-3); }
-  .bar h1 { margin: 0; }
-  .back  { background: transparent; border: none; color: var(--accent); padding: 0; min-height: 0; }
   .err  { color: var(--danger); }
   .muted { color: var(--muted); text-align: center; }
   label   { margin: 0; }
@@ -259,7 +264,7 @@
     margin: var(--s-2) 0 var(--s-1);
   }
   .range-meta { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
-  .default { color: var(--border); }
+  .default { color: var(--muted); }
   select {
     width: 100%;
     background: var(--surface-2);

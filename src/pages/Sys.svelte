@@ -25,14 +25,14 @@
   // ---- Actions -------------------------------------------------------
 
   async function doReboot() {
-    if (!store.client) return;
+    if (!store.client || store.isDemo) return;
     if (!confirm('Restart the device? Active connections will drop.')) return;
     busy = true;
     try {
       await store.client.reboot();
-      // Device is rebooting — bounce back to dashboard so the next poll
+      // Device is rebooting — bounce back to Live so the next poll
       // reflects a clean state.
-      setTimeout(() => store.goDashboard(), 4000);
+      setTimeout(() => store.goLive(), 4000);
     } catch (e: any) {
       err = e?.message ?? 'reboot failed';
     } finally {
@@ -41,7 +41,7 @@
   }
 
   async function doFactoryReset() {
-    if (!store.client) return;
+    if (!store.client || store.isDemo) return;
     if (!confirm(
       'Reset everything to factory defaults?\n\n' +
       'This clears: brand colours, device name, tunables, screensaver, Wi-Fi credentials, calibration.\n\n' +
@@ -50,7 +50,7 @@
     busy = true;
     try {
       await store.client.factoryReset();
-      setTimeout(() => store.goDashboard(), 5000);
+      setTimeout(() => store.goLive(), 5000);
     } catch (e: any) {
       err = e?.message ?? 'factory reset failed';
     } finally {
@@ -84,7 +84,7 @@
   }
 </script>
 
-<PageHeader />
+<PageHeader title="System info" back="pro" backLabel="Pro" />
 
 {#if err}<div class="card err">{err}</div>{/if}
 
@@ -97,12 +97,16 @@
     <dl>
       <dt>Firmware</dt>      <dd class="mono accent">{snap.version}</dd>
       <dt>Hardware ID</dt>   <dd class="mono small">{snap.mac}</dd>
-      <dt>CPU</dt>           <dd class="mono">{snap.cpu_mhz} MHz</dd>
+      {#if !store.isDemo}
+        <dt>CPU</dt>         <dd class="mono">{snap.cpu_mhz} MHz</dd>
+      {/if}
       <dt>Uptime</dt>        <dd class="mono">{formatUptime(snap.uptime_ms)}</dd>
     </dl>
   </div>
 
-  <!-- Memory -->
+  {#if !store.isDemo}
+  <!-- Memory (engineer diagnostics — hidden in DEMO so a reviewer doesn't
+       see raw heap/PSRAM/flash dumps) -->
   <div class="card">
     <h3>Memory</h3>
     <dl>
@@ -123,6 +127,7 @@
       <p class="muted small">PSRAM {pct(snap.psram_size - snap.psram_free, snap.psram_size)} used</p>
     {/if}
   </div>
+  {/if}
 
   <!-- Wireless -->
   <div class="card">
@@ -178,8 +183,8 @@
     <div class="card muted small">No battery detected — running on USB.</div>
   {/if}
 
-  <!-- IMU (3-axis raw) -->
-  {#if snap.imu}
+  <!-- IMU (3-axis raw) — engineer diagnostics, hidden in DEMO -->
+  {#if snap.imu && !store.isDemo}
     <div class="card">
       <h3>IMU (raw)</h3>
       <dl>
@@ -217,17 +222,14 @@
     <h3>Actions</h3>
     <p class="hint">Restart keeps your settings. Factory reset clears everything.</p>
     <div class="actions">
-      <button on:click={doReboot} disabled={busy}>RESTART</button>
-      <button class="danger" on:click={doFactoryReset} disabled={busy}>FACTORY RESET</button>
+      <button on:click={doReboot} disabled={busy || store.isDemo}>RESTART</button>
+      <button class="danger" on:click={doFactoryReset} disabled={busy || store.isDemo}>FACTORY RESET</button>
     </div>
+    {#if store.isDemo}<p class="hint">Available when an AXIS is connected.</p>{/if}
   </div>
 {/if}
 
 <style>
-  .bar { display: flex; align-items: center; gap: var(--s-3); }
-  .bar h1 { margin: 0; }
-  .back  { background: transparent; border: none; color: var(--accent); padding: 0; min-height: 0; }
-
   .err   { color: var(--danger); }
   .muted { color: var(--muted); }
   .small { font-size: 12px; }

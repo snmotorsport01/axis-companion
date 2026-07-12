@@ -3,16 +3,23 @@
   import { DeviceClient } from './lib/api';
   import { IS_DEVICE_BUILD, IS_CAPACITOR, store } from './lib/store.svelte';
   import Connect   from './pages/Connect.svelte';
-  import Dashboard from './pages/Dashboard.svelte';
   import Tune      from './pages/Tune.svelte';
   import Ota       from './pages/Ota.svelte';
   import Calibrate from './pages/Calibrate.svelte';
   import Live      from './pages/Live.svelte';
   import Brand     from './pages/Brand.svelte';
   import Screensaver from './pages/Screensaver.svelte';
-  import Sys       from './pages/Sys.svelte';
-  import Devices   from './pages/Devices.svelte';
-  import BottomNav from './lib/BottomNav.svelte';
+  import Sys        from './pages/Sys.svelte';
+  import Devices    from './pages/Devices.svelte';
+  import GaugeSetup from './pages/GaugeSetup.svelte';
+  import Looks      from './pages/Looks.svelte';
+  import Feel       from './pages/Feel.svelte';
+  import Pro        from './pages/Pro.svelte';
+  import Diagnostics from './pages/Diagnostics.svelte';
+  import Drivetrain  from './pages/Drivetrain.svelte';
+  import MonitorOta    from './pages/MonitorOta.svelte';
+  import MonitorConfig from './pages/MonitorConfig.svelte';
+  import BottomNav  from './lib/BottomNav.svelte';
 
   // Device build: the PWA is hosted by the firmware itself, so /api/info is
   // served from window.location.origin. Wire up a client immediately so the
@@ -31,8 +38,6 @@
 <main>
   {#if store.page === 'connect'}
     <Connect />
-  {:else if store.page === 'dashboard'}
-    <Dashboard />
   {:else if store.page === 'tune'}
     <Tune />
   {:else if store.page === 'ota'}
@@ -49,6 +54,22 @@
     <Sys />
   {:else if store.page === 'devices'}
     <Devices />
+  {:else if store.page === 'gaugesetup'}
+    <GaugeSetup />
+  {:else if store.page === 'looks'}
+    <Looks />
+  {:else if store.page === 'feel'}
+    <Feel />
+  {:else if store.page === 'pro'}
+    <Pro />
+  {:else if store.page === 'diag'}
+    <Diagnostics />
+  {:else if store.page === 'drivetrain'}
+    <Drivetrain />
+  {:else if store.page === 'monota'}
+    <MonitorOta />
+  {:else if store.page === 'monconfig'}
+    <MonitorConfig />
   {/if}
 </main>
 

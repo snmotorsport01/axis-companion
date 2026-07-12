@@ -22,6 +22,7 @@ import {
   type DeviceInfo, type ConfigSnapshot, type TelemetryFrame,
   type CalibSnapshot, type BrandingSnapshot
 } from './api';
+import { GAUGE_SVC } from './gaugeBleClient';
 
 // Firmware advertises this service — scan filter matches it so the
 // companion only surfaces AXIS knobs, not random BLE noise.
@@ -188,6 +189,22 @@ export class BleClient extends DeviceClient {
   ): Promise<void> {
     await ensureReady();
     const seen = new Set<string>();
+
+    // FIRST surface any AXIS the OS is ALREADY connected to. A connected
+    // peripheral does NOT advertise (NimBLE pauses advertising on connect),
+    // so a fresh LE scan never sees it — which is why a knob that stayed
+    // linked (HID media keys, a previous app session) could only be
+    // re-found by rebooting it. getConnectedDevices() returns it directly,
+    // no advertising required, so the app reconnects without a reboot.
+    try {
+      const connected = await CapBle.getConnectedDevices([AXIS_SVC]);
+      for (const d of connected) {
+        if (seen.has(d.deviceId)) continue;
+        seen.add(d.deviceId);
+        onHit({ id: d.deviceId, name: d.name || 'AXIS', rssi: 0 });
+      }
+    } catch { /* platform may not support it — fall back to scan only */ }
+
     await CapBle.requestLEScan(
       // Empty filter — give iOS no constraint, accept everything.
       // Throughput is fine for 6 s windows in foreground.
@@ -197,9 +214,17 @@ export class BleClient extends DeviceClient {
         if (seen.has(id)) return;
         const name = r.localName || r.device.name || '';
         const advertisedUuids = (r.uuids ?? []).map(u => u.toLowerCase());
-        const isAxis =
+        // Exclude the AXIS GAUGE: its name ("AXIS Gauge") also starts with
+        // "AXIS", but it's a SEPARATE peripheral with a different GATT —
+        // configured from the Gauge Setup page, not here. Picking it in the
+        // knob flow connects fine then fails every read with "characteristic
+        // not found" (knob char UUIDs don't exist on the gauge).
+        const isGauge =
+          /gauge/i.test(name) ||
+          advertisedUuids.includes(GAUGE_SVC.toLowerCase());
+        const isAxis = !isGauge && (
           /^axis/i.test(name) ||
-          advertisedUuids.includes(AXIS_SVC.toLowerCase());
+          advertisedUuids.includes(AXIS_SVC.toLowerCase()));
         if (!isAxis) return;
         seen.add(id);
         onHit({
@@ -354,9 +379,9 @@ export class BleClient extends DeviceClient {
       warn_hex:             flat.warn_hex             ?? '#FF3B3B',
       max_name:             flat.max_name             ?? 16,
       screensaver:          flat.screensaver          ?? false,
-      screensaver_w:        flat.screensaver_w        ?? 240,
-      screensaver_h:        flat.screensaver_h        ?? 240,
-      screensaver_size:     flat.screensaver_size     ?? 115_200,
+      screensaver_w:        flat.screensaver_w        ?? 466,
+      screensaver_h:        flat.screensaver_h        ?? 466,
+      screensaver_size:     flat.screensaver_size     ?? 434_312,
       screensaver_frames:   flat.screensaver_frames   ?? 0,
       screensaver_fps:      flat.screensaver_fps      ?? 0,
       screensaver_animated: flat.screensaver_animated ?? false,

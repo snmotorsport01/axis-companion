@@ -35,6 +35,7 @@
   let calib    = $state<CalibSnapshot | null>(null);
   let err      = $state<string | null>(null);
   let busy     = $state(false);
+  let toast    = $state<string | null>(null);   // transient success message
 
   // Polling timer — we re-fetch /api/calibration at 4 Hz while a session
   // is active. 250 ms is fast enough that the stillness bar feels live
@@ -150,6 +151,8 @@
     try {
       await store.client.resetCalibration();
       await refresh();
+      toast = 'Calibration cleared';
+      setTimeout(() => { toast = null; }, 2000);
     } catch (e: any) {
       err = e?.message ?? 'reset failed';
     } finally {
@@ -209,7 +212,6 @@
   });
   let liveR = $derived(calib?.imu_live?.roll  ?? 0);
   let liveP = $derived(calib?.imu_live?.pitch ?? 0);
-  let liveG = $derived(calib?.imu_live?.gyroMag ?? 0);
 
   // ---- Mode selector --------------------------------------------------
   // Firmware exposes 3 engine modes — switching writes to NVS via the
@@ -217,10 +219,11 @@
   // a successful switch we re-fetch calibration() so the step list
   // re-renders for the new mode.
   const MODES = [
-    { id: 0, name: 'PRND',     hint: 'pitch' },
-    { id: 1, name: 'SEQ',      hint: 'sequential' },
-    { id: 2, name: 'HPATTERN', hint: 'manual H' }
+    { id: 0, name: 'Auto',       desc: 'Automatic — P / R / N / D, chosen by how you tilt the knob.' },
+    { id: 1, name: 'Sequential', desc: 'Sequential — push to shift up, pull to shift down.' },
+    { id: 2, name: 'Manual',     desc: 'Manual — full H-pattern, like a traditional stick shift.' }
   ];
+  let modeDesc = $derived(MODES.find(m => m.id === calib?.mode_id)?.desc ?? '');
   let switchingMode = $state(false);
   async function pickMode(id: number) {
     if (!store.client || busy || active || switchingMode) return;
@@ -270,9 +273,10 @@
   }
 </script>
 
-<PageHeader />
+<PageHeader title="Re-teach gears" back="pro" backLabel="Pro" />
 
 {#if err}<div class="card err">{err}</div>{/if}
+{#if toast}<div class="card ok-toast">{toast}</div>{/if}
 
 {#if !calib}
   <div class="card muted">Loading…</div>
@@ -292,12 +296,12 @@
           class:active={calib.mode_id === m.id}
           on:click={() => pickMode(m.id)}
           disabled={busy || active || switchingMode}
-          title={m.hint}
         >
           {m.name}
         </button>
       {/each}
     </div>
+    {#if modeDesc}<p class="muted small mode-desc">{modeDesc}</p>{/if}
     {#if supportsSpeed}
       <!-- Speed/gear-count chips. Only HPAT + SEQ accept this; PRND's
            fixed P/R/N/D doesn't have a "how many gears" choice. -->
@@ -350,15 +354,14 @@
             <div class="bar" style="width: {stillFrac() * 100}%"></div>
           </div>
           <p class="small mono muted">
-            {calib.state?.is_still ? 'Holding…' : 'Move slower — too much vibration'}
-            <span class="float-right">gyro {liveG.toFixed(1)} dps</span>
+            {calib.state?.is_still ? 'Holding steady…' : 'Move slower — too much movement'}
           </p>
         {:else if phase === 2}
           <!-- SAMPLING: averaging window. Bar fills over CALIB_SAMPLE_MS. -->
           <div class="progress ok">
             <div class="bar" style="width: {sampleFrac() * 100}%"></div>
           </div>
-          <p class="small mono muted">Averaging IMU samples…</p>
+          <p class="small mono muted">Capturing…</p>
         {:else}
           <div class="progress idle"><div class="bar idle-bar"></div></div>
           <p class="small mono muted">
@@ -369,8 +372,8 @@
 
       <!-- Live tilt readout -->
       <div class="live-tilt mono small">
-        <span>R <b>{liveR.toFixed(0)}°</b></span>
-        <span>P <b>{liveP.toFixed(0)}°</b></span>
+        <span>Lean <b>{liveR.toFixed(0)}°</b></span>
+        <span>Tilt <b>{liveP.toFixed(0)}°</b></span>
       </div>
 
       <!-- Action row -->
@@ -422,14 +425,16 @@
       {/if}
     </div>
 
+    {#if !store.isDemo}
     <div class="card">
-      <h3>IMU zero (current session)</h3>
+      <h3>Sensor reference</h3>
       <dl>
-        <dt>Roll</dt>  <dd class="mono">{calib.imu_zero.roll.toFixed(2)}°</dd>
-        <dt>Pitch</dt> <dd class="mono">{calib.imu_zero.pitch.toFixed(2)}°</dd>
-        <dt>Yaw</dt>   <dd class="mono">{calib.imu_zero.yaw.toFixed(2)}°</dd>
+        <dt>Lean</dt>  <dd class="mono">{calib.imu_zero.roll.toFixed(1)}°</dd>
+        <dt>Tilt</dt>  <dd class="mono">{calib.imu_zero.pitch.toFixed(1)}°</dd>
+        <dt>Yaw</dt>   <dd class="mono">{calib.imu_zero.yaw.toFixed(1)}°</dd>
       </dl>
     </div>
+    {/if}
 
     <!-- Old "Steps for this mode" preview card removed — the wizard
          already walks the user through each position one at a time
@@ -437,7 +442,7 @@
          BEGIN button was just visual noise. The active session's
          in-card progress strip (above) covers the "where am I" need. -->
 
-    <button class="danger wide" on:click={onResetAll} disabled={busy}>
+    <button class="danger wide" on:click={onResetAll} disabled={busy || store.isDemo}>
       CLEAR CALIBRATION
     </button>
   {/if}
@@ -445,7 +450,9 @@
 
 <style>
   .err   { color: var(--danger); }
+  .ok-toast { color: var(--success); }
   .muted { color: var(--muted); }
+  .mode-desc { margin: 0 0 var(--s-2); }
 
   /* ---- Mode chips ---- */
   .mode-row {
@@ -529,7 +536,10 @@
   .phase-2 { color: var(--success, #00d97e); border-color: rgba(0,217,126,0.4); }
 
   .big-label {
-    font-family: var(--font-device);
+    /* Mono, not the Psionic display font (--font-device): Psionic stylises
+       multi-letter words into garbled glyphs ("Reverse"→junk) at this size.
+       Same fix applied to GaugePreview labels. */
+    font-family: var(--font-mono);
     /* Was 56px for single-char labels ("1", "N"). With prettyLabel
        expanding to "Gear 1" / "Neutral" etc. we need a smaller size
        so the longest entry ("Reverse") still fits inside the card

@@ -3,6 +3,7 @@
   import type { TelemetryFrame } from '../lib/api';
   import { store } from '../lib/store.svelte';
   import PageHeader from '../lib/PageHeader.svelte';
+  import Glyph from '../lib/Glyph.svelte';
 
   let sock: WebSocket | null = null;
   let frame    = $state<TelemetryFrame | null>(null);
@@ -59,6 +60,15 @@
   // (Svelte 5 restricts {@const} to a few block scopes).
   let curXY = $derived(frame ? dotXY(frame) : { x: 0, y: 0 });
 
+  // Consumer-facing connection label — never expose the raw WebSocket
+  // state-machine words ("OPEN"/"CLOSED") to a buyer.
+  let statusLabel = $derived(
+    status === 'open'         ? 'Connected'
+    : status === 'connecting' ? 'Connecting…'
+    : status === 'error'      ? 'Connection lost'
+    :                           'Disconnected'
+  );
+
   // Build an SVG polyline of historical pitch for a quick strip chart.
   $effect.pre(() => {}); // keep reactive — read history below
 
@@ -83,19 +93,34 @@
 <PageHeader>
   <div class="status">
     <span class="dot {status === 'open' ? 'online' : status === 'error' ? 'error' : 'offline'}"></span>
-    {status}
+    {statusLabel}
   </div>
 </PageHeader>
 
+<!-- Gauge shortcut from Home. The AXIS Gauge is a separate BLE device;
+     it also lives in Pro → Gauge, but a buyer who has one shouldn't have
+     to dig for it. Status-aware: shows connected vs "set up". -->
+<button class="gauge-link" on:click={() => store.page = 'gaugesetup'}>
+  <span class="gl-ic">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17a8 8 0 0 1 16 0"/><line x1="12" y1="17" x2="16.5" y2="11.5"/></svg>
+  </span>
+  <span class="gl-txt">
+    <span class="gl-l">AXIS Gauge</span>
+    <span class="gl-s">{store.gaugeClient ? 'connected' : 'tap to set up'}</span>
+  </span>
+  {#if store.gaugeClient}<Glyph kind="connected" size={14} />{/if}
+  <span class="gl-ch">›</span>
+</button>
+
 {#if !frame}
-  <div class="card muted">Waiting for first frame…</div>
+  <div class="card muted">Connecting to your AXIS…</div>
 {:else}
   <div class="card">
     <h3>Current gear</h3>
     <div class="gear mono">{frame.label}</div>
     <p class="muted sub">
-      {frame.motion ? '⚡ motion' : 'still'} ·
-      {frame.frozen ? 'frozen' : 'tracking'}
+      {frame.motion ? 'In motion' : 'Still'} ·
+      {frame.frozen ? 'Gear locked' : 'Live'}
     </p>
   </div>
 
@@ -114,15 +139,13 @@
       </svg>
     </div>
     <dl>
-      <dt>Roll</dt>  <dd class="mono">{frame.roll.toFixed(2)}°</dd>
-      <dt>Pitch</dt> <dd class="mono">{frame.pitch.toFixed(2)}°</dd>
-      <dt>Gyro</dt>  <dd class="mono">{frame.gyro.toFixed(1)} dps</dd>
-      <dt>Accel</dt> <dd class="mono">{frame.accel.toFixed(3)} g</dd>
+      <dt>Lean</dt> <dd class="mono">{frame.roll.toFixed(0)}°</dd>
+      <dt>Tilt</dt> <dd class="mono">{frame.pitch.toFixed(0)}°</dd>
     </dl>
   </div>
 
   <div class="card">
-    <h3>Pitch — last 5s</h3>
+    <h3>Tilt — last 5s</h3>
     <svg viewBox="0 0 300 80" class="chart" preserveAspectRatio="none">
       <polyline points={strip(history.map(f => f.pitch), 300, 80)} fill="none" stroke="var(--accent)" stroke-width="1.5" />
     </svg>
@@ -134,7 +157,7 @@
 {/if}
 
 <style>
-  .status { color: var(--muted); font-size: 13px; text-transform: uppercase; }
+  .status { color: var(--muted); font-size: 13px; }
   .muted  { color: var(--muted); text-align: center; }
   .gear   { font-size: 72px; text-align: center; font-weight: 700; color: var(--accent); }
   .sub    { text-align: center; color: var(--muted); margin: 0; }
@@ -144,4 +167,23 @@
   dd { margin: 0; color: var(--accent); }
   .chart  { width: 100%; height: 80px; }
   .pause  { width: 100%; margin-top: var(--s-3); }
+
+  .gauge-link {
+    width: 100%;
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface-2, var(--card, #15151a));
+    border: 1px solid var(--border, #26261c);
+    border-radius: 11px;
+    padding: 12px 14px;
+    color: var(--fg, #e9e7df);
+    cursor: pointer;
+    margin: 0 0 var(--s-3, 12px);
+    text-align: left;
+  }
+  .gauge-link .gl-ic { color: var(--accent, #c9a24a); display: flex; }
+  .gauge-link .gl-ic svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; }
+  .gauge-link .gl-txt { flex: 1; }
+  .gauge-link .gl-l { display: block; font-size: 14px; }
+  .gauge-link .gl-s { display: block; font-size: 11px; color: var(--muted, #85826f); margin-top: 1px; }
+  .gauge-link .gl-ch { color: var(--muted, #75726a); font-size: 18px; }
 </style>

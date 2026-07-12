@@ -31,6 +31,7 @@
   let hits         = $state<BleScanHit[]>([]);
   let connecting   = $state<string | null>(null);
   let bleErr       = $state<string | null>(null);
+  let scanned      = $state(false);   // a scan has completed at least once
 
   onMount(async () => {
     bleAvailable = await BleClient.isAvailable();
@@ -39,6 +40,7 @@
   async function scanBle() {
     if (scanning) return;
     scanning = true;
+    scanned  = false;
     hits     = [];
     bleErr   = null;
     try {
@@ -53,6 +55,7 @@
       bleErr = e?.message ?? 'BLE scan failed';
     } finally {
       scanning = false;
+      scanned  = true;
     }
   }
 
@@ -130,7 +133,7 @@
                     disabled={connecting === h.id}>
               <span class="hit-name">{h.name}</span>
               <span class="hit-rssi mono">
-                {connecting === h.id ? 'connecting…' : (h.rssi != null ? `${h.rssi} dBm` : '')}
+                {connecting === h.id ? 'connecting…' : (h.rssi != null ? (h.rssi > -60 ? 'Strong' : h.rssi > -75 ? 'Good' : 'Weak') : '')}
               </span>
             </button>
           </li>
@@ -138,7 +141,22 @@
       </ul>
     {:else if scanning}
       <p class="muted small mono">Looking for AXIS…</p>
+    {:else if scanned}
+      <p class="muted small">No AXIS found nearby. Make sure it's powered on and close by, then tap Connect again — or try the live preview below.</p>
     {/if}
+  </div>
+  <!-- AXIS Gauge — a SEPARATE peripheral from the knob. Reachable directly
+       from here so configuring the gauge needs neither a paired knob nor
+       DEMO MODE (it has its own BLE link + Gauge Setup page). -->
+  <div class="card">
+    <h3>AXIS Gauge</h3>
+    <p class="muted small">
+      Set the gauge's redline, shift light, warnings and colours. Connects
+      on its own — no knob required.
+    </p>
+    <button class="primary connect" on:click={() => (store.page = 'gaugesetup')}>
+      Set up AXIS Gauge
+    </button>
   </div>
 {:else}
   <!-- Capacitor BLE plugin says the radio isn't available (iOS
@@ -147,8 +165,8 @@
   <div class="card">
     <h3>Bluetooth unavailable</h3>
     <p class="muted small">
-      This device has no BLE radio (iOS simulator, browser preview).
-      Pick a DEMO scene below to explore the app with synthesised data.
+      Bluetooth isn't available here. Turn it on to connect your AXIS — or
+      explore the app with the live preview below.
     </p>
   </div>
 {/if}
@@ -158,7 +176,8 @@
      situation so demos/screenshots can showcase the right behaviour
      without needing the hardware in the right state. -->
 <div class="card demo-card">
-  <h3>DEMO MODE <span class="muted small">— no device</span></h3>
+  <h3>Take a look around</h3>
+  <p class="muted small">No AXIS yet? Explore the full app with a live preview — pick a scene to start.</p>
   <div class="scene-grid">
     {#each SCENES as scene}
       <button class="scene" on:click={() => demo(scene.id)} disabled={!!connecting}>
@@ -172,17 +191,13 @@
 <style>
   .hero h1 { font-size: 32px; letter-spacing: 0.02em; }
   .sub     { color: var(--muted); margin: var(--s-2) 0 0; }
-  ol       { margin: var(--s-2) 0 0; padding-left: 1.2em; color: var(--muted); }
-  ol strong { color: var(--fg); }
-  ol li + li { margin-top: var(--s-1); }
   .connect { width: 100%; margin-top: var(--s-3); }
   .err {
-    color: var(--danger);
+    color: var(--warn, #e24b4a);
     font-size: 13px;
     margin: var(--s-2) 0 0;
   }
-  .demo-card { border: 1px dashed var(--border); }
-  .demo-card h3 { margin-top: 0; font-family: var(--font-mono); letter-spacing: 1px; }
+  .demo-card h3 { margin-top: 0; }
   .small { font-size: 11px; font-weight: normal; }
   .scene-grid {
     display: grid;
@@ -203,15 +218,13 @@
     min-height: var(--tap-min);
   }
   .scene strong {
-    font-family: var(--font-mono);
-    font-size: 12px;
-    letter-spacing: 1.5px;
+    font-size: 13px;
     color: var(--accent);
   }
   .scene small {
     color: var(--muted);
-    font-size: 10px;
-    line-height: 1.3;
+    font-size: 11px;
+    line-height: 1.35;
   }
   .scene:active { background: var(--surface); }
 

@@ -10,3 +10,6 @@ dist-ssr
 .vscode/*
 !.vscode/extensions.json
 .svelte-kit
+
+# local agent / preview tooling
+.claude/
