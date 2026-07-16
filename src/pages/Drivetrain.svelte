@@ -208,14 +208,17 @@
       </span>
     </label>
 
+    <!-- Vehicle weight — powers the VirtualDyno Power/Torque channels -->
+    <label class="row"><span>Weight (kg)<br><small class="hint">incl. driver — used for Power/Torque</small></span>
+      <input type="number" min="300" max="6000" step="10" bind:value={cfg.massKg} />
+    </label>
+
     <details class="adv">
       <summary>Advanced — enter values by hand</summary>
       <label class="row"><span>Redline (RPM)</span>
         <input type="number" min="1000" max="12000" step="100" bind:value={cfg.rpmLimit} /></label>
       <label class="row"><span>Forward gears</span>
         <select bind:value={cfg.gearCount}>{#each [4,5,6,7,8] as n}<option value={n}>{n}</option>{/each}</select></label>
-      <label class="row"><span>Shift light (RPM)</span>
-        <input type="number" min="0" max="12000" step="100" bind:value={cfg.shiftRpm} /></label>
       <div class="ratios-h">Gear ratios</div>
       <div class="ratios">
         {#each Array(cfg.gearCount) as _, i}

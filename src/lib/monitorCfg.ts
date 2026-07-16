@@ -72,12 +72,24 @@ export enum Ch {
   // ---- Phase B (append-only; MUST match GaugeChannels.h) ----
   LAMBDA_M, AFR_M, ABSLOAD, PEDAL, FRP, RELTHR, DTC,  // 28..34
   MOTOR_TQ,                                           // 35 electric-drive torque Nm (signed)
+  // ---- derived power (firmware computes; app just lets you place it) ----
+  ICE_HP,                                             // 36 estimated engine power hp (airflow)
+  EV_HP,                                              // 37 estimated electric power hp (signed)
+  WHP,                                                // 38 estimated total wheel power hp = ICE+EV
+  ECON,                                               // 39 instantaneous fuel economy km/L
+  ACCEL,                                              // 40 accelerator / driver demand % (passive 0x1FFF0140)
+  PWR,                                                // 41 VirtualDyno crank power hp (any car)
+  TQ,                                                 // 42 VirtualDyno crank torque Nm
   COUNT,
 }
-export enum Layout { HERO = 0, BARS = 1 }
+export enum Layout { HERO = 0, BARS = 1, NEEDLE = 2, TICKS = 3 }
+export const LAYOUT_NAMES: Record<Layout, string> = {
+  [Layout.HERO]: "Hero", [Layout.BARS]: "Bars", [Layout.NEEDLE]: "Needle", [Layout.TICKS]: "Ticks",
+};
 
-export const CFG_VERSION   = 6;         // MUST equal GaugeCfg.version in the firmware's defaultCfg() (v6 = ch[5] per page: HERO/BARS + a reserved 5th slot). Was 5/ch[4]=91B → the v6 firmware (95B) rejected every write.
-export const GAUGE_PAGES   = 4;
+export const CFG_VERSION   = 11;        // v11 = PageCfg + color2 + textColor → 219 B. MUST equal firmware GaugeCfg.version.
+export const GAUGE_PAGES   = 10;        // MAX pages (array size); active count = cfg.pageCount
+export const GAUGE_PAGES_DEFAULT = 4;   // shown by default
 export const SLOTS_PER_PAGE = 5;        // HERO:[0]=primary [1..3]=support ; BARS:[0..3] ; slot[4] reserved — matches firmware GaugeConfig.h
 export const BRIGHT_DEFAULT = 200;      // matches firmware GAUGE_BRIGHT_DEFAULT
 export const RPM_LIMIT_DEFAULT  = 6000; // redline for calc-gear (V60 T8); app-configurable per car
@@ -152,6 +164,13 @@ export const CHANNELS: ChannelDef[] = [
   { id: Ch.VOLT,     label: 'Voltage',    short: 'VOLTS', unit: 'V',    min: 10,  max: 16,    group: 'Electric' },
   { id: Ch.SOC,      label: 'Battery SOC',short: 'SOC',   unit: '%',    min: 0,   max: 100,   group: 'Electric' },
   { id: Ch.MOTOR_TQ, label: 'Motor torque',short:'M.TQ', unit: 'Nm',   min: -500,max: 500,   group: 'Electric' },
+  // Power / Torque (VirtualDyno — physics from mass + acceleration; works on any car)
+  { id: Ch.PWR,      label: 'Power (dyno)',short:'PWR', unit: 'hp',   min: 0,   max: 600,   group: 'Power' },
+  { id: Ch.TQ,       label: 'Torque (dyno)',short:'TQ', unit: 'Nm',   min: 0,   max: 800,   group: 'Power' },
+  { id: Ch.ACCEL,    label: 'Accelerator (passive)',short:'GAS',unit:'%',min: 0, max: 100,   group: 'Engine' },
+  { id: Ch.ECON,     label: 'Fuel economy (inst.)',short:'ECON',unit:'km/L',min:0,max: 30,   group: 'Fuel' },
+  // legacy estimates (kept selectable; the dyno channels above are more accurate)
+  { id: Ch.WHP,      label: 'Wheel power (est.)',short:'WHP',unit:'hp', min: -100,max: 500,   group: 'Power' },
   // Trip / diagnostic
   { id: Ch.BARO,     label: 'Barometric', short: 'BARO',  unit: 'kPa',  min: 0,   max: 130,   group: 'Trip' },
   { id: Ch.RUNTIME,  label: 'Run time',   short: 'RUN',   unit: 's',    min: 0,   max: 65535, group: 'Trip' },
@@ -166,13 +185,37 @@ export function channelLabel(id: number): string { return channelDef(id)?.label 
 // Short device-style heading for the preview (e.g. SOC, WTEMP, THR).
 export function channelShort(id: number): string { return channelDef(id)?.short ?? '--'; }
 // Ordered optgroup names for the picker.
-export const CHANNEL_GROUPS = ['Engine', 'Temps', 'Fuel', 'Electric', 'Trip'];
+export const CHANNEL_GROUPS = ['Engine', 'Temps', 'Fuel', 'Electric', 'Power', 'Trip'];
+
+// ---- Per-quantity display units (mirror Units.h UnitClass; index 0 = native) ----
+export enum Uc { NONE = 0, SPEED, TEMP, PRESS, DIST, ECON, POWER, TORQUE, FLOW, COUNT }
+export const UC_COUNT = Uc.COUNT;   // 9 — MUST equal firmware UC_COUNT (GaugeCfg.units length)
+export interface UnitOption { cls: Uc; label: string; opts: string[] }
+export const UNIT_OPTIONS: UnitOption[] = [
+  { cls: Uc.SPEED,  label: 'Speed',        opts: ['km/h', 'mph'] },
+  { cls: Uc.TEMP,   label: 'Temperature',  opts: ['°C', '°F'] },
+  { cls: Uc.PRESS,  label: 'Pressure',     opts: ['bar', 'psi', 'kPa'] },
+  { cls: Uc.DIST,   label: 'Distance',     opts: ['km', 'mi'] },
+  { cls: Uc.ECON,   label: 'Fuel economy', opts: ['km/L', 'mpg', 'L/100km'] },
+  { cls: Uc.POWER,  label: 'Power',        opts: ['hp', 'kW', 'PS'] },
+  { cls: Uc.TORQUE, label: 'Torque',       opts: ['Nm', 'lb-ft'] },
+  { cls: Uc.FLOW,   label: 'Fuel rate',    opts: ['L/h', 'gal/h'] },
+];
+export const UNITS_METRIC: number[] = Array(UC_COUNT).fill(0);
+export const UNITS_IMPERIAL: number[] = (() => {
+  const u = Array(UC_COUNT).fill(0);
+  u[Uc.SPEED] = 1; u[Uc.TEMP] = 1; u[Uc.PRESS] = 1; u[Uc.DIST] = 1;
+  u[Uc.ECON] = 1;  u[Uc.POWER] = 0; u[Uc.TORQUE] = 1; u[Uc.FLOW] = 1;
+  return u;
+})();
 
 export interface PageCfg {
   layout: Layout;
   ch: number[];           // ch.length == SLOTS_PER_PAGE
-  arcColor: number;       // RGB565 arc/accent colour, PER PAGE
+  arcColor: number;       // RGB565 arc / needle-1 / accent colour, PER PAGE
   peak: number;           // primary redline in native units; 0 = off
+  color2?: number;        // v11: RGB565 of the 2nd NEEDLE hand; 0/undef = reuse arcColor
+  textColor?: number;     // v11: RGB565 of the VALUE text (any layout); 0/undef = white
 }
 export interface GaugeCfg {
   version: number;
@@ -186,6 +229,9 @@ export interface GaugeCfg {
   tireWidth: number;      // tyre section width mm, e.g. 235 (v5)
   tireAspect: number;     // aspect ratio %, e.g. 40 (v5)
   tireRim: number;        // rim diameter inches, e.g. 19 (v5)
+  units: number[];        // per-quantity display unit, length UC_COUNT, index by Uc (v7)
+  massKg: number;         // vehicle mass incl. driver, kg — VirtualDyno power/torque input (v8)
+  pageCount: number;      // active gauge pages, 1..GAUGE_PAGES; array always length GAUGE_PAGES (v9)
 }
 
 // Factory default — mirrors GaugeConfig.h defaultCfg() so the app "New" state
@@ -199,7 +245,14 @@ export function defaultCfg(): GaugeCfg {
       { layout: Layout.HERO, ch: [Ch.RPM,      Ch.SPEED,   Ch.NONE, Ch.NONE, Ch.NONE], arcColor: ARC_DEFAULT, peak: 6800 },
       { layout: Layout.HERO, ch: [Ch.THROTTLE, Ch.COOLANT, Ch.NONE, Ch.NONE, Ch.NONE], arcColor: ARC_DEFAULT, peak: 0    },
       { layout: Layout.HERO, ch: [Ch.SOC,      Ch.VOLT,    Ch.NONE, Ch.NONE, Ch.NONE], arcColor: ARC_DEFAULT, peak: 0    },
+      { layout: Layout.HERO, ch: [Ch.PWR,      Ch.TQ,      Ch.NONE, Ch.NONE, Ch.NONE], arcColor: ARC_DEFAULT, peak: 0    },
+      { layout: Layout.HERO, ch: [Ch.TQ,       Ch.PWR,     Ch.NONE, Ch.NONE, Ch.NONE], arcColor: ARC_DEFAULT, peak: 0    },
+      { layout: Layout.NEEDLE, ch: [Ch.BOOST, Ch.NONE, Ch.NONE, Ch.NONE, Ch.NONE], arcColor: ARC_DEFAULT, peak: 0 },
+      { layout: Layout.TICKS,  ch: [Ch.RPM,   Ch.NONE, Ch.NONE, Ch.NONE, Ch.NONE], arcColor: ARC_DEFAULT, peak: 0 },
+      { layout: Layout.HERO,   ch: [Ch.SPEED, Ch.GEAR, Ch.NONE, Ch.NONE, Ch.NONE], arcColor: ARC_DEFAULT, peak: 0 },
+      { layout: Layout.HERO,   ch: [Ch.VOLT,  Ch.AMBIENT, Ch.NONE, Ch.NONE, Ch.NONE], arcColor: ARC_DEFAULT, peak: 0 },
     ],
+    pageCount: GAUGE_PAGES_DEFAULT,
     brightness: BRIGHT_DEFAULT,
     rpmLimit: RPM_LIMIT_DEFAULT,
     gearCount: GEAR_COUNT_DEFAULT,
@@ -209,6 +262,8 @@ export function defaultCfg(): GaugeCfg {
     tireWidth: TIRE_DEFAULT.width,
     tireAspect: TIRE_DEFAULT.aspect,
     tireRim: TIRE_DEFAULT.rim,
+    units: [...UNITS_METRIC],
+    massKg: 1600,
   };
 }
 
@@ -217,8 +272,8 @@ export function defaultCfg(): GaugeCfg {
 //  f32 LE(4) } = 4×12 | brightness(1) | rpmLimit u16 LE(2) | gearCount(1) |
 //  shiftRpm u16 LE(2) | gearRatios 8×f32 LE(32) | finalDrive f32 LE(4) |
 //  tireWidth u16 LE(2) | tireAspect(1) | tireRim(1)
-export const CFG_BYTES = 1 + GAUGE_PAGES * (1 + SLOTS_PER_PAGE + 2 + 4) + 1 + 2 + 1 + 2
-                           + 8 * 4 + 4 + 2 + 1 + 1; // 95 (SLOTS_PER_PAGE=5 → PageCfg 12)
+export const CFG_BYTES = 1 + GAUGE_PAGES * (1 + SLOTS_PER_PAGE + 2 + 4 + 2 + 2) + 1 + 2 + 1 + 2
+                           + 8 * 4 + 4 + 2 + 1 + 1 + UC_COUNT + 2 + 1; // 219 (v11: 10 pages x 16 B)
 
 export function encodeCfg(c: GaugeCfg): Uint8Array {
   const b  = new Uint8Array(CFG_BYTES);
@@ -231,6 +286,8 @@ export function encodeCfg(c: GaugeCfg): Uint8Array {
     for (let s = 0; s < SLOTS_PER_PAGE; s++) b[o++] = (pg.ch[s] ?? Ch.NONE) & 0xff;
     dv.setUint16(o, (pg.arcColor ?? ARC_DEFAULT) & 0xffff, true); o += 2;
     dv.setFloat32(o, pg.peak ?? 0, true);                        o += 4;
+    dv.setUint16(o, (pg.color2 ?? 0) & 0xffff, true);            o += 2;   // v11: 2nd needle hand
+    dv.setUint16(o, (pg.textColor ?? 0) & 0xffff, true);         o += 2;   // v11: value-text colour
   }
   b[o++] = (c.brightness ?? BRIGHT_DEFAULT) & 0xff;
   dv.setUint16(o, (c.rpmLimit ?? RPM_LIMIT_DEFAULT) & 0xffff, true); o += 2;
@@ -241,6 +298,9 @@ export function encodeCfg(c: GaugeCfg): Uint8Array {
   dv.setUint16(o, (c.tireWidth ?? TIRE_DEFAULT.width) & 0xffff, true); o += 2;
   b[o++] = (c.tireAspect ?? TIRE_DEFAULT.aspect) & 0xff;
   b[o++] = (c.tireRim ?? TIRE_DEFAULT.rim) & 0xff;
+  for (let i = 0; i < UC_COUNT; i++) b[o++] = (c.units?.[i] ?? 0) & 0xff;   // v7 per-quantity units
+  dv.setUint16(o, (c.massKg ?? 1600) & 0xffff, true); o += 2;               // v8 vehicle mass
+  b[o++] = Math.max(1, Math.min(GAUGE_PAGES, c.pageCount ?? GAUGE_PAGES_DEFAULT)) & 0xff;  // v9 active pages
   return b;
 }
 
@@ -248,19 +308,29 @@ export function decodeCfg(v: DataView): GaugeCfg {
   const version = v.getUint8(0);
   const pages: PageCfg[] = [];
   let o = 1;
+  const PAGE_BYTES = 1 + SLOTS_PER_PAGE + 2 + 4 + 2 + 2;   // 16 (v11)
   for (let p = 0; p < GAUGE_PAGES; p++) {
+    // Length-guard so an older/shorter blob (pre-v9, 4 pages) still decodes.
+    if (o + PAGE_BYTES > v.byteLength) {
+      pages.push({ layout: Layout.HERO, ch: Array(SLOTS_PER_PAGE).fill(Ch.NONE), arcColor: ARC_DEFAULT, peak: 0, color2: 0, textColor: 0 });
+      continue;
+    }
     const layout = v.getUint8(o++) as Layout;
     const ch: number[] = [];
     for (let s = 0; s < SLOTS_PER_PAGE; s++) ch.push(v.getUint8(o++));
     const arcColor = v.getUint16(o, true); o += 2;
-    const peak     = v.getFloat32(o, true); o += 4;
+    const peak      = v.getFloat32(o, true); o += 4;
+    const color2    = (o + 1 < v.byteLength) ? v.getUint16(o, true) : 0; o += 2;   // v11
+    const textColor = (o + 1 < v.byteLength) ? v.getUint16(o, true) : 0; o += 2;   // v11
     pages.push({
-      layout: layout > Layout.BARS ? Layout.HERO : layout,
+      layout: layout > Layout.TICKS ? Layout.HERO : layout,
       ch,
       arcColor: arcColor || ARC_DEFAULT,
       // round off float32 storage noise (1.6f -> 1.6000000238) so the peak
       // input shows a clean number and the dirty-check stays stable.
       peak: (Number.isFinite(peak) && peak > 0) ? Math.round(peak * 100) / 100 : 0,
+      color2,
+      textColor,
     });
   }
   const brightness = (o < v.byteLength) ? v.getUint8(o) : BRIGHT_DEFAULT; o += 1;
@@ -280,17 +350,24 @@ export function decodeCfg(v: DataView): GaugeCfg {
   const finalDrive = (o + 3 < v.byteLength) ? r3(v.getFloat32(o, true)) : FINAL_DRIVE_DEFAULT; o += 4;
   const tireWidth  = (o + 1 < v.byteLength) ? v.getUint16(o, true) : TIRE_DEFAULT.width; o += 2;
   const tireAspect = (o < v.byteLength) ? v.getUint8(o) : TIRE_DEFAULT.aspect; o += 1;
-  const tireRim    = (o < v.byteLength) ? v.getUint8(o) : TIRE_DEFAULT.rim;
+  const tireRim    = (o < v.byteLength) ? v.getUint8(o) : TIRE_DEFAULT.rim;    o += 1;
+  // v7 per-quantity units — length-guarded so an older (pre-v7) blob defaults to metric.
+  const units: number[] = [];
+  for (let i = 0; i < UC_COUNT; i++) units.push((o < v.byteLength) ? v.getUint8(o++) : 0);
+  const massKg = (o + 1 < v.byteLength) ? v.getUint16(o, true) : 1600; o += 2;   // v8
+  const pageCount = (o < v.byteLength) ? v.getUint8(o) : GAUGE_PAGES_DEFAULT; o += 1;   // v9
   return { version, pages, brightness, rpmLimit, gearCount, shiftRpm,
-           gearRatios, finalDrive, tireWidth, tireAspect, tireRim };
+           gearRatios, finalDrive, tireWidth, tireAspect, tireRim, units, massKg,
+           pageCount: (pageCount >= 1 && pageCount <= GAUGE_PAGES) ? pageCount : GAUGE_PAGES_DEFAULT };
 }
 
 // Client-side mirror of firmware cfgValid() — block a bad SAVE before it goes.
 export function cfgValid(c: GaugeCfg): boolean {
   if (c.version === 0) return false;
   if (c.pages.length !== GAUGE_PAGES) return false;
+  if (!(c.pageCount >= 1 && c.pageCount <= GAUGE_PAGES)) return false;
   for (const pg of c.pages) {
-    if (pg.layout > Layout.BARS) return false;
+    if (pg.layout > Layout.TICKS) return false;
     if (pg.ch.length !== SLOTS_PER_PAGE) return false;
     for (const ch of pg.ch) if (ch < 0 || ch >= Ch.COUNT) return false;
     if (!Number.isFinite(pg.peak) || pg.peak < 0) return false;
@@ -460,6 +537,35 @@ export class MonitorBleClient {
   async setPageColor(page: number, color565: number): Promise<void> {
     const b = new Uint8Array([page & 0xff, color565 & 0xff, (color565 >> 8) & 0xff]);
     await CapBle.writeWithoutResponse(this.deviceId, MON_SVC, COLOR_CHAR, new DataView(b.buffer));
+  }
+
+  /** LIVE PREVIEW of the whole edited config (same char as setPageColor, but a
+   *  full-size payload). The gauge adopts it in RAM at once — pages, channels,
+   *  peaks, colours, layouts, units, mass, redline — and writes NOTHING to flash;
+   *  `writeCfg` (Save) is what persists. Call it on every edit; it is debounced by
+   *  `previewCfgLive` below so a colour drag doesn't flood the link. */
+  async previewCfg(c: GaugeCfg): Promise<void> {
+    const b = encodeCfg(c);
+    await CapBle.write(this.deviceId, MON_SVC, COLOR_CHAR, new DataView(b.buffer));
+  }
+
+  /** Debounced previewCfg — safe to call from a Svelte $effect on every keystroke.
+   *  Coalesces bursts (a slider drag) into ~1 write per PREVIEW_MS and never queues
+   *  two writes at once; a failure is swallowed (preview is best-effort). */
+  private pvTimer: ReturnType<typeof setTimeout> | null = null;
+  private pvBusy = false;
+  private pvNext: GaugeCfg | null = null;
+  previewCfgLive(c: GaugeCfg, ms = 120): void {
+    this.pvNext = c;
+    if (this.pvTimer) return;
+    this.pvTimer = setTimeout(async () => {
+      this.pvTimer = null;
+      if (this.pvBusy || !this.pvNext) return;
+      const cfg = this.pvNext; this.pvNext = null; this.pvBusy = true;
+      try { await this.previewCfg(cfg); } catch { /* best-effort */ }
+      this.pvBusy = false;
+      if (this.pvNext) this.previewCfgLive(this.pvNext, ms);   // a newer edit landed mid-write
+    }, ms);
   }
 
   /** Read the device firmware versions (char 7e1c0206, 8 bytes):
