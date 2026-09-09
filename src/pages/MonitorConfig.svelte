@@ -17,6 +17,7 @@
   //  5.6 full-UI rule); Save shows a "connect your AXIS Monitor" note.
   // =====================================================================
   import PageHeader from '../lib/PageHeader.svelte';
+  import { t } from '../lib/i18n';
   import { store } from '../lib/store.svelte';
   import GaugePreview from '../lib/GaugePreview.svelte';
   import { chanMeta } from '../lib/gaugeRender';
@@ -64,7 +65,7 @@
   $effect(() => {
     if (phase !== 'idle') return;
     if (store.monClient) { mon = store.monClient; void load(); }
-    else if (store.isDemo) { demo = true; cfg = defaultCfg(); saved = JSON.parse(JSON.stringify(cfg)); phase = 'ready'; }
+    else if (store.isDemo) { store.page = 'axis'; }   // no editor in demo — the shell IS the playground
     else phase = 'scan';
   });
 
@@ -73,8 +74,8 @@
     scanning = true; errMsg = null; statusMsg = null; hits = [];
     try {
       await MonitorBleClient.scan(h => { hits = [...hits, h]; }, 6000);
-      if (hits.length === 0) errMsg = 'No AXIS Monitor found nearby. Power it on and scan again.';
-    } catch (e: any) { errMsg = e?.message ?? 'BLE scan failed'; }
+      if (hits.length === 0) errMsg = t('monconfig.no_monitor');
+    } catch (e: any) { errMsg = e?.message ?? t('monconfig.ble_scan_failed'); }
     finally { scanning = false; }
   }
 
@@ -82,19 +83,22 @@
     phase = 'connecting'; errMsg = null; statusMsg = null;
     try {
       const m = new MonitorBleClient(id);
-      await m.connect(() => { store.monClient = null; mon = null; phase = 'scan'; statusMsg = 'Monitor disconnected.'; });
+      await m.connect(() => { store.monClient = null; mon = null; phase = 'scan'; statusMsg = t('monconfig.mon_disconnected'); });
       mon = m; store.monClient = m;
       await load();
     } catch (e: any) {
-      errMsg = e?.message ?? 'Connect failed'; phase = 'scan';
+      errMsg = e?.message ?? t('monconfig.connect_failed'); phase = 'scan';
     }
   }
 
   async function load() {
     if (!mon) return;
     phase = 'loading'; errMsg = null;
-    try { cfg = await mon.config(); saved = JSON.parse(JSON.stringify(cfg)); phase = 'ready'; }
-    catch (e: any) { errMsg = e?.message ?? 'Reading config failed'; phase = 'scan'; store.monClient = null; mon = null; }
+    // Connected + config read → hand straight back to the shell. The old "Layout &
+    // faces" editor here is REMOVED (redundant with Looks); the shell's Looks pulls
+    // the gauge's real config on mount. (owner: no more layout&faces page.)
+    try { await mon.config(); store.page = 'axis'; }
+    catch (e: any) { errMsg = e?.message ?? t('monconfig.reading_failed'); phase = 'scan'; store.monClient = null; mon = null; }
   }
 
   // ---- per-page arc colour (live-recolours the gauge as the picker drags) ----
@@ -130,30 +134,42 @@
 
   async function save() {
     if (saving) return;
-    if (demo || !mon) { statusMsg = 'Demo — connect your AXIS Monitor to save the gauge display.'; return; }
-    if (!cfgValid(cfg)) { statusMsg = '✗ Some values are out of range — check the peak fields.'; return; }
-    saving = true; statusMsg = 'Saving to the monitor…';
+    if (demo || !mon) { statusMsg = t('monconfig.demo_save_note'); return; }
+    if (!cfgValid(cfg)) { statusMsg = t('monconfig.out_of_range'); return; }
+    saving = true; statusMsg = t('monconfig.saving_to_monitor');
     try {
       await mon.setConfig(cfg);
       saved = JSON.parse(JSON.stringify(cfg));   // gauge now holds this — stop previewing it as an "edit"
-      statusMsg = '✓ Saved. Your gauge display is updated.';
+      statusMsg = t('monconfig.saved_ok');
     } catch (e: any) {
-      statusMsg = '✗ ' + (e?.message ?? 'Save failed');
+      statusMsg = '✗ ' + (e?.message ?? t('monconfig.save_failed'));
     } finally { saving = false; }
   }
 
   // How many value slots a layout actually draws:
   //   BARS = 4 bars · HERO = big + support · NEEDLE = 2 hands · TICKS = ring + a
   //   short outer tick for the 2nd value (the RING itself stays single-value).
-  const slotsUsed = (l: Layout) => l === Layout.BARS ? 4 : 2;
-  const has2ndColor = (l: Layout) => l === Layout.NEEDLE || l === Layout.TICKS;
+  // TUNER uses 4 slots (dot tacho, energy arc, readout main, readout sub); REGENT is a
+  // single-value dial; the rest match the free layouts. Mirrors founder-gauge.
+  // CONCENTRIC draws all 5 concentric arcs — one per channel slot (arc1..arc5).
+  const slotsUsed = (l: Layout) =>
+    l === Layout.GMETER ? 0                       // IMU-driven — no channel slots
+    : l === Layout.CONCENTRIC ? SLOTS_PER_PAGE
+    : (l === Layout.BARS || l === Layout.TUNER || l === Layout.HERO) ? 4 : l === Layout.REGENT ? 1 : 2;
+  const has2ndColor = (l: Layout) =>
+    l === Layout.NEEDLE || l === Layout.TICKS || l === Layout.TUNER || l === Layout.CHRONO;
 
   // Slot heading text, per layout.
   function slotLabel(layout: Layout, s: number): string {
-    if (layout === Layout.TICKS)  return s === 0 ? "Lit ticks" : "Outer tick (2nd value)";
-    if (layout === Layout.NEEDLE) return s === 0 ? "Long needle" : "Short needle";
-    if (layout === Layout.HERO)   return s === 0 ? "Big value" : `Support ${s}`;
-    return `Bar ${s + 1}`;
+    if (layout === Layout.TICKS)  return s === 0 ? t('monconfig.slot_lit_ticks') : t('monconfig.slot_outer_tick');
+    if (layout === Layout.NEEDLE) return s === 0 ? t('monconfig.slot_long_needle') : t('monconfig.slot_short_needle');
+    if (layout === Layout.HERO)   return s === 0 ? t('monconfig.slot_big_value') : t('monconfig.slot_support', { n: s });
+    if (layout === Layout.TUNER)  return [t('monconfig.slot_rpm_dot'), t('monconfig.slot_energy_arc'), t('monconfig.slot_readout_main'), t('monconfig.slot_readout_sub')][s] ?? t('monconfig.slot_generic', { n: s + 1 });
+    if (layout === Layout.REGENT) return t('monconfig.slot_needle_value');
+    if (layout === Layout.CHRONO) return s === 0 ? t('monconfig.slot_main_dial') : t('monconfig.slot_sub_dial');
+    if (layout === Layout.CONCENTRIC) return t('monconfig.slot_arc', { n: s + 1 });
+    if (layout === Layout.GMETER) return 'G-Meter';   // no channel slots (IMU-driven)
+    return t('monconfig.slot_bar', { n: s + 1 });
   }
 
   // v11: 2nd needle hand + value-text colour. 0 on the wire = "use the default"
@@ -164,12 +180,12 @@
   const setTextColor  = (i: number, hex: string) => { cfg.pages[i].textColor = hexToRgb565(hex); };
 </script>
 
-<PageHeader title="Gauge display" back="pro" backLabel="Pro" />
+<PageHeader title={t('monconfig.title')} back="axis" backLabel="AXIS" />
 
 {#if phase === 'scan' || phase === 'idle'}
   <div class="card">
-    <p class="sub">Choose what each of the gauge's four pages shows — the readouts, layout and arc colour. Connect your <b>AXIS Monitor</b> first.</p>
-    <button class="ghost wide" onclick={scan} disabled={scanning}>{scanning ? 'Scanning…' : 'Scan for AXIS Monitor'}</button>
+    <p class="sub">{@html t('monconfig.scan_intro')}</p>
+    <button class="ghost wide" onclick={scan} disabled={scanning}>{scanning ? t('monconfig.scanning') : t('monconfig.scan_btn')}</button>
     {#each hits as h (h.id)}
       <button class="ghost wide hit" onclick={() => connectTo(h.id)}>{h.name}</button>
     {/each}
@@ -177,12 +193,12 @@
     {#if statusMsg}<p class="note">{statusMsg}</p>{/if}
   </div>
 {:else if phase === 'connecting' || phase === 'loading'}
-  <div class="card"><p class="sub">{phase === 'connecting' ? 'Connecting to monitor…' : 'Reading gauge display…'}</p></div>
+  <div class="card"><p class="sub">{phase === 'connecting' ? t('monconfig.connecting') : t('monconfig.reading')}</p></div>
 {:else if phase === 'ready'}
   <div class="card intro">
-    <div class="head"><strong>Gauge display</strong>
-      <span class="badge" class:online={!demo} class:demo={demo}>{demo ? 'DEMO' : 'CONNECTED'}</span></div>
-    <p class="sub dim">Each page is one screen on the gauge — pick its layout, its readouts and its arc colour.{#if demo} <b>Demo</b> — connect your AXIS Monitor to save.{/if}</p>
+    <div class="head"><strong>{t('monconfig.title')}</strong>
+      <span class="badge" class:online={!demo} class:demo={demo}>{demo ? t('monconfig.demo') : t('monconfig.connected')}</span></div>
+    <p class="sub dim">{t('monconfig.ready_intro')}{#if demo}{@html t('monconfig.demo_suffix')}{/if}</p>
   </div>
 
   {#each cfg.pages.slice(0, cfg.pageCount) as page, i (i)}
@@ -191,30 +207,30 @@
         <span class="page-tag">{PAGE_NAMES[i]}</span>
         <div class="sw-row">
           <label class="swatch" style="background: {pageHex(i)}"
-                 title={page.layout === Layout.NEEDLE ? 'Long-needle colour' : 'Arc colour'}>
+                 title={page.layout === Layout.NEEDLE ? t('monconfig.long_needle_colour') : t('monconfig.arc_colour')}>
             <input type="color" value={pageHex(i)}
               oninput={(e) => setPageColor(i, (e.currentTarget as HTMLInputElement).value)}
-              aria-label="Arc colour for {PAGE_NAMES[i]}" />
+              aria-label={t('monconfig.arc_colour_for', { name: PAGE_NAMES[i] })} />
           </label>
           {#if has2ndColor(page.layout)}
             <label class="swatch" style="background: {hand2Hex(i)}"
-                   title={page.layout === Layout.NEEDLE ? 'Short-needle colour' : '2nd-value tick colour'}>
+                   title={page.layout === Layout.NEEDLE ? t('monconfig.short_needle_colour') : t('monconfig.tick2_colour')}>
               <input type="color" value={hand2Hex(i)}
                 oninput={(e) => setHand2Color(i, (e.currentTarget as HTMLInputElement).value)}
-                aria-label="Second needle colour for {PAGE_NAMES[i]}" />
+                aria-label={t('monconfig.second_needle_colour_for', { name: PAGE_NAMES[i] })} />
             </label>
           {/if}
-          <label class="swatch txt" style="background: {textHex(i)}" title="Text colour">
+          <label class="swatch txt" style="background: {textHex(i)}" title={t('monconfig.text_colour')}>
             <input type="color" value={textHex(i)}
               oninput={(e) => setTextColor(i, (e.currentTarget as HTMLInputElement).value)}
-              aria-label="Text colour for {PAGE_NAMES[i]}" />
+              aria-label={t('monconfig.text_colour_for', { name: PAGE_NAMES[i] })} />
           </label>
         </div>
       </div>
 
       <!-- layout toggle -->
-      <div class="seg" role="group" aria-label="Layout">
-        {#each [Layout.HERO, Layout.BARS, Layout.NEEDLE, Layout.TICKS] as L}
+      <div class="seg" role="group" aria-label={t('monconfig.layout')}>
+        {#each [Layout.HERO, Layout.BARS, Layout.NEEDLE, Layout.TICKS, Layout.TUNER, Layout.REGENT, Layout.CHRONO, Layout.CONCENTRIC, Layout.GMETER] as L}
           <button class="seg-btn" class:on={page.layout === L}
             onclick={() => setLayout(i, L)}>{LAYOUT_NAMES[L]}</button>
         {/each}
@@ -231,7 +247,7 @@
         <label class="row">
           <span>{slotLabel(page.layout, s)}</span>
           <select bind:value={cfg.pages[i].ch[s]} onchange={() => { if (s === 0) onPrimaryChange(i); }}>
-            <option value={Ch.NONE}>— empty —</option>
+            <option value={Ch.NONE}>{t('monconfig.empty_option')}</option>
             {#each CHANNEL_GROUPS as g (g)}
               <optgroup label={g}>
                 {#each CHANNELS.filter(c => c.group === g) as c (c.id)}
@@ -245,10 +261,10 @@
 
       <!-- per-page peak / redline for the primary value -->
       <label class="row">
-        <span>Peak / redline <span class="hint">0 = off</span></span>
+        <span>{t('monconfig.peak_redline')} <span class="hint">{t('monconfig.zero_off')}</span></span>
         <span class="peak-row">
           <input type="number" min="0" max={peakMax(i)} step="any"
-            bind:value={cfg.pages[i].peak} placeholder="off" />
+            bind:value={cfg.pages[i].peak} placeholder={t('monconfig.off')} />
           <span class="peak-unit">{peakUnit(i)}</span>
         </span>
       </label>
@@ -257,9 +273,9 @@
            cfg.shiftRpm; shown only when this page's big value is RPM. -->
       {#if page.ch[0] === Ch.RPM}
         <label class="row">
-          <span>Shift light <span class="hint">RPM · 0 = off</span></span>
+          <span>{t('monconfig.shift_light')} <span class="hint">{t('monconfig.rpm_zero_off')}</span></span>
           <span class="peak-row">
-            <input type="number" min="0" max="12000" step="100" bind:value={cfg.shiftRpm} placeholder="off" />
+            <input type="number" min="0" max="12000" step="100" bind:value={cfg.shiftRpm} placeholder={t('monconfig.off')} />
             <span class="peak-unit">RPM</span>
           </span>
         </label>
@@ -269,10 +285,10 @@
 
   <!-- per-quantity display units (the gauge converts at render time) -->
   <div class="card">
-    <div class="bright-head"><span class="lbl">Units</span></div>
+    <div class="bright-head"><span class="lbl">{t('monconfig.units')}</span></div>
     <div class="unit-system">
-      <button type="button" class="chip" class:on={isMetric()}   onclick={() => setUnitSystem(false)}>Metric</button>
-      <button type="button" class="chip" class:on={isImperial()} onclick={() => setUnitSystem(true)}>Imperial</button>
+      <button type="button" class="chip" class:on={isMetric()}   onclick={() => setUnitSystem(false)}>{t('monconfig.metric')}</button>
+      <button type="button" class="chip" class:on={isImperial()} onclick={() => setUnitSystem(true)}>{t('monconfig.imperial')}</button>
     </div>
     {#each UNIT_OPTIONS as row}
       <div class="unit-row">
@@ -289,15 +305,15 @@
 
   <!-- add / remove pages (1..6) -->
   <div class="page-controls">
-    <button class="pg-btn" onclick={removePage} disabled={cfg.pageCount <= 1} aria-label="Remove page">−</button>
-    <span class="pg-count">{cfg.pageCount} page{cfg.pageCount > 1 ? 's' : ''}</span>
-    <button class="pg-btn" onclick={addPage} disabled={cfg.pageCount >= GAUGE_PAGES} aria-label="Add page">+</button>
+    <button class="pg-btn" onclick={removePage} disabled={cfg.pageCount <= 1} aria-label={t('monconfig.remove_page')}>−</button>
+    <span class="pg-count">{cfg.pageCount > 1 ? t('monconfig.pages_other', { n: cfg.pageCount }) : t('monconfig.pages_one', { n: cfg.pageCount })}</span>
+    <button class="pg-btn" onclick={addPage} disabled={cfg.pageCount >= GAUGE_PAGES} aria-label={t('monconfig.add_page')}>+</button>
   </div>
 
   <!-- global screen brightness (live-dims as you drag) -->
   <div class="card">
     <div class="bright-head">
-      <span class="lbl">Screen brightness</span>
+      <span class="lbl">{t('monconfig.screen_brightness')}</span>
       <span class="bright-val">{Math.round(cfg.brightness / 255 * 100)}%</span>
     </div>
     <input class="bright-slider" type="range" min="8" max="255" value={cfg.brightness} oninput={onBrightness} />
@@ -305,7 +321,7 @@
 
   <div class="savebar">
     {#if statusMsg}<span class="save-msg" class:err={statusMsg.startsWith('✗')}>{statusMsg}</span>{/if}
-    <button class="save" onclick={save} disabled={saving}>{saving ? 'Saving…' : 'Save to monitor'}</button>
+    <button class="save" onclick={save} disabled={saving}>{saving ? t('monconfig.saving') : t('monconfig.save_btn')}</button>
   </div>
 {/if}
 

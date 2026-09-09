@@ -1,155 +1,117 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <title>SN AXIS — Privacy Policy</title>
-    <style>
-      :root {
-        --bg: #0a0a0a;
-        --surface: #161616;
-        --fg: #f5f5f5;
-        --muted: #9aa0a6;
-        --accent: #ffa500;
-        --border: #2a2a2a;
-        --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
-      }
-      *, *::before, *::after { box-sizing: border-box; }
-      html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); -webkit-font-smoothing: antialiased; }
-      body { line-height: 1.55; padding: 32px 20px 60px; }
-      .wrap { max-width: 720px; margin: 0 auto; }
-      h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: 0.5px; }
-      .lede { color: var(--muted); margin: 0 0 28px; font-size: 14px; }
-      h2 { font-size: 18px; margin: 28px 0 8px; color: var(--accent); letter-spacing: 0.4px; }
-      p, li { font-size: 15px; color: var(--fg); }
-      ul { padding-left: 22px; }
-      ul li { margin-bottom: 6px; }
-      a { color: var(--accent); }
-      code { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-      .footer { color: var(--muted); font-size: 12px; margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--border); }
-    </style>
-  </head>
-  <body>
-    <div class="wrap">
-      <h1>SN AXIS — Privacy Policy</h1>
-      <p class="lede">Effective 3 June 2026 · SN Motorsports</p>
-
-      <h2>Summary</h2>
-      <p>
-        SN AXIS is a Bluetooth tool for the AXIS Smart Knob Shifter
-        hardware. It does <strong>not</strong> create accounts, does
-        <strong>not</strong> transmit personal data to our servers, does
-        <strong>not</strong> use analytics, and does <strong>not</strong>
-        embed third-party trackers or advertising SDKs. The app speaks
-        only to your own AXIS device over Bluetooth Low Energy, plus a
-        single anonymous network request to a public GitHub Pages URL
-        to check for firmware updates.
-      </p>
-
-      <h2>What the app accesses on your phone</h2>
-      <ul>
-        <li>
-          <strong>Bluetooth.</strong> Required to discover and connect to
-          AXIS devices. The app scans only for devices advertising the
-          AXIS GATT service UUID
-          (<code>7e1c0001-9b3a-4f8e-8a5b-9d2e1f3a7c6d</code>); it does
-          not look at or log any other Bluetooth peripheral.
-        </li>
-        <li>
-          <strong>Photo library and camera roll</strong> (when you tap
-          "Choose photo / video" inside the Screensaver page). The file
-          you pick is read by your phone's web view, processed locally
-          to fit the 240 × 240 AXIS display, and transferred straight to
-          your AXIS device over Bluetooth. The file is never uploaded to
-          any server.
-        </li>
-        <li>
-          <strong>Local storage.</strong> The Bluetooth device ID of the
-          AXIS you last paired with is stored in your phone's web
-          localStorage so the next launch can re-pair with one tap. You
-          can clear it by clearing site data in your browser (or by
-          uninstalling the app on iOS).
-        </li>
-      </ul>
-
-      <h2>What leaves your phone</h2>
-      <ul>
-        <li>
-          <strong>BLE traffic to your own AXIS device.</strong> All
-          settings, calibration, telemetry, and screensaver / firmware
-          uploads flow over the local BLE link only. They do not pass
-          through any server we operate.
-        </li>
-        <li>
-          <strong>Firmware update check.</strong> The OTA page fetches
-          <code>https://snmotorsport01.github.io/axis-companion/firmware/index.json</code>
-          to read the current firmware manifest, and if you tap INSTALL
-          it downloads the corresponding <code>.bin</code> from the same
-          host. This is a static, public GitHub Pages site. The request
-          contains the standard HTTP details (your IP address, user
-          agent) — we do not log or process those beyond GitHub's own
-          server logs, which we do not control.
-        </li>
-      </ul>
-
-      <h2>What the app does NOT do</h2>
-      <ul>
-        <li>It does not use Google Analytics, Firebase, Sentry, Crashlytics,
-            Meta Pixel, AppsFlyer, or any other analytics / crash / ad SDK.</li>
-        <li>It does not create user accounts. There is nothing to sign in to.</li>
-        <li>It does not access contacts, calendar, location, microphone,
-            health data, or any other phone sensor outside of Bluetooth.</li>
-        <li>It does not collect device identifiers, advertising IDs, or
-            IDFA / IDFV.</li>
-        <li>It does not sell or share data with third parties because it
-            does not collect data to sell.</li>
-      </ul>
-
-      <h2>Children</h2>
-      <p>
-        SN AXIS is not directed at children under 13. The app does
-        not knowingly collect any information from any user; the same
-        applies to children.
-      </p>
-
-      <h2>Data retention</h2>
-      <p>
-        The only data the app stores is the most-recent BLE device ID
-        (kept locally in your browser / iOS app sandbox). It is retained
-        until you uninstall the app or clear its site data. Nothing is
-        retained on our side because nothing is sent to our side.
-      </p>
-
-      <h2>Your rights</h2>
-      <p>
-        If you are in the EU/UK/Thailand/California or any jurisdiction
-        with a data-subject-rights regime: because we do not collect
-        personal data, there is no data on file for us to access,
-        correct, port, or delete. To delete your locally-stored device
-        ID, uninstall the app or clear its site data.
-      </p>
-
-      <h2>Changes to this policy</h2>
-      <p>
-        If we change the policy materially we will update the effective
-        date at the top of this page and bump the in-app version note.
-        Continued use after a change means you accept the new policy.
-      </p>
-
-      <h2>Contact</h2>
-      <p>
-        Questions? Email <a href="mailto:snmotorsport01@gmail.com">snmotorsport01@gmail.com</a>
-        or open an issue at
-        <a href="https://github.com/snmotorsport01/axis-companion">github.com/snmotorsport01/axis-companion</a>.
-      </p>
-
-      <p class="footer">
-        SN AXIS is developed and maintained by SN Motorsports.
-        AXIS Smart Knob Shifter is a hardware product of SN Motorsports.
-        This policy covers both the web (PWA) and iOS app versions of
-        SN AXIS. Bluetooth, App Store, and all other names are
-        trademarks of their respective owners.
-      </p>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SN AXIS — Privacy &amp; Terms</title>
+<meta name="description" content="Privacy Policy and Terms of Use for the SN AXIS companion app by SN Motorsports.">
+<meta name="robots" content="index,follow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --gold:#b98f2f; --gold-on-dark:#cea24a;
+    --ink:#1c1e22; --mut:#565b63; --line:#e5e1d8; --bg:#f5f3ee; --card:#ffffff;
+    --carbon:#111316;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    line-height:1.62;font-size:16px;-webkit-font-smoothing:antialiased}
+  .band{background:var(--carbon);color:#eceae4}
+  .band .inner{max-width:760px;margin:0 auto;padding:30px 24px 26px;display:flex;align-items:center;gap:16px}
+  .mark{width:38px;height:38px;flex:0 0 auto;color:var(--gold-on-dark)}
+  .band .eyebrow{margin:0;font-family:"Chakra Petch",monospace;font-size:.68rem;letter-spacing:.26em;text-transform:uppercase;color:var(--gold-on-dark);font-weight:600}
+  .band h1{margin:.15em 0 0;font-family:"Chakra Petch",sans-serif;font-weight:700;font-size:1.5rem;letter-spacing:-.01em}
+  main{max-width:760px;margin:0 auto;padding:8px 24px 72px}
+  .updated{color:var(--mut);font-size:.85rem;margin:26px 0 4px;font-family:"Chakra Petch",monospace;letter-spacing:.02em}
+  h2{font-family:"Chakra Petch",sans-serif;font-weight:700;font-size:1.35rem;margin:40px 0 4px;letter-spacing:-.01em;
+    padding-bottom:8px;border-bottom:2px solid var(--gold)}
+  h3{font-family:"Chakra Petch",sans-serif;font-weight:600;font-size:1.02rem;margin:26px 0 4px;color:var(--ink)}
+  p{margin:.5em 0;color:#33373d}
+  .lede{font-size:1.05rem;color:var(--ink)}
+  b{color:var(--ink)}
+  a{color:var(--gold);font-weight:600;text-decoration:none;border-bottom:1px solid rgba(185,143,47,.4)}
+  a:hover{border-bottom-color:var(--gold)}
+  .callout{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--gold);
+    border-radius:10px;padding:14px 18px;margin:16px 0}
+  footer{max-width:760px;margin:0 auto;padding:26px 24px 60px;color:var(--mut);font-size:.82rem;border-top:1px solid var(--line)}
+  footer b{color:var(--mut);font-weight:600}
+  @media (prefers-color-scheme:dark){
+    :root{--ink:#e8e5de;--mut:#9aa0a8;--line:#2b2f35;--bg:#0e1013;--card:#171a1e;--gold:#cea24a}
+    p{color:#c4c8cf}
+  }
+</style>
+</head>
+<body>
+  <header class="band">
+    <div class="inner">
+      <svg class="mark" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linejoin="round" aria-hidden="true">
+        <path d="M30 22 H16 a6 6 0 0 0-6 6 v14 a6 6 0 0 0 6 6 H34 a6 6 0 0 1 6 6 v14 a6 6 0 0 1-6 6 H10"/>
+        <path d="M60 78 V34 l30 44 V22" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <p class="eyebrow">SN Motorsports · SN AXIS</p>
+        <h1>Privacy &amp; Terms</h1>
+      </div>
     </div>
-  </body>
+  </header>
+
+  <main>
+    <p class="updated">Last updated 24 July 2026</p>
+
+    <h2>Privacy Policy</h2>
+    <p class="lede">SN AXIS is designed to work entirely on your device. You do not need an account, and we do not run advertising or third-party tracking.</p>
+
+    <h3>What the app does</h3>
+    <p>The app connects to your AXIS hardware — the shifter knob, the gauge, and the OBD / CAN module — over Bluetooth. Vehicle information such as speed, RPM, temperatures, battery state and stored fault codes is read from your car and shown to you on your phone. This data stays on your device.</p>
+
+    <h3>What we never collect</h3>
+    <div class="callout">
+      <p>The app <b>never reads, stores, or transmits your VIN or your GPS / location.</b> We do not build a profile of you, and we do not sell any data.</p>
+    </div>
+
+    <h3>Bluetooth</h3>
+    <p>Bluetooth is used only to communicate with your AXIS hardware. It is not used to track your location or to identify nearby people or devices.</p>
+
+    <h3>Firmware updates</h3>
+    <p>When you choose to update device firmware, the app downloads the firmware file from a public content-delivery network (jsDelivr / GitHub). These requests carry no personal information about you.</p>
+
+    <h3>Optional community features</h3>
+    <p>If a community or leaderboard feature is offered and you choose to use it, only the information you explicitly submit (for example a performance time and a car model) is shared. Your VIN and location are never included.</p>
+
+    <h3>Children</h3>
+    <p>The app is not directed to children and does not knowingly collect information from them.</p>
+
+    <h3>Changes &amp; contact</h3>
+    <p>We may update this policy; the date above shows the latest version. Questions? Contact us at <a href="mailto:info@sn-motorsports.com">info@sn-motorsports.com</a>.</p>
+
+    <h2>Terms of Use</h2>
+    <p class="lede">By using the SN AXIS app you agree to these terms.</p>
+
+    <h3>Intended use</h3>
+    <p>The app is provided to configure and monitor SN Motorsports AXIS hardware. It is a companion tool, not a certified diagnostic instrument.</p>
+
+    <h3>Safe operation</h3>
+    <p>Do not operate the app or change settings in a way that distracts you while driving. You are responsible for using the app safely and in accordance with the laws where you drive. Keep your eyes on the road.</p>
+
+    <h3>Vehicle data &amp; changes</h3>
+    <p>Readings and diagnostics are provided for information only and are not a substitute for professional inspection. Where the app can change a device or vehicle setting, you do so at your own risk.</p>
+
+    <h3>Warranty &amp; liability</h3>
+    <p>The app is provided &ldquo;as is&rdquo;, without warranties of any kind. To the maximum extent permitted by law, SN Motorsports is not liable for any damage to your vehicle, hardware, or data, or for any loss arising from use or misuse of the app.</p>
+
+    <h3>Intellectual property</h3>
+    <p>The app, its design, and the AXIS name and marks belong to SN Motorsports and may not be copied or redistributed without permission.</p>
+
+    <h3>Contact</h3>
+    <p>Questions about these terms? Contact <a href="mailto:info@sn-motorsports.com">info@sn-motorsports.com</a>.</p>
+  </main>
+
+  <footer>
+    <p><b>SN Motorsports</b> — SN AXIS companion app. This page mirrors the Privacy &amp; Terms shown inside the app.</p>
+  </footer>
+</body>
 </html>

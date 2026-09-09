@@ -30,6 +30,7 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import type { CalibSnapshot } from '../lib/api';
   import { store } from '../lib/store.svelte';
+  import { t } from '../lib/i18n';
   import PageHeader from '../lib/PageHeader.svelte';
 
   let calib    = $state<CalibSnapshot | null>(null);
@@ -49,7 +50,7 @@
       calib = await store.client.calibration();
       err = null;
     } catch (e: any) {
-      err = e?.message ?? 'load failed';
+      err = e?.message ?? t('cal.err_load');
     }
   }
 
@@ -65,7 +66,10 @@
   }
 
   onMount(async () => {
-    if (!store.client) { store.goConnect(); return; }
+    // Do NOT bounce to the old full-screen Connect page (owner 2026-07-24: "gear
+    // calibrate เข้าหน้า calibrate เลย ไม่ใช่หน้า connect เก่า"). Just render the page;
+    // the template shows a "Connect your Knob" prompt when store.client is null.
+    if (!store.client) return;
     await refresh();
     // If we landed on this page while a session is already running on the
     // device (user kicked it off with a 5-tap and then opened the app),
@@ -88,7 +92,7 @@
       await refresh();
       startPolling();
     } catch (e: any) {
-      err = e?.message ?? 'begin failed';
+      err = e?.message ?? t('cal.err_begin');
     } finally {
       busy = false;
     }
@@ -101,7 +105,7 @@
       await store.client.tapCalibration();
       await refresh();
     } catch (e: any) {
-      err = e?.message ?? 'capture failed';
+      err = e?.message ?? t('cal.err_capture');
       // 409: device wandered off the calibrate screen (sleep / user
       // pressed MULTITAP). Re-fetch — the UI will fall back to the
       // BEGIN button automatically once active flips to false.
@@ -122,7 +126,7 @@
       await new Promise(r => setTimeout(r, 200));
       await refresh();
     } catch (e: any) {
-      err = e?.message ?? 'save failed';
+      err = e?.message ?? t('cal.err_save');
     } finally {
       busy = false;
     }
@@ -130,7 +134,7 @@
 
   async function onCancel() {
     if (!store.client || busy) return;
-    if (!confirm('Abort calibration? Captured steps will be discarded.')) return;
+    if (!confirm(t('cal.confirm_abort'))) return;
     busy = true;
     try {
       await store.client.abortCalibration();
@@ -138,7 +142,7 @@
       await new Promise(r => setTimeout(r, 200));
       await refresh();
     } catch (e: any) {
-      err = e?.message ?? 'abort failed';
+      err = e?.message ?? t('cal.err_abort');
     } finally {
       busy = false;
     }
@@ -146,15 +150,15 @@
 
   async function onResetAll() {
     if (!store.client || busy) return;
-    if (!confirm("Clear all calibration for this mode? You'll need to walk the wizard again.")) return;
+    if (!confirm(t('cal.confirm_reset'))) return;
     busy = true;
     try {
       await store.client.resetCalibration();
       await refresh();
-      toast = 'Calibration cleared';
+      toast = t('cal.toast_cleared');
       setTimeout(() => { toast = null; }, 2000);
     } catch (e: any) {
-      err = e?.message ?? 'reset failed';
+      err = e?.message ?? t('cal.err_reset');
     } finally {
       busy = false;
     }
@@ -166,7 +170,7 @@
   //   • "READY TO SAVE" + a save-prompt hint when step >= total
   // The CAPTURE button morphs into SAVE in the same state so the user
   // doesn't have to learn a separate "I'm done" gesture.
-  const PHASE_NAME = ['IDLE', 'HOLD STILL', 'CAPTURING'];
+  const PHASE_KEYS = ['cal.phase_idle', 'cal.phase_hold', 'cal.phase_capturing'];
 
   // Firmware emits compact labels ("1", "N", "P", "R", "D") because the
   // on-device LCD renders the big digit at 48 pt and there's no room
@@ -176,11 +180,11 @@
   // (e.g. SEQ's "ZERO" or "PULL" stays as-is).
   function prettyLabel(s: string | undefined | null): string {
     if (!s) return '—';
-    if (/^[1-9]$/.test(s))   return `Gear ${s}`;
-    if (s === 'N')           return 'Neutral';
-    if (s === 'P')           return 'Park';
-    if (s === 'R')           return 'Reverse';
-    if (s === 'D')           return 'Drive';
+    if (/^[1-9]$/.test(s))   return t('cal.gear_n', { n: s });
+    if (s === 'N')           return t('cal.neutral');
+    if (s === 'P')           return t('cal.park');
+    if (s === 'R')           return t('cal.reverse');
+    if (s === 'D')           return t('cal.drive');
     return s;
   }
 
@@ -190,14 +194,14 @@
   let total      = $derived(calib?.state?.total ?? (calib?.calib_steps ?? 0));
   let done       = $derived(active && total > 0 && step >= total);
   let stepLabel  = $derived(done
-    ? 'READY'
+    ? t('cal.ready')
     : prettyLabel(calib?.steps?.[step]?.label));
   // Firmware-supplied per-step hints ("Tilt forward-left", "Hold knob
   // centred"…) were confusing more than they helped — the user already
   // knows what shifting into "Gear 1" means on their own car. We only
   // surface the SAVE prompt when all steps are captured and the user's
   // next action is non-obvious.
-  let stepHint   = $derived(done ? 'Tap SAVE to write to the device.' : '');
+  let stepHint   = $derived(done ? t('cal.hint_save') : '');
   // Stillness bar — 0..1 fraction of CALIB_STILL_HOLD_MS held.
   let stillFrac  = $derived(() => {
     const s = calib?.state;
@@ -219,11 +223,11 @@
   // a successful switch we re-fetch calibration() so the step list
   // re-renders for the new mode.
   const MODES = [
-    { id: 0, name: 'Auto',       desc: 'Automatic — P / R / N / D, chosen by how you tilt the knob.' },
-    { id: 1, name: 'Sequential', desc: 'Sequential — push to shift up, pull to shift down.' },
-    { id: 2, name: 'Manual',     desc: 'Manual — full H-pattern, like a traditional stick shift.' }
+    { id: 0, nameKey: 'cal.mode_auto',   descKey: 'cal.mode_auto_desc' },
+    { id: 1, nameKey: 'cal.mode_seq',    descKey: 'cal.mode_seq_desc' },
+    { id: 2, nameKey: 'cal.mode_manual', descKey: 'cal.mode_manual_desc' }
   ];
-  let modeDesc = $derived(MODES.find(m => m.id === calib?.mode_id)?.desc ?? '');
+  let modeDescKey = $derived(MODES.find(m => m.id === calib?.mode_id)?.descKey ?? '');
   let switchingMode = $state(false);
   async function pickMode(id: number) {
     if (!store.client || busy || active || switchingMode) return;
@@ -239,7 +243,7 @@
       await new Promise(r => setTimeout(r, 200));
       await refresh();
     } catch (e: any) {
-      err = e?.message ?? 'mode switch failed';
+      err = e?.message ?? t('cal.err_mode');
     } finally {
       switchingMode = false;
     }
@@ -266,20 +270,26 @@
       await new Promise(r => setTimeout(r, 200));
       await refresh();
     } catch (e: any) {
-      err = e?.message ?? 'speed switch failed';
+      err = e?.message ?? t('cal.err_speed');
     } finally {
       switchingSpeed = false;
     }
   }
 </script>
 
-<PageHeader title="Re-teach gears" back="pro" backLabel="Pro" />
+<PageHeader title={t('cal.title')} back="axis" backLabel="AXIS" />
 
 {#if err}<div class="card err">{err}</div>{/if}
 {#if toast}<div class="card ok-toast">{toast}</div>{/if}
 
-{#if !calib}
-  <div class="card muted">Loading…</div>
+{#if !store.client}
+  <div class="card muted">
+    <h3>{t('cal.connect_title')}</h3>
+    <p class="small">{t('cal.connect_body')}</p>
+    <button class="ghost wide" on:click={() => (store.page = 'axis')}>{t('cal.back_to_connect')}</button>
+  </div>
+{:else if !calib}
+  <div class="card muted">{t('cal.loading')}</div>
 {:else}
   <!-- ---- Mode picker ----
        3 chips, one per engine mode. Tapping a different mode writes
@@ -287,7 +297,7 @@
        list updates. Switching is locked out while a calibration
        session is active — would invalidate the in-flight session. -->
   <div class="card">
-    <h3>Gear mode</h3>
+    <h3>{t('cal.gear_mode')}</h3>
     <div class="mode-row">
       {#each MODES as m}
         <button
@@ -297,16 +307,16 @@
           on:click={() => pickMode(m.id)}
           disabled={busy || active || switchingMode}
         >
-          {m.name}
+          {t(m.nameKey)}
         </button>
       {/each}
     </div>
-    {#if modeDesc}<p class="muted small mode-desc">{modeDesc}</p>{/if}
+    {#if modeDescKey}<p class="muted small mode-desc">{t(modeDescKey)}</p>{/if}
     {#if supportsSpeed}
       <!-- Speed/gear-count chips. Only HPAT + SEQ accept this; PRND's
            fixed P/R/N/D doesn't have a "how many gears" choice. -->
       <div class="speed-row">
-        <span class="speed-label">GEARS</span>
+        <span class="speed-label">{t('cal.gears_label')}</span>
         {#each SPEEDS as n}
           <button
             type="button"
@@ -319,16 +329,14 @@
       </div>
     {/if}
     <p class="muted small">
-      {calib.gear_count} gears · {calib.calib_steps} calibration step{calib.calib_steps === 1 ? '' : 's'}
-      {#if switchingMode}· <span class="mono">switching mode…</span>{/if}
-      {#if switchingSpeed}· <span class="mono">switching speed…</span>{/if}
-      {#if active}· <span class="mono">locked while wizard active</span>{/if}
+      {calib.gear_count} {t('cal.gears_unit')} · {calib.calib_steps} {calib.calib_steps === 1 ? t('cal.cal_step') : t('cal.cal_steps')}
+      {#if switchingMode}· <span class="mono">{t('cal.switching_mode')}</span>{/if}
+      {#if switchingSpeed}· <span class="mono">{t('cal.switching_speed')}</span>{/if}
+      {#if active}· <span class="mono">{t('cal.locked_active')}</span>{/if}
     </p>
     {#if !active}
       <p class="muted small">
-        Pick the gear pattern that matches your shifter, then tap
-        BEGIN below. Hold the stick steady in each position the wizard
-        asks for and tap CAPTURE — no need to touch the device.
+        {t('cal.pick_pattern')}
       </p>
     {/if}
   </div>
@@ -338,9 +346,9 @@
     <div class="card wizard">
       <div class="stepbar">
         <span class="mono small muted">
-          {done ? 'DONE' : `STEP ${Math.min(step + 1, total)} / ${total}`}
+          {done ? t('cal.step_done') : t('cal.step_n', { n: Math.min(step + 1, total), total })}
         </span>
-        <span class="mono small phase-chip phase-{phase}">{PHASE_NAME[phase]}</span>
+        <span class="mono small phase-chip phase-{phase}">{t(PHASE_KEYS[phase])}</span>
       </div>
 
       <div class="big-label">{stepLabel}</div>
@@ -354,37 +362,37 @@
             <div class="bar" style="width: {stillFrac() * 100}%"></div>
           </div>
           <p class="small mono muted">
-            {calib.state?.is_still ? 'Holding steady…' : 'Move slower — too much movement'}
+            {calib.state?.is_still ? t('cal.holding_steady') : t('cal.move_slower')}
           </p>
         {:else if phase === 2}
           <!-- SAMPLING: averaging window. Bar fills over CALIB_SAMPLE_MS. -->
           <div class="progress ok">
             <div class="bar" style="width: {sampleFrac() * 100}%"></div>
           </div>
-          <p class="small mono muted">Capturing…</p>
+          <p class="small mono muted">{t('cal.capturing')}</p>
         {:else}
           <div class="progress idle"><div class="bar idle-bar"></div></div>
           <p class="small mono muted">
-            {done ? 'All steps captured — tap SAVE.' : 'Hold the position, then tap CAPTURE.'}
+            {done ? t('cal.all_captured') : t('cal.hold_then_capture')}
           </p>
         {/if}
       </div>
 
       <!-- Live tilt readout -->
       <div class="live-tilt mono small">
-        <span>Lean <b>{liveR.toFixed(0)}°</b></span>
-        <span>Tilt <b>{liveP.toFixed(0)}°</b></span>
+        <span>{t('cal.lean')} <b>{liveR.toFixed(0)}°</b></span>
+        <span>{t('cal.tilt')} <b>{liveP.toFixed(0)}°</b></span>
       </div>
 
       <!-- Action row -->
       <div class="actions">
-        <button class="ghost" on:click={onCancel} disabled={busy}>CANCEL</button>
+        <button class="ghost" on:click={onCancel} disabled={busy}>{t('cal.cancel')}</button>
         {#if done}
-          <button class="primary" on:click={onSave} disabled={busy}>SAVE</button>
+          <button class="primary" on:click={onSave} disabled={busy}>{t('cal.save')}</button>
         {:else}
           <button class="primary" on:click={onCapture}
                   disabled={busy || phase !== 0}>
-            {phase === 0 ? 'CAPTURE' : '…'}
+            {phase === 0 ? t('cal.capture') : '…'}
           </button>
         {/if}
       </div>
@@ -410,28 +418,26 @@
   {:else}
     <!-- =================== Idle (no session) =================== -->
     <div class="card">
-      <h3>Begin</h3>
+      <h3>{t('cal.begin')}</h3>
       <p class="muted small">
-        This will switch the device's screen to the calibration wizard.
-        You can step through all {calib.calib_steps || 0} positions from
-        your phone — no need to tap the device.
+        {t('cal.begin_body', { n: calib.calib_steps || 0 })}
       </p>
       <button class="primary wide" on:click={onBegin}
               disabled={busy || (calib.calib_steps ?? 0) === 0}>
-        BEGIN CALIBRATION
+        {t('cal.begin_btn')}
       </button>
       {#if (calib.calib_steps ?? 0) === 0}
-        <p class="muted small">This mode has no capture-based calibration.</p>
+        <p class="muted small">{t('cal.no_capture')}</p>
       {/if}
     </div>
 
     {#if !store.isDemo}
     <div class="card">
-      <h3>Sensor reference</h3>
+      <h3>{t('cal.sensor_ref')}</h3>
       <dl>
-        <dt>Lean</dt>  <dd class="mono">{calib.imu_zero.roll.toFixed(1)}°</dd>
-        <dt>Tilt</dt>  <dd class="mono">{calib.imu_zero.pitch.toFixed(1)}°</dd>
-        <dt>Yaw</dt>   <dd class="mono">{calib.imu_zero.yaw.toFixed(1)}°</dd>
+        <dt>{t('cal.lean')}</dt>  <dd class="mono">{calib.imu_zero.roll.toFixed(1)}°</dd>
+        <dt>{t('cal.tilt')}</dt>  <dd class="mono">{calib.imu_zero.pitch.toFixed(1)}°</dd>
+        <dt>{t('cal.yaw')}</dt>   <dd class="mono">{calib.imu_zero.yaw.toFixed(1)}°</dd>
       </dl>
     </div>
     {/if}
@@ -443,7 +449,7 @@
          in-card progress strip (above) covers the "where am I" need. -->
 
     <button class="danger wide" on:click={onResetAll} disabled={busy || store.isDemo}>
-      CLEAR CALIBRATION
+      {t('cal.clear_btn')}
     </button>
   {/if}
 {/if}

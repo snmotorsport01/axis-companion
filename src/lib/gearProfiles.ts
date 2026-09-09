@@ -47,6 +47,10 @@ export interface CarGearProfile {
   eng?: GearSig;           // engaged-gear signal (omit = none → calc fallback)
   engLo?: number;          // engaged raw in [engLo..engHi] → numeric gear = raw
   engHi?: number;
+  // ---- Auto-detect matcher: the node decodes make + model-year from the VIN and the
+  //      app picks the profile whose makes/year-range fit (no manual dropdown needed). ----
+  matchMakes?: string[];   // VIN-decoded makes this profile covers (case-insensitive)
+  matchYear?: { min?: number; max?: number };  // model-year window (inclusive; omit = any)
 }
 
 export const GEAR_PROFILE_BYTES = 38;   // MUST match the firmware on both sides
@@ -70,7 +74,7 @@ export const GEAR_PROFILES: CarGearProfile[] = [
     verified: true,
     pushable: true,
     canFd: false,
-    note: 'Verified in-car — P/R/N/D/B selector on 0x1FFF00A0 byte 6.',
+    note: 'Verified on this car — reads the real P/R/N/D/B position.',
     // 0x1FFF00A0 byte[6] = 0x38+idx. byte 6 → startBit 48 (6*8), len 8, Intel/LE.
     sel: { canId: 0x1fff00a0, ext: true, startBit: 48, len: 8, motorola: false },
     selMap: [
@@ -84,6 +88,8 @@ export const GEAR_PROFILES: CarGearProfile[] = [
     // rpm/speed (calc-gear). engLo/Hi still sent as the generic 1..8 bound.
     engLo: 1,
     engHi: 8,
+    matchMakes: ['Volvo'],
+    matchYear: { min: 2015 },   // SPA generation
   },
 
   // ---- Roadmap (researched, OBD-reachable, but NOT yet in-car confirmed) ----
@@ -97,7 +103,7 @@ export const GEAR_PROFILES: CarGearProfile[] = [
     verified: false,
     pushable: false,
     canFd: false,
-    note: 'PRND on 0x2EA (1=P…5=L). Needs in-car RE to confirm the byte/bit.',
+    note: 'On the roadmap — needs in-car verification before it goes live.',
     sel: { canId: 0x2ea, ext: false, startBit: 0, len: 8, motorola: false },
     selMap: [
       { raw: 1, label: 'P' },
@@ -108,6 +114,8 @@ export const GEAR_PROFILES: CarGearProfile[] = [
     ],
     engLo: 1,
     engHi: 8,
+    matchMakes: ['Chrysler', 'Dodge', 'Jeep', 'Ram', 'Fiat'],
+    matchYear: { max: 2017 },
   },
   {
     id: 'jlr_eucd_08_15',
@@ -116,7 +124,7 @@ export const GEAR_PROFILES: CarGearProfile[] = [
     verified: false,
     pushable: false,
     canFd: false,
-    note: '0x3F3 byte 6 is a P/R/N/D/S bitmask — needs in-car RE to map the bits.',
+    note: 'On the roadmap — needs in-car verification before it goes live.',
     sel: { canId: 0x3f3, ext: false, startBit: 48, len: 8, motorola: false },
     selMap: [
       { raw: 0, label: 'P' },
@@ -124,6 +132,8 @@ export const GEAR_PROFILES: CarGearProfile[] = [
       { raw: 0, label: 'N' },
       { raw: 0, label: 'D' },
     ],
+    matchMakes: ['Jaguar'],
+    matchYear: { min: 2008, max: 2015 },
   },
   {
     // Present so the user knows their car needs different hardware, not that it's
@@ -134,9 +144,11 @@ export const GEAR_PROFILES: CarGearProfile[] = [
     verified: false,
     pushable: false,
     canFd: true,
-    note: 'Gear is on a CAN-FD bus behind the gateway — needs an MCP2518FD tap, not the OBD node.',
+    note: 'This car uses a newer CAN-FD system that needs different hardware.',
     sel: { canId: 0, ext: false, startBit: 0, len: 8, motorola: false },
     selMap: [],
+    matchMakes: ['BMW', 'Audi'],
+    matchYear: { min: 2018 },
   },
 ];
 
@@ -147,6 +159,25 @@ export function gearProfileById(id: string): CarGearProfile | undefined {
 
 /** The car pushed by default / the node's compiled-in fallback. */
 export const DEFAULT_GEAR_PROFILE_ID = 'volvo_v60_t8_spa';
+
+/**
+ * Pick the gear profile that fits a VIN-decoded car (make + model-year). Returns the
+ * first profile whose matchMakes contains `make` (case-insensitive) and whose year
+ * window contains `year` (a 0/omitted year skips the year test so a make-only match
+ * still works). undefined = no profile covers this car → leave the manual dropdown.
+ */
+export function gearProfileForCar(make: string, year: number): CarGearProfile | undefined {
+  const m = (make || '').trim().toLowerCase();
+  if (!m) return undefined;
+  return GEAR_PROFILES.find((p) => {
+    if (!p.matchMakes?.some((x) => x.toLowerCase() === m)) return false;
+    if (year && p.matchYear) {
+      if (p.matchYear.min != null && year < p.matchYear.min) return false;
+      if (p.matchYear.max != null && year > p.matchYear.max) return false;
+    }
+    return true;
+  });
+}
 
 /**
  * Encode a car profile into the exact 38-byte GearProfile the node expects.

@@ -24,9 +24,12 @@
   },
   "dependencies": {
     "@capacitor-community/bluetooth-le": "^8.2.0",
+    "@capacitor-community/keep-awake": "^8.0.1",
     "@capacitor/cli": "^8.3.4",
     "@capacitor/core": "^8.3.4",
+    "@capacitor/geolocation": "^8.2.1",
     "@capacitor/ios": "^8.3.4",
+    "@supabase/supabase-js": "^2.110.8",
     "gifenc": "^1.0.3",
     "gifuct-js": "^2.1.2",
     "mp4box": "^2.3.0"

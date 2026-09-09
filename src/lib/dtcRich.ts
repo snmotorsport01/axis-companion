@@ -13,6 +13,8 @@
 //  and a CURATED override adds bespoke wording for the common ones.
 // =====================================================================
 import { explainDtc, type DtcInfo } from './dtcDict';
+import { store } from './store.svelte';
+import { CAT_TR, CURATED_TR, MISFIRE_TR } from './dtcRichI18n';
 
 export type DtcSeverity = 'stop' | 'soon' | 'minor';
 
@@ -307,10 +309,11 @@ export function richDtc(rawCode: string): DtcRich | null {
   const info: DtcInfo | null = explainDtc(rawCode);
   if (!info) return null;
   const code = info.code;
-  const base = CAT[categoryOf(code)];
+  const cat = categoryOf(code);
+  const base = CAT[cat];
   const curated = CURATED[code] ?? misfireCurated(code);
 
-  return {
+  const out: DtcRich = {
     code,
     severity: curated?.severity ?? base.severity,
     headline: curated?.headline ?? info.title,
@@ -321,4 +324,32 @@ export function richDtc(rawCode: string): DtcRich | null {
     fixes: curated?.fixes ?? base.fixes,
     known: !!curated || info.known,
   };
+
+  // Overlay translated advice for the current UI language. Category advice
+  // (symptoms/drive/causes/fixes) is translated for EVERY code; headline/
+  // systemShort translate only for curated + misfire codes — a non-curated
+  // code keeps its English SAE title (the ~1800-entry dtcDict stays English).
+  const lang = store.lang;
+  if (lang && lang !== 'en') applyDtcLang(out, code, cat, lang as 'th' | 'zh' | 'ja');
+  return out;
+}
+
+function applyDtcLang(out: DtcRich, code: string, cat: Cat, lang: 'th' | 'zh' | 'ja'): void {
+  const baseTr = CAT_TR[lang]?.[cat];
+  let curTr: Partial<DtcRich> | undefined = CURATED_TR[lang]?.[code] as Partial<DtcRich> | undefined;
+  if (!curTr) {
+    const v = parseInt(code.slice(1), 16);           // misfire cylinder code → template
+    if (code[0] === 'P' && v >= 0x0301 && v <= 0x030c) {
+      const n = String(v - 0x0300);
+      const m = MISFIRE_TR[lang];
+      const sub = (s: string) => s.replace(/\{n\}/g, n);
+      curTr = { headline: sub(m.headline), systemShort: sub(m.systemShort), causes: m.causes.map(sub), fixes: m.fixes.map(sub) };
+    }
+  }
+  if (curTr?.headline) out.headline = curTr.headline;
+  if (curTr?.systemShort) out.systemShort = curTr.systemShort;
+  out.symptoms = curTr?.symptoms ?? baseTr?.symptoms ?? out.symptoms;
+  out.drive = curTr?.drive ?? baseTr?.drive ?? out.drive;
+  out.causes = curTr?.causes ?? baseTr?.causes ?? out.causes;
+  out.fixes = curTr?.fixes ?? baseTr?.fixes ?? out.fixes;
 }

@@ -132,3 +132,19 @@ export async function saveTextFile(name: string, mime: string, text: string): Pr
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
+
+/** Save an already-built Blob (e.g. a PNG from a canvas) the same cross-platform
+ *  way as saveTextFile — Web Share on iOS (→ Photos/Files), <a download> on web. */
+export async function saveBlobFile(name: string, blob: Blob): Promise<void> {
+  const file = new File([blob], name, { type: blob.type || 'application/octet-stream' });
+  const nav = navigator as Navigator & { canShare?: (d: unknown) => boolean };
+  if (nav.canShare?.({ files: [file] }) && typeof navigator.share === 'function') {
+    try { await navigator.share({ files: [file], title: name }); return; }
+    catch (e) { if ((e as { name?: string })?.name === 'AbortError') return; }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}

@@ -7,6 +7,7 @@
   } from '../lib/api';
   import PageHeader from '../lib/PageHeader.svelte';
   import { DEMO_LATEST_BUILD } from '../lib/mockClient';
+  import { t } from '../lib/i18n';
 
   // ============================================================
   //  OTA — two install paths:
@@ -21,6 +22,11 @@
   //     .bin and streams it to /api/ota. Always available, even when
   //     the device has no internet and the manifest fetch fails.
   // ============================================================
+
+  // Dev-only tooling gate. Ships FALSE so consumers never see the raw
+  // firmware-file uploader (App-Store 5.6). Flip to true only in local
+  // engineering builds. The normal over-the-air update flow is unaffected.
+  const DEV_TOOLS = false;
 
   // ---- Local upload state -----------------------------------
   let file       = $state<File | null>(null);
@@ -59,7 +65,7 @@
     try {
       manifest = await fetchReleaseManifest();
     } catch {
-      mErr = "Couldn't check for updates right now.";
+      mErr = t('ota.cant_check');
     } finally {
       mLoading = false;
     }
@@ -102,7 +108,7 @@
       // path. Keeps the two install routes behaviourally identical.
       startPostFlashFlow();
     } catch (e: any) {
-      uploadErr = e?.message ?? 'upload failed';
+      uploadErr = e?.message ?? t('ota.upload_failed');
     } finally {
       uploading = false;
     }
@@ -148,7 +154,7 @@
       // 1) Pull the .bin. fetch() + Response.blob() handles redirect
       //    from GitHub Pages and gives us a real Blob we can wrap.
       const res = await fetch(absUrl);
-      if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
+      if (!res.ok) throw new Error(t('ota.download_failed', { status: res.status }));
       const total = Number(res.headers.get('content-length')) || latest.size_bytes || 0;
       // Manual chunked read for progress reporting (Response.blob()
       // doesn't expose download progress).
@@ -191,7 +197,7 @@
       // tick down in sync with what's happening on the LCD.
       startPostFlashFlow();
     } catch (e: any) {
-      uploadErr = e?.message ?? 'install failed';
+      uploadErr = e?.message ?? t('ota.install_failed');
     } finally {
       uploading = false;
       installPhase = 'idle';
@@ -268,7 +274,7 @@
         // disconnect (user navigated away, swapped phones, store
         // cleared from elsewhere) breaks the loop cleanly instead of
         // spinning for 30 s throwing on a null client.
-        if (!store.client) { reconnectErr = 'Lost client mid-reconnect'; break; }
+        if (!store.client) { reconnectErr = t('ota.lost_client'); break; }
         // connect() exists only on BleClient; the typeof guard above
         // proved it's callable here, so the cast is safe.
         await (store.client as any).connect(() => { store.connected = false; });
@@ -287,28 +293,28 @@
       }
     }
     reconnecting = false;
-    reconnectErr = "Couldn't reconnect automatically — open Devices and pair again.";
+    reconnectErr = t('ota.reconnect_failed');
   }
 
   function fmtMb(b: number): string {
     return (b / 1024 / 1024).toFixed(2) + ' MB';
   }
   function statusLabel(r: ReleaseEntry): string {
-    if (r.url == null) return 'PREVIEW';
-    if (r.status === 'stable') return 'STABLE';
-    return 'AVAILABLE';
+    if (r.url == null) return t('ota.status_preview');
+    if (r.status === 'stable') return t('ota.status_stable');
+    return t('ota.status_available');
   }
 </script>
 
-<PageHeader />
+<PageHeader title={t('ota.title')} back="axis" backLabel="AXIS" />
 
 <!-- Current firmware ------------------------------------------ -->
 <div class="card current">
   <div>
-    <span class="muted small">Installed</span>
+    <span class="muted small">{t('ota.installed')}</span>
     <div class="mono ver">{store.info?.version ?? '?'}</div>
     {#if store.info?.build && !store.isDemo}
-      <div class="muted mono small">build {store.info.build}</div>
+      <div class="muted mono small">{t('ota.build', { n: store.info.build })}</div>
     {/if}
   </div>
 </div>
@@ -316,18 +322,18 @@
 <!-- Releases (manifest) --------------------------------------- -->
 <div class="card">
   <header class="card-head">
-    <h3>Releases</h3>
+    <h3>{t('ota.releases')}</h3>
     <button class="link" on:click={refreshManifest} disabled={mLoading}>
-      {mLoading ? 'Checking…' : 'Refresh'}
+      {mLoading ? t('ota.checking') : t('ota.refresh')}
     </button>
   </header>
 
   {#if mLoading && !manifest}
-    <p class="muted small">Fetching manifest…</p>
+    <p class="muted small">{t('ota.fetching')}</p>
   {:else if mErr && !manifest}
     <p class="err small">{mErr}</p>
     <p class="muted small">
-      Couldn't reach the release server. Local upload below still works.
+      {t('ota.cant_reach')}
     </p>
   {:else if latest}
     <div class="release">
@@ -340,8 +346,8 @@
           {isPreview
             ? statusLabel(latest)
             : updateAvailable
-              ? 'UPDATE AVAILABLE'
-              : 'UP TO DATE'}
+              ? t('ota.update_available')
+              : t('ota.up_to_date')}
         </span>
       </div>
       <p class="muted mono xs">{latest.date}</p>
@@ -353,64 +359,62 @@
         disabled={isPreview || !updateAvailable || uploading}
       >
         {#if uploading && installPhase !== 'idle'}
-          {installPhase === 'download' ? 'DOWNLOADING' : 'FLASHING'} {(installPct * 100).toFixed(0)}%
+          {installPhase === 'download' ? t('ota.downloading') : t('ota.flashing')} {(installPct * 100).toFixed(0)}%
         {:else if isPreview}
-          PREVIEW — install via USB flash
+          {t('ota.preview_usb')}
         {:else if !updateAvailable}
-          Already installed
+          {t('ota.already_installed')}
         {:else if store.isDemo}
-          INSTALL UPDATE
+          {t('ota.install_update')}
         {:else}
-          INSTALL {latest.build ?? latest.version}
+          {t('ota.install_n', { n: latest.build ?? latest.version })}
         {/if}
       </button>
       {#if uploading && installPhase !== 'idle'}
         <p class="muted xs mono">
           {installPhase === 'download'
-            ? 'Downloading update…'
-            : 'Installing — keep the app open, this takes a moment.'}
+            ? t('ota.downloading_update')
+            : t('ota.installing_keep')}
         </p>
       {/if}
       {#if uploadDone && rebootCountdown > 0}
         <!-- v2.5.31: post-flash countdown synced with the firmware's
              ESP.restart() deadline. Reads as "the device knows you're
              waiting" rather than a silent blank screen. -->
-        <p class="ok">✓ Update complete</p>
-        <p class="muted small mono">Device rebooting in {rebootCountdown}s…</p>
+        <p class="ok">{t('ota.update_complete')}</p>
+        <p class="muted small mono">{t('ota.rebooting_in', { n: rebootCountdown })}</p>
       {:else if reconnecting}
-        <p class="muted small mono">Reconnecting to the device…</p>
+        <p class="muted small mono">{t('ota.reconnecting')}</p>
       {:else if reconnectErr}
         <p class="err small">{reconnectErr}</p>
       {/if}
       {#if isPreview}
         <p class="muted xs">
-          A binary will appear here once the release is signed off. For
-          now, flash via USB from the developer build.
+          {t('ota.binary_soon')}
         </p>
       {/if}
     </div>
   {/if}
 </div>
 
-{#if !store.isDemo}
-<!-- Local upload — engineer/enthusiast path; hidden in DEMO MODE so a
-     hardware-less reviewer never sees raw .bin / USB-flash jargon. ----- -->
+{#if DEV_TOOLS}
+<!-- Local upload — engineer/enthusiast path. Gated behind DEV_TOOLS so the
+     shipped app never shows a raw .bin / USB-flash uploader (App-Store 5.6);
+     the normal over-the-air release flow above stays intact. ----- -->
 <div class="card">
-  <h3>Local upload</h3>
+  <h3>{t('ota.local_upload')}</h3>
   <p class="muted small">
-    Pick an AXIS firmware file (<code>.bin</code>) and tap UPLOAD. The
-    device will reboot into the new firmware once the transfer is
-    complete.
+    {@html t('ota.local_upload_p')}
   </p>
 
   <label class="file">
     <input type="file" accept=".bin,application/octet-stream" on:change={onPick} disabled={uploading} />
-    <span>{file ? file.name : 'Choose .bin file'}</span>
+    <span>{file ? file.name : t('ota.choose_bin')}</span>
   </label>
-  {#if file}<p class="muted mono small">Size: {fmtMb(file.size)}</p>{/if}
+  {#if file}<p class="muted mono small">{t('ota.size', { s: fmtMb(file.size) })}</p>{/if}
 
   {#if uploadErr}<p class="err">{uploadErr}</p>{/if}
-  {#if uploadDone}<p class="ok">✓ Flashed. Device is rebooting…</p>{/if}
+  {#if uploadDone}<p class="ok">{t('ota.flashed_rebooting')}</p>{/if}
 
   {#if uploading || uploadProg > 0}
     <div class="bar-bg">
@@ -420,15 +424,12 @@
   {/if}
 
   <button class="primary install" on:click={upload} disabled={!file || uploading}>
-    {uploading ? 'UPLOADING…' : 'UPLOAD .BIN'}
+    {uploading ? t('ota.uploading') : t('ota.upload_bin')}
   </button>
 </div>
 
 <div class="card muted small">
-  <strong>Heads up:</strong> don't power-cycle the device during upload.
-  If the transfer is interrupted, just open this screen again and
-  re-upload — the device falls back to the previous firmware on
-  failure.
+  {@html t('ota.heads_up')}
 </div>
 {/if}
 

@@ -466,6 +466,7 @@ export class GaugeBleClient {
 
   // ---- Raw CAN capture (char 7e1c020d) — bus RE → SavvyCAN CSV ----
   private canWrite(b: Uint8Array) { return CapBle.write(this.deviceId, FND_SVC, CAN_CHAR, new DataView(b.buffer)); }
+
   private canRead() { return CapBle.read(this.deviceId, FND_SVC, CAN_CHAR); }
 
   async canLogInfo(): Promise<{ size: number; count: number; recBytes: number; capturing: boolean }> {

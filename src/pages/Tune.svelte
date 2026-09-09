@@ -3,82 +3,32 @@
   import type { ConfigSnapshot } from '../lib/api';
   import { store } from '../lib/store.svelte';
   import PageHeader from '../lib/PageHeader.svelte';
+  import { t } from '../lib/i18n';
 
   let config = $state<ConfigSnapshot | null>(null);
   let err    = $state<string | null>(null);
   let dirty  = $state(false);
   let saving = $state(false);
 
-  // Human-friendly labels + 1-line explanations for each tunable.
-  // Lives in the PWA (not firmware) so we can ship copy edits without
-  // re-flashing. Keep the `help` text short — readable next to the
-  // slider on a phone screen.
-  type LabelInfo = { label: string; help: string };
-  const PRETTY: Record<string, LabelInfo> = {
-    gearDwellMs: {
-      label: 'Gear shift delay',
-      help:  'How long the new position must stay still before locking in. Lower = faster reaction. Going under ~120 ms is unreliable — small jitters slip through and the gear bounces back and forth.',
-    },
-    patternChaseMs: {
-      label: 'Pattern Effect speed',
-      help:  'How fast the glowing light runs through the gears on the H-pattern screen.',
-    },
-    intentGyroDps: {
-      label: 'Shift sensitivity',
-      help:  'How sharp a knob movement is needed to register as a shift. Higher = ignores more car bumps and brake dive.',
-    },
-    intentWindowMs: {
-      label: 'Shift detection window',
-      help:  'After moving the knob, how long the device keeps accepting the new gear before timing out.',
-    },
-    motionAccelDead: {
-      label: 'Driving detect (shake)',
-      help:  'How much vibration counts as the car moving. Above this, shifts freeze to prevent road bumps from triggering them.',
-    },
-    motionGyroDead: {
-      label: 'Driving detect (turn)',
-      help:  'How much turning counts as the car moving. Above this, shifts freeze for the same reason.',
-    },
-    lpAlphaRp: {
-      label: 'Tilt response',
-      help:  'Lower = smoother but laggy. Higher = snappy but more jittery.',
-    },
-    seqTriggerDeg: {
-      label: 'Sequential — shift angle',
-      help:  'Sequential mode only. How far to tilt the knob to count as an up/down shift.',
-    },
-    seqRearmDeg: {
-      label: 'Sequential — return angle',
-      help:  'Sequential mode only. Knob must come back to within this angle before another shift can register.',
-    },
-    seqCooldownMs: {
-      label: 'Sequential — shift gap',
-      help:  'Sequential mode only. Shortest time allowed between two consecutive shifts.',
-    },
-    brightFull: {
-      label: 'Brightness while in use',
-      help:  'Screen brightness when you are actively using the device.',
-    },
-    brightDim: {
-      label: 'Brightness when idle',
-      help:  'Screen brightness after a few seconds without interaction.',
-    },
-    sleepAfterMs: {
-      label: 'Screensaver delay',
-      help:  'How long without input before the screensaver image / animation kicks in.',
-    },
-    transitionStyle: {
-      label: 'Screen change effect',
-      help:  'How pages animate when switching from one to another.',
-    },
-    gearAnimStyle: {
-      label: 'Gear letter effect',
-      help:  'How the big gear letter appears when you shift on the main screen.',
-    },
-  };
+  // No knob paired (e.g. a hardware-less App Store reviewer who never tapped
+  // DEMO MODE): show an explorable connect-prompt card instead of a spinner
+  // that never resolves (config stays null forever). Mirrors Calibrate.svelte.
+  const noClient = $derived(!store.client);
 
-  function labelOf(key: string): string  { return PRETTY[key]?.label ?? key; }
-  function helpOf (key: string): string  { return PRETTY[key]?.help  ?? '';  }
+  // Human-friendly labels + 1-line explanations for each tunable.
+  // Copy lives in the PWA's i18n dict (lib/i18n/tune.ts, keyed
+  // `tune.<key>.label` / `.help`) — not firmware — so we can ship copy
+  // edits (and translations) without re-flashing. Keep help text short —
+  // readable next to the slider on a phone screen.
+  const KNOWN = new Set([
+    'gearDwellMs', 'patternChaseMs', 'intentGyroDps', 'intentWindowMs',
+    'motionAccelDead', 'motionGyroDead', 'lpAlphaRp', 'seqTriggerDeg',
+    'seqRearmDeg', 'seqCooldownMs', 'brightFull', 'brightDim',
+    'sleepAfterMs', 'transitionStyle', 'gearAnimStyle',
+  ]);
+
+  function labelOf(key: string): string  { return KNOWN.has(key) ? t(`tune.${key}.label`) : key; }
+  function helpOf (key: string): string  { return KNOWN.has(key) ? t(`tune.${key}.help`)  : '';  }
 
   // Firmware ships enum option labels as auxiliary "__transitionNames" /
   // "__gearAnimNames" entries in the config doc. Re-attach them to the
@@ -103,7 +53,7 @@
     try {
       const raw = await store.client.config();
       config   = attachEnumNames(raw);
-    } catch (e: any) { err = e?.message ?? 'load failed'; }
+    } catch (e: any) { err = e?.message ?? t('tune.err_load'); }
   });
 
   // Debounced live-apply: avoid hammering the firmware on every input event.
@@ -114,7 +64,7 @@
     dirty = true;
     clearTimeout(patchTimer);
     patchTimer = window.setTimeout(() => {
-      store.client?.patchConfig({ [key]: value }).catch(e => { err = e?.message ?? 'apply failed'; });
+      store.client?.patchConfig({ [key]: value }).catch(e => { err = e?.message ?? t('tune.err_apply'); });
     }, 80);
   }
 
@@ -125,7 +75,7 @@
       await store.client.saveConfig();
       dirty = false;
     } catch (e: any) {
-      err = e?.message ?? 'save failed';
+      err = e?.message ?? t('tune.err_save');
     } finally {
       saving = false;
     }
@@ -133,13 +83,13 @@
 
   async function resetDefaults() {
     if (!store.client) return;
-    if (!confirm('Restore all values to firmware defaults? (not saved until you tap SAVE)')) return;
+    if (!confirm(t('tune.reset_confirm'))) return;
     try {
       await store.client.resetConfig();
       const raw = await store.client.config();
       config = attachEnumNames(raw);
       dirty = true;
-    } catch (e: any) { err = e?.message ?? 'reset failed'; }
+    } catch (e: any) { err = e?.message ?? t('tune.err_reset'); }
   }
 
   // Enum dropdown change handler — same patch path as the slider, but
@@ -150,7 +100,7 @@
     dirty = true;
     clearTimeout(patchTimer);
     patchTimer = window.setTimeout(() => {
-      store.client?.patchConfig({ [key]: value }).catch(e => { err = e?.message ?? 'apply failed'; });
+      store.client?.patchConfig({ [key]: value }).catch(e => { err = e?.message ?? t('tune.err_apply'); });
     }, 0);
   }
 
@@ -183,14 +133,20 @@
   }
 </script>
 
-<PageHeader title="Fine-tuning" back="pro" backLabel="Pro" />
+<PageHeader title={t('tune.title')} back="axis" backLabel="AXIS" />
 
 {#if err}
   <div class="card err">{err}</div>
 {/if}
 
-{#if !config}
-  <div class="card muted">Loading…</div>
+{#if noClient}
+  <div class="card muted">
+    <h3>{t('tune.connect_title')}</h3>
+    <p class="small">{t('tune.connect_body')}</p>
+    <button class="ghost wide" on:click={() => (store.page = 'axis')}>{t('tune.back_to_connect')}</button>
+  </div>
+{:else if !config}
+  <div class="card muted">{t('tune.loading')}</div>
 {:else}
   <!-- Keys hoisted onto the CUSTOM page (Brand.svelte's "Animation &
        feel" card). They still come back from /api/config — we just
@@ -231,7 +187,7 @@
         />
         <div class="range-meta mono">
           <span>{fmt(key, e.min)}</span>
-          <span class="default">def {fmt(key, e.def)}</span>
+          <span class="default">{t('tune.def', { v: fmt(key, e.def) })}</span>
           <span>{fmt(key, e.max)}</span>
         </div>
       {/if}
@@ -239,9 +195,9 @@
   {/each}
 
   <div class="actions">
-    <button on:click={resetDefaults}>RESET DEFAULTS</button>
+    <button on:click={resetDefaults}>{t('tune.reset')}</button>
     <button class="primary" class:hot={dirty} disabled={saving} on:click={save}>
-      {saving ? 'SAVING…' : dirty ? 'SAVE' : 'SAVED'}
+      {saving ? t('tune.saving') : dirty ? t('tune.save') : t('tune.saved')}
     </button>
   </div>
 {/if}
@@ -249,6 +205,14 @@
 <style>
   .err  { color: var(--danger); }
   .muted { color: var(--muted); text-align: center; }
+  .muted h3 { margin: 0 0 var(--s-2); color: var(--fg); font-size: 16px; }
+  .small { font-size: 13px; line-height: 1.45; margin: 0 0 var(--s-3); }
+  .ghost {
+    background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--fg); padding: var(--s-3); border-radius: var(--r-1);
+    font-size: 14px; cursor: pointer; min-height: var(--tap-min);
+  }
+  .ghost.wide { width: 100%; }
   label   { margin: 0; }
   .row    { display: flex; justify-content: space-between; align-items: baseline; }
   .v      { color: var(--accent); font-size: 18px; font-weight: 700; }

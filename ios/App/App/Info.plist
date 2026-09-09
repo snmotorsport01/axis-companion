@@ -45,6 +45,8 @@
 	     App Store upload. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SN AXIS uses your location on the Track screen to time your laps and record your route. Your location stays on your device and is never uploaded.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>SN AXIS connects to your AXIS knob over its Wi-Fi network to update firmware, customize settings, and stream telemetry.</string>
 	<key>UILaunchStoryboardName</key>
@@ -84,5 +86,14 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<!-- Keep the BLE connection alive when the app is briefly backgrounded (e.g.
+	     the user swipes away mid firmware-update). Without this, iOS tears the
+	     Central connection down on background and the OTA transfer dies. NOTE:
+	     iOS still SUSPENDS JS execution when backgrounded, so a webview-driven OTA
+	     can only RESUME on return — this preserves the link so it can. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+	</array>
 </dict>
 </plist>

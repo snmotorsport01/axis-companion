@@ -4,7 +4,8 @@
 // =====================================================================
 
 import type { DeviceClient, DeviceInfo } from './api';
-import { MockClient } from './mockClient';
+import { MockClient, type DemoScene } from './mockClient';
+import { MockMonitor } from './mockMonitor';
 import type { GaugeBleClient } from './gaugeBleClient';
 import type { MonitorBleClient } from './monitorCfg';
 
@@ -13,14 +14,33 @@ const LS_HOST_KEY = 'axis.host';
 export type Page = 'connect' | 'tune' | 'ota' | 'calibrate'
                  | 'live' | 'brand' | 'sys' | 'screensaver' | 'devices'
                  | 'gaugesetup'
+                 // v4 SN AXIS interface system — the demo shell (Home/Looks/Store/
+                 // Feel/Update/Pro with its own bottom nav). Primary UI on device.
+                 | 'axis'
                  // v3.1 buyer-facing simple surface (Looks/Feel) + Pro door.
                  | 'looks' | 'feel' | 'pro'
-                 // Diagnostics: fault codes, accel times, logs, bus capture.
+                 // Diagnostics: record log + bus capture (RE tools).
                  | 'diag'
+                 // ECU: standalone-ECU CAN profile push (Haltech/Link/MaxxECU…).
+                 | 'ecu'
+                 // Analysis: drive-log graphs (speed/dist/dyno) + PNG export.
+                 | 'analysis'
+                 // Track: phone-GPS lap timer + route recorder + GPX export.
+                 | 'track'
+                 // Anti-sleep: fatigue break reminder + gyro drowsiness detection.
+                 | 'antisleep'
+                 // Shortcuts: live lap timer + record toggle + session peaks.
+                 | 'shortcuts'
+                 // Fault codes — the car's stored DTCs, read + clear + explain.
+                 | 'dtc'
+                 // Legal: privacy policy + terms of use (App Store requirement).
+                 | 'legal'
                  // Drivetrain: pick the car → per-car calc-gear on the monitor.
                  | 'drivetrain'
                  // Monitor firmware update + full gauge-display (GaugeCfg) editor.
-                 | 'monota' | 'monconfig';
+                 | 'monota' | 'monconfig'
+                 // Community — leaderboards (Supabase-backed, browse-free/sign-in-to-post).
+                 | 'community';
 
 /**
  * True when the PWA is being served from the AXIS device itself (LittleFS via
@@ -57,7 +77,18 @@ class Store {
   // firmware (real device embed). In a Capacitor wrapper there's no
   // device on the other end of capacitor://localhost — force the
   // Connect screen so the user can enter the AP IP or hit DEMO MODE.
-  page = $state<Page>(IS_DEVICE_BUILD && !IS_CAPACITOR ? 'live' : 'connect');
+  // The iOS app opens straight into the SN AXIS shell (the interface system) —
+  // it is fully explorable with no hardware, which also satisfies the App Store
+  // "reviewer has no device" bar. The firmware-hosted web build keeps 'live'.
+  page = $state<Page>(IS_CAPACITOR ? 'axis' : (IS_DEVICE_BUILD ? 'live' : 'connect'));
+  // Which AxisShell tab is active (home/looks/store/dtc/feel/update/pro). Held on
+  // the store — NOT page-local — so it survives AxisShell unmount/remount when you
+  // dip into a sub-page (calibrate, ota, community…) and come back: you return to
+  // the tab you left, and the app opens on HOME (owner 2026-07-26).
+  axisTab = $state<string>('home');
+  // UI language (en/th/zh/ja). Default en; the user's pick is remembered in
+  // localStorage. Read/written via lib/i18n.ts (t/setLang/initLang).
+  lang = $state<string>('en');
   client = $state<DeviceClient | null>(null);
   info   = $state<DeviceInfo | null>(null);
   connected = $state(false);
@@ -75,6 +106,11 @@ class Store {
   // Held here so the link survives navigation. Null until connected.
   monClient = $state<MonitorBleClient | null>(null);
 
+  // OBD (CAN node) link — SEPARATE from the gauge BLE. True only once the gauge
+  // reports the node's ESP-NOW hello (readVersions().node != null). Kept on the
+  // store so the AxisShell header dot reacts without that component adopting runes.
+  obdSeen = $state(false);
+
   // Saved host from last connect, for one-tap reconnect on next launch.
   lastHost = $state<string>(loadHost());
 
@@ -86,6 +122,16 @@ class Store {
   /** True in DEMO MODE (the synthetic MockClient). Pages read this to hide
    *  device-only / destructive actions a hardware-less reviewer can't use. */
   get isDemo(): boolean { return this.client instanceof MockClient; }
+
+  /** Enter DEMO MODE: a synthetic knob (MockClient) AND monitor (MockMonitor) so the
+   *  ENTIRE app — Looks editor + live preview, Analysis, Fault codes, Firmware, splash
+   *  themes — works with no hardware. A real Bluetooth connect replaces both clients. */
+  enterDemo(scene: DemoScene = 'default') {
+    this.client    = new MockClient(scene);
+    this.monClient = new MockMonitor() as unknown as MonitorBleClient;
+    this.connected = true;
+    this.page      = 'axis';
+  }
 
   goConnect()   { this.page = 'connect';   }
   goLive()      { this.page = 'live';      }

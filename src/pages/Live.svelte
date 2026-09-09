@@ -4,6 +4,7 @@
   import { store } from '../lib/store.svelte';
   import PageHeader from '../lib/PageHeader.svelte';
   import Glyph from '../lib/Glyph.svelte';
+  import { t } from '../lib/i18n';
 
   let sock: WebSocket | null = null;
   let frame    = $state<TelemetryFrame | null>(null);
@@ -63,10 +64,10 @@
   // Consumer-facing connection label — never expose the raw WebSocket
   // state-machine words ("OPEN"/"CLOSED") to a buyer.
   let statusLabel = $derived(
-    status === 'open'         ? 'Connected'
-    : status === 'connecting' ? 'Connecting…'
-    : status === 'error'      ? 'Connection lost'
-    :                           'Disconnected'
+    status === 'open'         ? t('live.status_connected')
+    : status === 'connecting' ? t('live.status_connecting')
+    : status === 'error'      ? t('live.status_lost')
+    :                           t('live.status_disconnected')
   );
 
   // Build an SVG polyline of historical pitch for a quick strip chart.
@@ -105,27 +106,27 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17a8 8 0 0 1 16 0"/><line x1="12" y1="17" x2="16.5" y2="11.5"/></svg>
   </span>
   <span class="gl-txt">
-    <span class="gl-l">AXIS Gauge</span>
-    <span class="gl-s">{store.gaugeClient ? 'connected' : 'tap to set up'}</span>
+    <span class="gl-l">{t('live.gauge_link')}</span>
+    <span class="gl-s">{store.gaugeClient ? t('live.gauge_connected') : t('live.gauge_setup')}</span>
   </span>
   {#if store.gaugeClient}<Glyph kind="connected" size={14} />{/if}
   <span class="gl-ch">›</span>
 </button>
 
 {#if !frame}
-  <div class="card muted">Connecting to your AXIS…</div>
+  <div class="card muted">{t('live.connecting')}</div>
 {:else}
   <div class="card">
-    <h3>Current gear</h3>
+    <h3>{t('live.current_gear')}</h3>
     <div class="gear mono">{frame.label}</div>
     <p class="muted sub">
-      {frame.motion ? 'In motion' : 'Still'} ·
-      {frame.frozen ? 'Gear locked' : 'Live'}
+      {frame.motion ? t('live.in_motion') : t('live.still')} ·
+      {frame.frozen ? t('live.gear_locked') : t('live.live')}
     </p>
   </div>
 
   <div class="card">
-    <h3>Tilt</h3>
+    <h3>{t('live.tilt')}</h3>
     <div class="radar">
       <svg width={DOT_SIZE} height={DOT_SIZE} viewBox="0 0 {DOT_SIZE} {DOT_SIZE}">
         <circle cx={DOT_SIZE / 2} cy={DOT_SIZE / 2} r={DOT_SIZE / 2 - 2} fill="none" stroke="var(--border)" />
@@ -139,20 +140,20 @@
       </svg>
     </div>
     <dl>
-      <dt>Lean</dt> <dd class="mono">{frame.roll.toFixed(0)}°</dd>
-      <dt>Tilt</dt> <dd class="mono">{frame.pitch.toFixed(0)}°</dd>
+      <dt>{t('live.lean')}</dt> <dd class="mono">{frame.roll.toFixed(0)}°</dd>
+      <dt>{t('live.tilt')}</dt> <dd class="mono">{frame.pitch.toFixed(0)}°</dd>
     </dl>
   </div>
 
   <div class="card">
-    <h3>Tilt — last 5s</h3>
+    <h3>{t('live.tilt_5s')}</h3>
     <svg viewBox="0 0 300 80" class="chart" preserveAspectRatio="none">
       <polyline points={strip(history.map(f => f.pitch), 300, 80)} fill="none" stroke="var(--accent)" stroke-width="1.5" />
     </svg>
   </div>
 
   <button class="pause" on:click={() => paused = !paused}>
-    {paused ? '▶ RESUME' : '⏸ PAUSE'}
+    {paused ? '▶ ' + t('live.resume') : '⏸ ' + t('live.pause')}
   </button>
 {/if}
 

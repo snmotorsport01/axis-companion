@@ -23,6 +23,7 @@
   import type { BrandingSnapshot } from '../lib/api';
   import { encodeImage, encodeVideo, encodeGif, videoToGifBlob } from '../lib/axsv';
   import { store, IS_CAPACITOR } from '../lib/store.svelte';
+  import { t } from '../lib/i18n';
   import Glyph from '../lib/Glyph.svelte';
 
   // Compression presets — each level trades visual quality for upload
@@ -80,9 +81,7 @@
     // OS hasn't pulled the actual bytes yet. Friendlier message than
     // letting the decoder fail downstream.
     if (f.size === 0) {
-      ssErr = 'This file appears to be 0 bytes. If it has an iCloud ⬇ ' +
-              'badge in Photos, your phone needs internet to download it ' +
-              'first before AXIS can read the bytes.';
+      ssErr = t('saver.err_zero_byte');
       ssFile = null;
       return;
     }
@@ -92,9 +91,9 @@
       await tick();   // ensure previewCanvas is mounted
       const kind = detectKind(f);
       ssEncodeMsg =
-        kind === 'gif'   ? 'Decoding GIF…' :
-        kind === 'video' ? 'Extracting frames…' :
-                           'Optimising colours…';
+        kind === 'gif'   ? t('saver.msg_decode_gif') :
+        kind === 'video' ? t('saver.msg_extract') :
+                           t('saver.msg_optimise');
       const preset = PRESETS[quality];
       if (kind === 'gif') {
         // GIFs are already palette-quantised by the decoder; the
@@ -111,15 +110,17 @@
       }
       await renderPreview();
       const kb = (ssBytes.length / 1024).toFixed(0);
+      const qLabel = quality === 'high' ? t('saver.label_high')
+                   : quality === 'medium' ? t('saver.label_medium')
+                   : t('saver.label_low');
       ssEncodeMsg =
-        kind === 'gif'   ? `${kb} KB · animated GIF (seamless loop)` :
-        kind === 'video' ? `${kb} KB · ${preset.frames} frames @ ${preset.fps} fps · ${preset.label}` :
-                           `${kb} KB · still image · ${quality === 'high' ? 'best quality' : 'compressed'}`;
+        kind === 'gif'   ? t('saver.enc_gif', { kb }) :
+        kind === 'video' ? t('saver.enc_video', { kb, frames: preset.frames, fps: preset.fps, label: qLabel }) :
+                           t('saver.enc_still', { kb, q: quality === 'high' ? t('saver.q_best_quality') : t('saver.q_compressed') });
     } catch (e: any) {
-      const msg = e?.message ?? 'conversion failed';
+      const msg = e?.message ?? t('saver.err_conversion');
       ssErr = /decode|read|fetch/i.test(msg)
-        ? msg + '\n\nIf this is an iCloud photo, your phone needs internet ' +
-                'to download it before AXIS can read it.'
+        ? msg + t('saver.err_icloud_append')
         : msg;
       ssBytes = null;
       ssEncodeMsg = null;
@@ -247,8 +248,8 @@
         }
       } catch {}
       ssErr = detail
-        ? `Device couldn't load the file: ${detail}`
-        : (e?.message ?? 'upload failed');
+        ? t('saver.err_device_load', { detail })
+        : (e?.message ?? t('saver.err_upload'));
     } finally {
       ssBusy = false;
     }
@@ -256,12 +257,12 @@
 
   async function clearOnDevice() {
     if (!store.client || !snap?.screensaver) return;
-    if (!confirm('Remove the screensaver from the device?')) return;
+    if (!confirm(t('saver.confirm_remove'))) return;
     try {
       await store.client.clearScreensaver();
       snap = await store.client.branding();
     } catch (e: any) {
-      ssErr = e?.message ?? 'clear failed';
+      ssErr = e?.message ?? t('saver.err_clear');
     }
   }
 
@@ -273,21 +274,21 @@
       return;
     }
     if (kind !== 'video') {
-      ssErr = 'Save as GIF only works for video sources.';
+      ssErr = t('saver.err_save_video_only');
       return;
     }
     ssBusy = true;
     ssErr = null;
     try {
       const preset = PRESETS[quality];
-      ssEncodeMsg = 'Encoding GIF…';
+      ssEncodeMsg = t('saver.msg_encoding_gif');
       const blob = await videoToGifBlob(ssFile, preset.frames, preset.fps,
                                         (_p, m) => { ssEncodeMsg = m; });
       const stem = ssFile.name.replace(/\.[^.]+$/, '') || 'screensaver';
       triggerDownload(blob, `${stem}.gif`);
-      ssEncodeMsg = `${(blob.size / 1024).toFixed(0)} KB · downloaded`;
+      ssEncodeMsg = t('saver.enc_downloaded', { kb: (blob.size / 1024).toFixed(0) });
     } catch (e: any) {
-      ssErr = e?.message ?? 'GIF export failed';
+      ssErr = e?.message ?? t('saver.err_gif_export');
     } finally {
       ssBusy = false;
     }
@@ -304,7 +305,7 @@
     if (!ssFile) return;
     const kind = detectKind(ssFile);
     if (kind !== 'video') {
-      ssErr = 'Compress to GIF only works for video sources.';
+      ssErr = t('saver.err_compress_video_only');
       return;
     }
     ssBusy = true;
@@ -312,7 +313,7 @@
     previewFrame = 0;
     try {
       const preset = PRESETS[quality];
-      ssEncodeMsg = 'Compressing video to GIF…';
+      ssEncodeMsg = t('saver.msg_compress_vid');
       const blob = await videoToGifBlob(ssFile, preset.frames, preset.fps,
                                         (_p, m) => { ssEncodeMsg = m; });
       // Wrap blob in a File so the rest of the pipeline (preview,
@@ -320,14 +321,14 @@
       const stem = ssFile.name.replace(/\.[^.]+$/, '') || 'screensaver';
       const gifFile = new File([blob], `${stem}.gif`, { type: 'image/gif' });
       ssFile = gifFile;
-      ssEncodeMsg = 'Re-encoding GIF as screensaver…';
+      ssEncodeMsg = t('saver.msg_reencode');
       ssBytes = await encodeGif(gifFile, (_p, m) => { ssEncodeMsg = m; });
       await renderPreview();
       const kb = (ssBytes.length / 1024).toFixed(0);
       const gifKb = (blob.size / 1024).toFixed(0);
-      ssEncodeMsg = `${kb} KB · from ${gifKb} KB GIF · ready to upload`;
+      ssEncodeMsg = t('saver.enc_compressed_ready', { kb, gifKb });
     } catch (e: any) {
-      ssErr = e?.message ?? 'compression failed';
+      ssErr = e?.message ?? t('saver.err_compression');
     } finally {
       ssBusy = false;
     }
@@ -356,13 +357,13 @@
 
 <div class="pg">
   <button class="ss-back" on:click={() => (store.page = 'looks')}
-    style="background:none;border:0;color:var(--accent,#c9a24a);font-family:var(--font-mono,monospace);font-size:12px;letter-spacing:1px;padding:0 0 8px;cursor:pointer;">‹ LOOKS</button>
-  <div class="hd"><span class="wm">AXIS</span><span class="sub">Screensaver</span></div>
+    style="background:none;border:0;color:var(--accent,#c9a24a);font-family:var(--font-mono,monospace);font-size:12px;letter-spacing:1px;padding:0 0 8px;cursor:pointer;">{t('saver.back_looks')}</button>
+  <div class="hd"><span class="wm">AXIS</span><span class="sub">{t('saver.title')}</span></div>
 
   {#if !snap}
-    <p class="empty">Loading…</p>
+    <p class="empty">{t('saver.loading')}</p>
   {:else}
-    <p class="intro">Pick a photo, GIF or short video to play while your AXIS rests. It shows when the screen sleeps.</p>
+    <p class="intro">{t('saver.intro')}</p>
 
     <div class="prev">
       {#if ssBytes}
@@ -376,26 +377,26 @@
       {:else}
         <div class="prev-empty">
           {#if ssBusy}<Glyph kind="spinner" size={26} />{/if}
-          <span>{ssEncodeMsg ?? (snap.screensaver ? 'A screensaver is loaded on your AXIS' : 'Nothing picked yet')}</span>
+          <span>{ssEncodeMsg ?? (snap.screensaver ? t('saver.prev_loaded') : t('saver.prev_none'))}</span>
         </div>
       {/if}
     </div>
 
     <label class="file">
       <input type="file" accept="image/*,video/*,image/gif" on:change={onPick} disabled={ssBusy} />
-      <span>{ssFile ? ssFile.name : 'Choose a photo, GIF or video'}</span>
+      <span>{ssFile ? ssFile.name : t('saver.file_choose')}</span>
     </label>
 
-    <div class="lab">Quality</div>
+    <div class="lab">{t('saver.quality')}</div>
     <div class="chips">
       {#each (['high','medium','low'] as const) as q}
         <button type="button" class="chip" class:sel={quality === q} on:click={() => quality = q} disabled={ssBusy}>
-          {q === 'high' ? 'Best' : q === 'medium' ? 'Balanced' : 'Smaller'}
+          {q === 'high' ? t('saver.chip_best') : q === 'medium' ? t('saver.chip_balanced') : t('saver.chip_smaller')}
         </button>
       {/each}
     </div>
     <p class="hint">
-      {#if ssFile}Re-pick the file to apply a new quality.{:else}Smaller files send faster over Bluetooth. Photos & video up to 4K work — AXIS shrinks them to fit.{/if}
+      {#if ssFile}{t('saver.hint_repick')}{:else}{t('saver.hint_default')}{/if}
     </p>
 
     {#if ssEncodeMsg && ssBytes}<p class="enc">{ssEncodeMsg}</p>{/if}
@@ -403,27 +404,27 @@
 
     {#if ssBusy && ssProgress > 0}
       <div class="progress"><div style="width:{(ssProgress * 100).toFixed(0)}%"></div></div>
-      <p class="enc">Sending… {(ssProgress * 100).toFixed(0)}%</p>
+      <p class="enc">{t('saver.sending', { pct: (ssProgress * 100).toFixed(0) })}</p>
     {/if}
 
     <div class="actions">
-      <button class="ghost" on:click={clearOnDevice} disabled={!snap.screensaver || ssBusy}>Remove</button>
+      <button class="ghost" on:click={clearOnDevice} disabled={!snap.screensaver || ssBusy}>{t('saver.remove')}</button>
       {#if !IS_CAPACITOR && ssFile && (ssFile.type.startsWith('video/') || /\.gif$/i.test(ssFile.name))}
         <!-- <a download> is a no-op in the iOS WKWebView, so this is web-only. -->
-        <button class="ghost" disabled={!ssBytes || ssBusy} on:click={saveAsGif}>Save a copy</button>
+        <button class="ghost" disabled={!ssBytes || ssBusy} on:click={saveAsGif}>{t('saver.save_copy')}</button>
       {/if}
       <button class="save" disabled={!ssBytes || ssBusy} on:click={upload}>
-        {#if ssBusy}<Glyph kind="saving" size={16} /> Adding…{:else}Add to my AXIS{/if}
+        {#if ssBusy}<Glyph kind="saving" size={16} /> {t('saver.adding')}{:else}{t('saver.add')}{/if}
       </button>
     </div>
 
     <details class="tips">
-      <summary>Tips for the best loop</summary>
+      <summary>{t('saver.tips_summary')}</summary>
       <ul>
-        <li>GIFs usually look best — they're made to loop.</li>
-        <li>Videos are auto-sampled into a short smooth loop.</li>
-        <li>Any size up to 4K works; big files just take longer the first time.</li>
-        <li>Avoid an abrupt cut right at the end of a clip.</li>
+        <li>{t('saver.tip_gif')}</li>
+        <li>{t('saver.tip_video')}</li>
+        <li>{t('saver.tip_size')}</li>
+        <li>{t('saver.tip_cut')}</li>
       </ul>
     </details>
   {/if}

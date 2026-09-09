@@ -13,6 +13,7 @@
 //    axis_can_monitor/src/ui/GaugeChannels.h (Channel enum values = wire IDs)
 // =====================================================================
 import { BleClient as CapBle, type ScanResult } from '@capacitor-community/bluetooth-le';
+import { KeepAwake } from '@capacitor-community/keep-awake';
 import { rawToDtc } from './dtcDict';
 
 // New service base for the MONITOR — distinct from knob (7e1c000x) and
@@ -30,6 +31,12 @@ const DTC_CHAR        = '7e1c020a-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // DTC: READ liv
 const ACCEL_CHAR      = '7e1c020b-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // accel best-times blob (READ, ui::AccelTimes)
 const NLOG_CHAR       = '7e1c020c-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // node-log text pull (WRITE cmd → READ reply)
 const CAN_CHAR        = '7e1c020d-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // raw CAN-log pull + capture start/stop
+const SHORT_CHAR      = '7e1c0213-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // driver shortcuts: WRITE 1B action | READ 28B status (rec+lap+peaks)
+const AS_CHAR         = '7e1c020f-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // anti-sleep config + live drowsiness (READ | WRITE)
+const CAR_CHAR        = '7e1c0210-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // car-ID (READ): [yearLE u16, make[12] NUL-pad] the node decoded from the VIN (VIN never sent)
+const EXH_CHAR        = '7e1c020e-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // exhaust valve control (READ status | WRITE cmd) — ported from founder
+const HEALTH_CHAR     = '7e1c0211-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // vehicle health / I-M readiness (READ) — ported from founder
+const ECU_CHAR        = '7e1c0212-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // standalone-ECU profile relay → node (WRITE 0xC4 chunks) — ported from founder
 const OTA_CHUNK       = 224;   // MUST match the monitor's ESP-NOW relay chunk (OtaTx CHUNK)
 
 // OTA targets — byte 1 of the BEGIN packet. Must match OtaTx::Tgt on the monitor.
@@ -39,6 +46,9 @@ export const OTA_TARGET_MONITOR = 1;   // the monitor self-flashes its own ota_1
 /** A firmware version triple {major,minor,patch} the monitor reports over BLE. */
 export interface FwVersion { major: number; minor: number; patch: number; }
 export interface DeviceVersions { monitor: FwVersion; node: FwVersion | null; }
+
+/** Car identity the node decoded from the VIN (make + model-year only; VIN never sent). */
+export interface CarId { make: string; year: number; }
 
 /** The car's live stored trouble codes, read from the monitor (char 7e1c020a).
  *  `codes` are decoded to printed form ("P0301"); `mil` = check-engine lamp on.
@@ -54,6 +64,47 @@ export interface DtcSnapshot {
  *  when that target has no recorded run yet. `trapKmh` = finish speed (drag only). */
 export interface AccelTimeEntry { ms: number | null; trapKmh?: number; }
 export interface AccelTimes { speed: AccelTimeEntry[]; dist: AccelTimeEntry[]; }
+
+/** Anti-sleep / drowsy-driving config + live telemetry (char 7e1c020f). V1 =
+ *  time-based "take a break" reminder; V2 = gyro yaw steering-entropy drowsiness
+ *  detection (baseline-learned, 70-130 km/h). drowsyScore/baselinePct are
+ *  read-only live values the gauge reports back. */
+export interface AntiSleepCfg {
+  enabled: boolean; intervalMin: number; restMin: number; snoozeMin: number; moveKph: number;
+  gyroOn: boolean; sens: number;
+  drowsyScore?: number; baselinePct?: number;
+}
+
+// ---- Exhaust valve control (char 7e1c020e) — ported from founder-gauge ----
+// The monitor drives a 433 RF TX that replays the fob's cloned codes (no separate
+// exhaust node). mode 0=QUIET(forced closed) 1=AUTO(rpm/throttle rule) 2=LOUD(open);
+// valve 0=closed 1=open 2=unknown.
+export interface ExhaustStatus { mode: number; valve: number; hasCodes: boolean; openRpm: number; closeRpm: number; openThr: number; }
+export interface ExhaustCodes  { open: number; close: number; bits: number; proto: number; pulse: number; repeat: number; single: boolean; }
+export interface ExhaustAuto   { openRpm: number; closeRpm: number; openThr: number; dwellMs?: number; }
+
+// ---- Vehicle health / I-M readiness (char 7e1c0211) — ported from founder-gauge ----
+// `received` is false until the sensor decodes PID 01 off a live car.
+export interface VehicleHealth { received: boolean; milOn: boolean; dtc: number; monSupported: number; monReady: number; pending: number; permanent: number; }
+
+// Live status the gauge reports for the driver shortcuts (char 7e1c0213 READ):
+// recording flag + manual lap board + live session peaks. Mirrors the 28-byte
+// blob App::loop publishes via setShortcutStatus.
+export interface ShortcutStatus {
+  recording: boolean;
+  lapRunning: boolean;
+  peaksShown: boolean;
+  lapsDone: number;
+  lapCurMs: number;
+  lapLastMs: number;
+  lapBestMs: number | null;   // null = no completed lap yet
+  topSpeedKmh: number;
+  maxRpm: number;
+  maxBoostBar: number;
+  maxCoolantC: number;
+  peakHp: number;
+  peakNm: number;
+}
 export const verStr = (v: FwVersion | null | undefined) =>
   v ? `v${v.major}.${v.minor}.${v.patch}` : 'unknown';
 /** Compare two version triples: >0 if a newer than b, 0 equal, <0 older. */
@@ -80,14 +131,26 @@ export enum Ch {
   ACCEL,                                              // 40 accelerator / driver demand % (passive 0x1FFF0140)
   PWR,                                                // 41 VirtualDyno crank power hp (any car)
   TQ,                                                 // 42 VirtualDyno crank torque Nm
+  // ---- sensor node (append-only; MUST match GaugeChannels.h) ----
+  OILPRESS,                                           // 43 oil pressure bar (sensor node)
   COUNT,
 }
-export enum Layout { HERO = 0, BARS = 1, NEEDLE = 2, TICKS = 3 }
+// Layout 0..3 ship on every gauge (free). 4..6 are the premium faces (TUNER/REGENT/
+// CHRONO) — same numbering as the firmware GaugeConfig.h PageLayout, so a page set to
+// one of these is accepted by any gauge whose firmware knows it (older firmware simply
+// rejects the config, which is safe). Ported from founder-gauge [[project-founder-gauge]].
+// GMETER = 8 is an IMU-driven G-force meter (axis_175_fw LAYOUT_GMETER). It has NO
+// configurable channels — the firmware reads the on-board accel, not telemetry — so a
+// page set to it just needs the layout VALUE + colours; the wire format is unchanged.
+export enum Layout { HERO = 0, BARS = 1, NEEDLE = 2, TICKS = 3, TUNER = 4, REGENT = 5, CHRONO = 6, CONCENTRIC = 7, GMETER = 8 }
 export const LAYOUT_NAMES: Record<Layout, string> = {
   [Layout.HERO]: "Hero", [Layout.BARS]: "Bars", [Layout.NEEDLE]: "Needle", [Layout.TICKS]: "Ticks",
+  [Layout.TUNER]: "Tuner", [Layout.REGENT]: "Regent", [Layout.CHRONO]: "Chrono", [Layout.CONCENTRIC]: "5-Arc",
+  [Layout.GMETER]: "G-Meter",
 };
 
-export const CFG_VERSION   = 11;        // v11 = PageCfg + color2 + textColor → 219 B. MUST equal firmware GaugeCfg.version.
+export const CFG_VERSION   = 16;        // v16 = + warnSet(1) + warn[Ch.COUNT] u16 (per-channel WARN column, native ×10^decimals). MUST equal firmware GaugeCfg.version.  // v15 = slotLimit float32→uint16 (keeps GaugeCfg < 512 B BLE-char max; v14=519 B write failed).
+export const CFG_BYTES_V11 = 219;       // legacy v11 payload size (first 219 B stay byte-identical in v12)
 export const GAUGE_PAGES   = 10;        // MAX pages (array size); active count = cfg.pageCount
 export const GAUGE_PAGES_DEFAULT = 4;   // shown by default
 export const SLOTS_PER_PAGE = 5;        // HERO:[0]=primary [1..3]=support ; BARS:[0..3] ; slot[4] reserved — matches firmware GaugeConfig.h
@@ -105,6 +168,7 @@ export const TIRE_DEFAULT = { width: 235, aspect: 40, rim: 19 }; // 235/40R19
 // #RRGGBB the app's colour input uses.
 export const ARC_DEFAULT = 0xFDA0;
 export function rgb565ToHex(v: number): string {
+  if (v === 0x0821) return '#000000';   // BLACK-SENTINEL (see hexToRgb565) → show true black in the app
   const r5 = (v >> 11) & 0x1f, g6 = (v >> 5) & 0x3f, b5 = v & 0x1f;
   const r = (r5 << 3) | (r5 >> 2), g = (g6 << 2) | (g6 >> 4), b = (b5 << 3) | (b5 >> 2);
   return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
@@ -114,8 +178,36 @@ export function hexToRgb565(hex: string): number {
   const r = parseInt(h.slice(0, 2), 16) || 0;
   const g = parseInt(h.slice(2, 4), 16) || 0;
   const b = parseInt(h.slice(4, 6), 16) || 0;
-  return (((r & 0xf8) << 8) | ((g & 0xfc) << 3) | (b >> 3)) & 0xffff;
+  // ROUND to the nearest representable level. The old `&0xf8 / &0xfc / >>3` TRUNCATED,
+  // which biased every channel down — and because rgb565ToHex expands R/B (5-bit) by a
+  // different bit-replication than G (6-bit), that bias always landed R,B above G, so
+  // every grey came back magenta/purple-tinted (owner: "เทาเข้มกลายเป็นเทาอมม่วง").
+  const r5 = Math.round((r * 31) / 255);
+  const b5 = Math.round((b * 31) / 255);
+  let g6 = Math.round((g * 63) / 255);
+  // NEUTRAL GUARD — for a grey (or near-grey) input, pick the GREEN level whose decoded
+  // value best matches the decoded red instead of letting the tint always fall magenta.
+  // NOTE: RGB565 has only 8 EXACTLY-neutral greys (0,8,16,24,231,239,247,255); mid greys
+  // are not representable neutrally at all, so this minimises the cast (max ±2) — it
+  // cannot remove it. True neutral mid-greys would need an 18/24-bit colour pipeline.
+  if (Math.abs(r - g) <= 3 && Math.abs(g - b) <= 3 && Math.abs(r - b) <= 3) {
+    const rd = (r5 << 3) | (r5 >> 2);
+    let best = g6, bestErr = Infinity;
+    for (let c = Math.max(0, g6 - 2); c <= Math.min(63, g6 + 2); c++) {
+      const err = Math.abs(((c << 2) | (c >> 4)) - rd);
+      if (err < bestErr) { bestErr = err; best = c; }
+    }
+    g6 = best;
+  }
+  const v = ((r5 << 11) | (g6 << 5) | b5) & 0xffff;
+  // BLACK-SENTINEL GUARD: the gauge treats a slot/arc/color2 value of 0x0000 as
+  // "unset → fall back to the gold accent" (owner 2026-07-24: major ticks set to black
+  // "เด้งไปเป็นสีทอง"). Pure black is a LEGITIMATE pick, so encode it as a non-zero
+  // near-black (0x0821 = (1,1,1) ≈ #080408) — the firmware's greyWB565() rebuilds it to
+  // true black on glass, and rgb565ToHex maps it back to #000000 for a clean round-trip.
+  return v === 0 ? BLACK565 : v;
 }
+export const BLACK565 = 0x0821;   // non-zero stand-in for a deliberately-picked black
 
 // Channel catalog for the picker. `label` = friendly picker text; `short` =
 // the exact heading the MONITOR draws on-screen (mirrors GaugeChannels.h
@@ -155,8 +247,8 @@ export const CHANNELS: ChannelDef[] = [
   { id: Ch.FUELLVL,  label: 'Fuel level', short: 'FUEL%', unit: '%',    min: 0,   max: 100,   group: 'Fuel' },
   { id: Ch.STFT,     label: 'Short fuel trim',short:'STFT',unit: '%',   min: -25, max: 25,    group: 'Fuel' },
   { id: Ch.LTFT,     label: 'Long fuel trim',short:'LTFT', unit: '%',   min: -25, max: 25,    group: 'Fuel' },
-  { id: Ch.AFR,      label: 'A/F ratio (cmd)',short:'A/F', unit: ':1',   min: 10,  max: 20,    group: 'Fuel' },
-  { id: Ch.LAMBDA,   label: 'Lambda (cmd)',short:'LAMBDA', unit: '',     min: 0.70,max: 1.30,  group: 'Fuel' },
+  // A/F ratio (cmd) + Lambda (cmd) REMOVED from the picker (owner 2026-07-27): they
+  // duplicate the real measured wideband values below; enum ids kept for wire compat.
   { id: Ch.AFR_M,    label: 'A/F actual (wideband)',short:'AF ACT',unit:':1',min:10,max: 20,   group: 'Fuel' },
   { id: Ch.LAMBDA_M, label: 'Lambda actual',short:'λ ACT', unit: '',     min: 0.70,max: 1.30,  group: 'Fuel' },
   { id: Ch.FRP,      label: 'Fuel rail pressure',short:'FRAIL',unit:'bar',min: 0,  max: 250,   group: 'Fuel' },
@@ -170,7 +262,9 @@ export const CHANNELS: ChannelDef[] = [
   { id: Ch.ACCEL,    label: 'Accelerator (passive)',short:'GAS',unit:'%',min: 0, max: 100,   group: 'Engine' },
   { id: Ch.ECON,     label: 'Fuel economy (inst.)',short:'ECON',unit:'km/L',min:0,max: 30,   group: 'Fuel' },
   // legacy estimates (kept selectable; the dyno channels above are more accurate)
-  { id: Ch.WHP,      label: 'Wheel power (est.)',short:'WHP',unit:'hp', min: -100,max: 500,   group: 'Power' },
+  // Wheel power (est.) REMOVED from the picker (owner 2026-07-27: "รู้สึกไม่ตรง") —
+  // the MAF-airflow estimate is superseded by the physics-based Power/Torque (dyno)
+  // above. Ch.WHP + Ch.ICE_HP/EV_HP enum ids kept (wire compat); no longer selectable.
   // Trip / diagnostic
   { id: Ch.BARO,     label: 'Barometric', short: 'BARO',  unit: 'kPa',  min: 0,   max: 130,   group: 'Trip' },
   { id: Ch.RUNTIME,  label: 'Run time',   short: 'RUN',   unit: 's',    min: 0,   max: 65535, group: 'Trip' },
@@ -216,6 +310,8 @@ export interface PageCfg {
   peak: number;           // primary redline in native units; 0 = off
   color2?: number;        // v11: RGB565 of the 2nd NEEDLE hand; 0/undef = reuse arcColor
   textColor?: number;     // v11: RGB565 of the VALUE text (any layout); 0/undef = white
+  slotLimit?: number[];   // v14: ARC full-scale MAX per VALUE/SLOT (native units), len SLOTS_PER_PAGE; 0/undef = channel default vmax
+  slotColor?: number[];   // v12: RGB565 PER-VALUE colour, one per slot (len SLOTS_PER_PAGE); 0/undef = fall back to arcColor
 }
 export interface GaugeCfg {
   version: number;
@@ -232,7 +328,19 @@ export interface GaugeCfg {
   units: number[];        // per-quantity display unit, length UC_COUNT, index by Uc (v7)
   massKg: number;         // vehicle mass incl. driver, kg — VirtualDyno power/torque input (v8)
   pageCount: number;      // active gauge pages, 1..GAUGE_PAGES; array always length GAUGE_PAGES (v9)
+  // ---- v16: per-channel WARN column (EVERY channel, not per-page) ----
+  warnSet?: number;       // 1 = warn[] authoritative (firmware respects 0=off); 0/undef = legacy built-in alarms
+  warn?: number[];        // per-channel warn threshold in NATIVE units, indexed by Ch (length Ch.COUNT); 0 = off
 }
+
+// Per-channel display decimals — MUST match firmware GaugeChannels.h channelInfo.decimals.
+// warn is sent as native × 10^WARN_DP[ch] as a u16 (so volts 11.8→118 and rpm 6000 both
+// fit); the firmware divides by the same 10^decimals. Indexed by Ch (length Ch.COUNT).
+export const WARN_DP: number[] = [
+  0,0,0,0,0,0,0,0,2,1,0,1,1,0,0,0,0,0,0,0,   // NONE..CMTHR(19)  [8=BOOST:2, 9=VOLT:1, 11=FUELRATE:1, 12=MAF:1]
+  0,0,0,0,0,0,1,2,2,1,0,0,0,0,0,0,0,0,0,1,   // RUNTIME(20)..ECON(39) [26=AFR:1,27=LAMBDA:2,28=LAMBDA_M:2,29=AFR_M:1]
+  0,0,0,1,                                    // ACCEL,PWR,TQ,OILPRESS(43) [43=OILPRESS:1]
+];
 
 // Factory default — mirrors GaugeConfig.h defaultCfg() so the app "New" state
 // matches a fresh monitor even before the first read.
@@ -272,8 +380,10 @@ export function defaultCfg(): GaugeCfg {
 //  f32 LE(4) } = 4×12 | brightness(1) | rpmLimit u16 LE(2) | gearCount(1) |
 //  shiftRpm u16 LE(2) | gearRatios 8×f32 LE(32) | finalDrive f32 LE(4) |
 //  tireWidth u16 LE(2) | tireAspect(1) | tireRim(1)
-export const CFG_BYTES = 1 + GAUGE_PAGES * (1 + SLOTS_PER_PAGE + 2 + 4 + 2 + 2) + 1 + 2 + 1 + 2
-                           + 8 * 4 + 4 + 2 + 1 + 1 + UC_COUNT + 2 + 1; // 219 (v11: 10 pages x 16 B)
+export const CFG_BYTES = 1 + GAUGE_PAGES * (1 + SLOTS_PER_PAGE + 2 + 4 + 2 + 2 + 2 * SLOTS_PER_PAGE) + 1 + 2 + 1 + 2  // v15 per-page slotLimit[SLOTS] u16
+                           + 8 * 4 + 4 + 2 + 1 + 1 + UC_COUNT + 2 + 1              // (v11 prefix fields)
+                           + GAUGE_PAGES * SLOTS_PER_PAGE * 2                       // + slotColor block (100)
+                           + 1 + Ch.COUNT * 2;                                      // v16: warnSet(1) + warn[Ch.COUNT] u16
 
 export function encodeCfg(c: GaugeCfg): Uint8Array {
   const b  = new Uint8Array(CFG_BYTES);
@@ -288,6 +398,7 @@ export function encodeCfg(c: GaugeCfg): Uint8Array {
     dv.setFloat32(o, pg.peak ?? 0, true);                        o += 4;
     dv.setUint16(o, (pg.color2 ?? 0) & 0xffff, true);            o += 2;   // v11: 2nd needle hand
     dv.setUint16(o, (pg.textColor ?? 0) & 0xffff, true);         o += 2;   // v11: value-text colour
+    for (let s = 0; s < SLOTS_PER_PAGE; s++) { dv.setUint16(o, Math.max(0, Math.min(65535, Math.round(pg.slotLimit?.[s] ?? 0))), true); o += 2; }  // v15: per-slot arc full-scale (u16)
   }
   b[o++] = (c.brightness ?? BRIGHT_DEFAULT) & 0xff;
   dv.setUint16(o, (c.rpmLimit ?? RPM_LIMIT_DEFAULT) & 0xffff, true); o += 2;
@@ -301,6 +412,21 @@ export function encodeCfg(c: GaugeCfg): Uint8Array {
   for (let i = 0; i < UC_COUNT; i++) b[o++] = (c.units?.[i] ?? 0) & 0xff;   // v7 per-quantity units
   dv.setUint16(o, (c.massKg ?? 1600) & 0xffff, true); o += 2;               // v8 vehicle mass
   b[o++] = Math.max(1, Math.min(GAUGE_PAGES, c.pageCount ?? GAUGE_PAGES_DEFAULT)) & 0xff;  // v9 active pages
+  // ---- v12 trailing block: slotColor[GAUGE_PAGES][SLOTS_PER_PAGE], RGB565 LE.
+  // 0 = fall back to that page's arcColor. Appended AFTER the whole v11 prefix so
+  // the first 219 B are byte-identical → an old (v11) firmware still accepts it.
+  for (let p = 0; p < GAUGE_PAGES; p++) {
+    const sc = c.pages[p]?.slotColor;
+    for (let s = 0; s < SLOTS_PER_PAGE; s++) { dv.setUint16(o, (sc?.[s] ?? 0) & 0xffff, true); o += 2; }
+  }
+  // ---- v16 trailing block: warnSet(1) + warn[Ch.COUNT] u16 (native × 10^decimals) ----
+  // Appended after the whole v11+v12 body so an older firmware still accepts the prefix.
+  b[o++] = (c.warnSet ? 1 : 0) & 0xff;
+  for (let ch = 0; ch < Ch.COUNT; ch++) {
+    const nat = c.warn?.[ch] ?? 0;                                   // native units, 0 = off
+    const scaled = nat > 0 ? Math.round(nat * Math.pow(10, WARN_DP[ch] ?? 0)) : 0;
+    dv.setUint16(o, Math.max(0, Math.min(65535, scaled)), true); o += 2;
+  }
   return b;
 }
 
@@ -308,7 +434,7 @@ export function decodeCfg(v: DataView): GaugeCfg {
   const version = v.getUint8(0);
   const pages: PageCfg[] = [];
   let o = 1;
-  const PAGE_BYTES = 1 + SLOTS_PER_PAGE + 2 + 4 + 2 + 2;   // 16 (v11)
+  const PAGE_BYTES = 1 + SLOTS_PER_PAGE + 2 + 4 + 2 + 2 + 2 * SLOTS_PER_PAGE;   // 26 (v15: + slotLimit[SLOTS] u16)
   for (let p = 0; p < GAUGE_PAGES; p++) {
     // Length-guard so an older/shorter blob (pre-v9, 4 pages) still decodes.
     if (o + PAGE_BYTES > v.byteLength) {
@@ -322,8 +448,13 @@ export function decodeCfg(v: DataView): GaugeCfg {
     const peak      = v.getFloat32(o, true); o += 4;
     const color2    = (o + 1 < v.byteLength) ? v.getUint16(o, true) : 0; o += 2;   // v11
     const textColor = (o + 1 < v.byteLength) ? v.getUint16(o, true) : 0; o += 2;   // v11
+    const slotLimit: number[] = [];   // v15 per-slot arc full-scale (u16)
+    for (let s = 0; s < SLOTS_PER_PAGE; s++) {
+      const lv = (o + 1 < v.byteLength) ? v.getUint16(o, true) : 0; o += 2;
+      slotLimit.push(lv > 0 ? lv : 0);
+    }
     pages.push({
-      layout: layout > Layout.TICKS ? Layout.HERO : layout,
+      layout: layout > Layout.GMETER ? Layout.HERO : layout,   // keep premium TUNER/REGENT/CHRONO/CONCENTRIC/GMETER (was stale at TICKS → paid faces read back as Hero; GMETER=8 kept, not flattened)
       ch,
       arcColor: arcColor || ARC_DEFAULT,
       // round off float32 storage noise (1.6f -> 1.6000000238) so the peak
@@ -331,6 +462,7 @@ export function decodeCfg(v: DataView): GaugeCfg {
       peak: (Number.isFinite(peak) && peak > 0) ? Math.round(peak * 100) / 100 : 0,
       color2,
       textColor,
+      slotLimit,
     });
   }
   const brightness = (o < v.byteLength) ? v.getUint8(o) : BRIGHT_DEFAULT; o += 1;
@@ -356,9 +488,25 @@ export function decodeCfg(v: DataView): GaugeCfg {
   for (let i = 0; i < UC_COUNT; i++) units.push((o < v.byteLength) ? v.getUint8(o++) : 0);
   const massKg = (o + 1 < v.byteLength) ? v.getUint16(o, true) : 1600; o += 2;   // v8
   const pageCount = (o < v.byteLength) ? v.getUint8(o) : GAUGE_PAGES_DEFAULT; o += 1;   // v9
+  // v12 trailing slotColor block — length-guarded so a v11 (219 B) blob leaves
+  // every slotColor undefined (each value falls back to its arcColor).
+  for (let p = 0; p < GAUGE_PAGES; p++) {
+    const sc: number[] = [];
+    for (let s = 0; s < SLOTS_PER_PAGE; s++) { sc.push((o + 1 < v.byteLength) ? v.getUint16(o, true) : 0); o += 2; }
+    if (pages[p]) pages[p].slotColor = sc;
+  }
+  // v16 trailing warn block — length-guarded so a pre-v16 blob leaves warnSet=0
+  // (legacy) and warn all 0. warn decoded back to native units (÷ 10^decimals).
+  const warnSet = (o < v.byteLength) ? v.getUint8(o) : 0; o += 1;
+  const warn: number[] = [];
+  for (let ch = 0; ch < Ch.COUNT; ch++) {
+    const raw = (o + 1 < v.byteLength) ? v.getUint16(o, true) : 0; o += 2;
+    warn.push(raw > 0 ? raw / Math.pow(10, WARN_DP[ch] ?? 0) : 0);
+  }
   return { version, pages, brightness, rpmLimit, gearCount, shiftRpm,
            gearRatios, finalDrive, tireWidth, tireAspect, tireRim, units, massKg,
-           pageCount: (pageCount >= 1 && pageCount <= GAUGE_PAGES) ? pageCount : GAUGE_PAGES_DEFAULT };
+           pageCount: (pageCount >= 1 && pageCount <= GAUGE_PAGES) ? pageCount : GAUGE_PAGES_DEFAULT,
+           warnSet, warn };
 }
 
 // Client-side mirror of firmware cfgValid() — block a bad SAVE before it goes.
@@ -367,11 +515,12 @@ export function cfgValid(c: GaugeCfg): boolean {
   if (c.pages.length !== GAUGE_PAGES) return false;
   if (!(c.pageCount >= 1 && c.pageCount <= GAUGE_PAGES)) return false;
   for (const pg of c.pages) {
-    if (pg.layout > Layout.TICKS) return false;
+    if (pg.layout > Layout.GMETER) return false;   // HERO..GMETER (was stale at CHRONO/CONCENTRIC — rejected the 5-arc + G-meter faces, blocking Save)
     if (pg.ch.length !== SLOTS_PER_PAGE) return false;
     for (const ch of pg.ch) if (ch < 0 || ch >= Ch.COUNT) return false;
     if (!Number.isFinite(pg.peak) || pg.peak < 0) return false;
     if (!(pg.arcColor >= 0 && pg.arcColor <= 0xffff)) return false;
+    if (pg.slotColor && pg.slotColor.some(x => !(x >= 0 && x <= 0xffff))) return false;
   }
   if (!(c.brightness >= 0 && c.brightness <= 255)) return false;
   if (!(c.rpmLimit >= 1000 && c.rpmLimit <= 12000)) return false;
@@ -581,6 +730,28 @@ export class MonitorBleClient {
     };
   }
 
+  /** Read the car identity the node decoded from the VIN (char 7e1c0210):
+   *  [year u16 LE, make[12] NUL-padded ASCII]. The VIN itself is never transmitted —
+   *  only make + model-year. make === '' / year === 0 means the node hasn't decoded it
+   *  yet (no VIN read, or an older node/monitor firmware with no car-ID char → short
+   *  read). Lets the app auto-pick the car's gear profile with no manual setup. */
+  async carId(): Promise<CarId> {
+    try {
+      const v = await CapBle.read(this.deviceId, MON_SVC, CAR_CHAR);
+      if (v.byteLength < 3) return { make: '', year: 0 };
+      const year = v.getUint16(0, true);
+      let make = '';
+      for (let i = 2; i < v.byteLength && i < 14; i++) {
+        const c = v.getUint8(i);
+        if (c === 0) break;
+        make += String.fromCharCode(c);
+      }
+      return { make: make.trim(), year: year || 0 };
+    } catch {
+      return { make: '', year: 0 };   // char absent on older firmware → treat as "unknown"
+    }
+  }
+
   /** Read the car's live stored trouble codes (char 7e1c020a). The monitor packs
    *  [count, mil, code0_hi, code0_lo, …] from the node's latest 0xAF list; we
    *  decode each raw 2-byte code to its printed form ("P0301"). Empty (count 0)
@@ -638,6 +809,38 @@ export class MonitorBleClient {
     return { speed, dist };
   }
 
+  // ---- Driver shortcuts (char 7e1c0213) ----
+  /** Fire a shortcut on the gauge: 0=lap (start/split), 1=lap reset, 2=toggle
+   *  record, 3=peaks. Mirrors setCanCapture's 1-byte-opcode pattern. */
+  async sendShortcut(action: number): Promise<void> {
+    await CapBle.write(this.deviceId, MON_SVC, SHORT_CHAR, new DataView(new Uint8Array([action & 0xff]).buffer));
+  }
+
+  // (Splash-sound theme removed 2026-09-02 — boot sound finalized to anime, fw v0.63.0.)
+
+  /** Read the live shortcut status (recording + lap board + session peaks). */
+  async readShortcutStatus(): Promise<ShortcutStatus> {
+    const v = await CapBle.read(this.deviceId, MON_SVC, SHORT_CHAR);
+    const NONE = 0xffffffff;
+    const flags = v.byteLength > 1 ? v.getUint8(1) : 0;
+    const best  = v.byteLength >= 16 ? v.getUint32(12, true) : NONE;
+    return {
+      recording:  (flags & 0x01) !== 0,
+      lapRunning: (flags & 0x02) !== 0,
+      peaksShown: (flags & 0x04) !== 0,
+      lapsDone:    v.byteLength > 2  ? v.getUint8(2)          : 0,
+      lapCurMs:    v.byteLength >= 8  ? v.getUint32(4, true)  : 0,
+      lapLastMs:   v.byteLength >= 12 ? v.getUint32(8, true)  : 0,
+      lapBestMs:   best === NONE ? null : best,
+      topSpeedKmh: v.byteLength >= 18 ? v.getUint16(16, true) : 0,
+      maxRpm:      v.byteLength >= 20 ? v.getUint16(18, true) : 0,
+      maxBoostBar: v.byteLength >= 22 ? v.getInt16(20, true) / 100 : 0,
+      maxCoolantC: v.byteLength >= 24 ? v.getInt16(22, true)  : 0,
+      peakHp:      v.byteLength >= 26 ? v.getUint16(24, true) : 0,
+      peakNm:      v.byteLength >= 28 ? v.getUint16(26, true) : 0,
+    };
+  }
+
   /** Flash a firmware image over BLE (char 7e1c0205). `target` selects where it
    *  goes — OTA_TARGET_NODE (0): the monitor relays it to the CAN node over
    *  ESP-NOW then reboots the node; OTA_TARGET_MONITOR (1): the monitor self-
@@ -645,14 +848,29 @@ export class MonitorBleClient {
    *  .bin (NOT merged.bin) either way. Stop-and-wait: each chunk waits for the
    *  monitor's notify (0=ready 1=done 2=error) before the next. onProgress
    *  (pct 0..100) drives a progress bar. */
-  async flash(target: number, bin: Uint8Array, onProgress?: (pct: number) => void): Promise<void> {
+  async flash(target: number, bin: Uint8Array, onProgress?: (pct: number) => void,
+              onAuthzWait?: () => void): Promise<void> {
     let resolve: ((s: number) => void) | null = null;
     let reject:  ((e: Error) => void) | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const nextNotify = () => new Promise<number>((res, rej) => {
+    const nextNotify = (timeoutMs = 20000) => new Promise<number>((res, rej) => {
       resolve = res; reject = rej;
-      timer = setTimeout(() => { resolve = reject = null; rej(new Error('monitor timeout')); }, 8000);
+      // 20 s (was 8): while the app is backgrounded iOS FREEZES JS timers, so a
+      // brief swipe-away doesn't burn the clock; the longer budget also gives the
+      // link grace to recover on return before we give up on a batch.
+      timer = setTimeout(() => { resolve = reject = null; rej(new Error('monitor timeout')); }, timeoutMs);
     });
+    // Phase-2 (fw v0.69.0+): after BEGIN the gauge may reply status 4 = "awaiting
+    // on-gauge authorization" — it popped a confirm card and is waiting for the
+    // owner to TAP it (a firmware update is gated behind a physical tap). Surface
+    // that (onAuthzWait) and wait out the human tap for the real ready(0)/declined(2).
+    const awaitBeginAccept = async (): Promise<void> => {
+      let s = await nextNotify();
+      if (s === 4) { onAuthzWait?.(); s = await nextNotify(30000); }
+      if (s === 0) return;                                       // authorized (or ungated) → go
+      if (s === 2) throw new Error('update was declined on the gauge');
+      throw new Error('device rejected the update');
+    };
     await CapBle.startNotifications(this.deviceId, MON_SVC, OTA_CHAR, (v: DataView) => {
       const status = v.byteLength > 0 ? v.getUint8(0) : 2;
       const pct    = v.byteLength > 1 ? v.getUint8(1) : 0;
@@ -672,13 +890,20 @@ export class MonitorBleClient {
     const WIN = 16;       // chunks per batch (matches monitor OTA_WIN_MAX)
     const WCHUNK = 180;   // WNR-safe: 1 (op) + 180 = 181 <= 185 (min iOS MTU) - 3
     let done = false;     // true once the device confirmed + is rebooting (→ no ABORT)
+    // KEEP THE SCREEN AWAKE for the whole flash. iOS suspends the app (and stalls
+    // this BLE write loop → 8 s timeout → OTA fails) ~30 s after the screen
+    // auto-locks. keepAwake() blocks the auto-lock so the owner can start the
+    // update, set the phone down, and it runs to completion untouched. (A MANUAL
+    // lock still suspends the JS loop — a hard iOS limit for webview-driven BLE —
+    // but auto-lock, the common killer, is now prevented.)
+    try { await KeepAwake.keepAwake(); } catch {}
     try {
       if (windowed) {
         // BEGIN [0x00, target u8, size u32 LE, window u8]
         const beg = new Uint8Array(7); beg[0] = 0x00; beg[1] = target & 0xff;
         new DataView(beg.buffer).setUint32(2, bin.length, true); beg[6] = WIN;
         await write(beg);
-        if ((await nextNotify()) !== 0) throw new Error('device rejected the update');
+        await awaitBeginAccept();                              // handles the Phase-2 authz wait
         let off = 0, naks = 0;
         while (off < bin.length) {
           const batchEnd = Math.min(off + WIN * WCHUNK, bin.length);
@@ -689,10 +914,15 @@ export class MonitorBleClient {
             await writeNR(p); n++;
           }
           await write(new Uint8Array([0x02, n & 0xff]));         // SYNC [count] — with-response barrier
-          const s = await nextNotify();
+          let s;
+          try { s = await nextNotify(); }
+          catch (e) {                                            // timeout (e.g. a background stall) → retry this batch
+            if (++naks > 12) throw e;
+            continue;                                            // resend the SAME batch (off not advanced)
+          }
           if (s === 1) { done = true; return; }                  // done — device rebooting
           if (s === 2) throw new Error('device reported a write error');
-          if (s === 3) { if (++naks > 8) throw new Error('too many dropped batches'); continue; } // NAK: resend batch
+          if (s === 3) { if (++naks > 12) throw new Error('too many dropped batches'); continue; } // NAK: resend batch
           naks = 0; off = batchEnd;                              // s === 0: batch committed → advance
         }
         if ((await nextNotify()) !== 1) throw new Error('device did not confirm');
@@ -703,7 +933,7 @@ export class MonitorBleClient {
         const beg = new Uint8Array(6); beg[0] = 0x00; beg[1] = target & 0xff;
         new DataView(beg.buffer).setUint32(2, bin.length, true);
         await write(beg);
-        if ((await nextNotify()) !== 0) throw new Error('device rejected the update');
+        await awaitBeginAccept();                              // handles the Phase-2 authz wait
         // DATA [0x01, payload…] — chunk by chunk; the monitor auto-ENDs on the last
         let off = 0;
         while (off < bin.length) {
@@ -727,16 +957,19 @@ export class MonitorBleClient {
       // while an OTA is active). Skip on success (device is already rebooting).
       if (!done) { try { await write(new Uint8Array([0x03])); } catch {} }
       try { await CapBle.stopNotifications(this.deviceId, MON_SVC, OTA_CHAR); } catch {}
+      try { await KeepAwake.allowSleep(); } catch {}   // re-allow auto-lock now the flash is over
     }
   }
 
-  /** Flash the CAN node (sensor) — app fetches the .bin, monitor relays it. */
-  flashNode(bin: Uint8Array, onProgress?: (pct: number) => void): Promise<void> {
-    return this.flash(OTA_TARGET_NODE, bin, onProgress);
+  /** Flash the CAN node (sensor) — app fetches the .bin, monitor relays it.
+   *  onAuthzWait fires if the gauge (fw v0.69.0+) asks for an on-gauge tap first. */
+  flashNode(bin: Uint8Array, onProgress?: (pct: number) => void, onAuthzWait?: () => void): Promise<void> {
+    return this.flash(OTA_TARGET_NODE, bin, onProgress, onAuthzWait);
   }
-  /** Flash the monitor (gauge) itself over BLE self-OTA. */
-  flashMonitor(bin: Uint8Array, onProgress?: (pct: number) => void): Promise<void> {
-    return this.flash(OTA_TARGET_MONITOR, bin, onProgress);
+  /** Flash the monitor (gauge) itself over BLE self-OTA.
+   *  onAuthzWait fires if the gauge (fw v0.69.0+) asks for an on-gauge tap first. */
+  flashMonitor(bin: Uint8Array, onProgress?: (pct: number) => void, onAuthzWait?: () => void): Promise<void> {
+    return this.flash(OTA_TARGET_MONITOR, bin, onProgress, onAuthzWait);
   }
 
   // ---- Drive-log pull (char 7e1c0207) ----
@@ -892,5 +1125,101 @@ export class MonitorBleClient {
   /** Start/stop capture remotely (monitor relays 0xC3 to the node). */
   async setCanCapture(on: boolean): Promise<void> {
     await this.canWrite(new Uint8Array([on ? 0x03 : 0x04]));
+  }
+
+  // ---- Anti-sleep / drowsiness (char 7e1c020f) ----
+  /** Read the gauge's anti-sleep config + live drowsiness telemetry. */
+  async readAntiSleep(): Promise<AntiSleepCfg> {
+    const v = await CapBle.read(this.deviceId, MON_SVC, AS_CHAR);
+    if (v.byteLength < 5) return { enabled: true, intervalMin: 120, restMin: 5, snoozeMin: 15, moveKph: 60, gyroOn: true, sens: 5, drowsyScore: 0, baselinePct: 0 };
+    return {
+      enabled: v.getUint8(0) === 1,
+      intervalMin: v.getUint16(1, true),
+      restMin: v.getUint8(3),
+      snoozeMin: v.getUint8(4),
+      moveKph: v.byteLength >= 6 ? v.getUint8(5) : 60,
+      gyroOn:  v.byteLength >= 7 ? v.getUint8(6) === 1 : true,
+      sens:    v.byteLength >= 8 ? v.getUint8(7) : 5,
+      drowsyScore: v.byteLength >= 9  ? v.getUint8(8) : 0,
+      baselinePct: v.byteLength >= 10 ? v.getUint8(9) : 0,
+    };
+  }
+  /** Write the anti-sleep config (persists in NVS on the gauge). */
+  async setAntiSleep(c: AntiSleepCfg): Promise<void> {
+    const b = new Uint8Array(8); const dv = new DataView(b.buffer);
+    b[0] = c.enabled ? 1 : 0;
+    dv.setUint16(1, c.intervalMin & 0xffff, true);
+    b[3] = c.restMin & 0xff;
+    b[4] = c.snoozeMin & 0xff;
+    b[5] = c.moveKph & 0xff;
+    b[6] = c.gyroOn ? 1 : 0;
+    b[7] = Math.max(1, Math.min(10, c.sens | 0)) & 0xff;
+    await CapBle.write(this.deviceId, MON_SVC, AS_CHAR, new DataView(b.buffer));
+  }
+
+  // ---- Exhaust valve control (char 7e1c020e) — ported from founder-gauge ----
+  async readExhaust(): Promise<ExhaustStatus> {
+    const v = await CapBle.read(this.deviceId, MON_SVC, EXH_CHAR);
+    if (v.byteLength < 3) return { mode: 0, valve: 2, hasCodes: false, openRpm: 3500, closeRpm: 2500, openThr: 60 };
+    return {
+      mode: v.getUint8(0), valve: v.getUint8(1), hasCodes: v.getUint8(2) === 1,
+      openRpm:  v.byteLength >= 5 ? v.getUint16(3, true) : 3500,
+      closeRpm: v.byteLength >= 7 ? v.getUint16(5, true) : 2500,
+      openThr:  v.byteLength >= 8 ? v.getUint8(7) : 60,
+    };
+  }
+  /** Set mode: 0=QUIET (forced closed), 1=AUTO (rpm/throttle rule), 2=LOUD (forced open). */
+  async setExhaustMode(mode: number): Promise<void> {
+    await CapBle.write(this.deviceId, MON_SVC, EXH_CHAR, new DataView(new Uint8Array([0x01, mode & 0xff]).buffer));
+  }
+  /** Push the cloned fob codes (from the RF sniffer) so the monitor can replay them. */
+  async setExhaustCodes(c: ExhaustCodes): Promise<void> {
+    const b = new Uint8Array(16); const dv = new DataView(b.buffer);
+    b[0] = 0x02;
+    dv.setUint32(1, c.open >>> 0, true);
+    dv.setUint32(5, c.close >>> 0, true);
+    b[9] = c.bits & 0xff; b[10] = c.proto & 0xff;
+    dv.setUint16(11, c.pulse & 0xffff, true);
+    b[13] = c.repeat & 0xff; b[14] = c.single ? 1 : 0;
+    await CapBle.write(this.deviceId, MON_SVC, EXH_CHAR, new DataView(b.buffer));
+  }
+  /** Set the AUTO rule thresholds. */
+  async setExhaustAuto(a: ExhaustAuto): Promise<void> {
+    const b = new Uint8Array(8); const dv = new DataView(b.buffer);
+    b[0] = 0x03;
+    dv.setUint16(1, a.openRpm & 0xffff, true);
+    dv.setUint16(3, a.closeRpm & 0xffff, true);
+    b[5] = a.openThr & 0xff;
+    dv.setUint16(6, (a.dwellMs ?? 1500) & 0xffff, true);
+    await CapBle.write(this.deviceId, MON_SVC, EXH_CHAR, new DataView(b.buffer));
+  }
+  /** Manual one-shot test pulse (fires the code, doesn't change mode). */
+  async exhaustPulse(open: boolean): Promise<void> {
+    await CapBle.write(this.deviceId, MON_SVC, EXH_CHAR, new DataView(new Uint8Array([0x04, open ? 1 : 0]).buffer));
+  }
+
+  // ---- Vehicle health / I-M readiness (char 7e1c0211) — ported from founder-gauge ----
+  async readHealth(): Promise<VehicleHealth> {
+    const v = await CapBle.read(this.deviceId, MON_SVC, HEALTH_CHAR);
+    if (v.byteLength < 5) return { received: false, milOn: false, dtc: 0, monSupported: 0, monReady: 0, pending: 0, permanent: 0 };
+    return {
+      received: v.getUint8(0) === 1,
+      milOn: v.getUint8(1) === 1,
+      dtc: v.getUint8(2),
+      monSupported: v.getUint8(3),
+      monReady: v.getUint8(4),
+      pending: v.byteLength >= 7 ? v.getUint8(5) : 0,
+      permanent: v.byteLength >= 7 ? v.getUint8(6) : 0,
+    };
+  }
+
+  // ---- Standalone-ECU profile relay (char 7e1c0212) — ported from founder-gauge ----
+  /** Push a standalone-ECU CAN profile to the node as 0xC4 chunks; the monitor
+   *  relays each write verbatim over ESP-NOW and the node reassembles + persists. */
+  async setEcuProfile(chunks: Uint8Array[]): Promise<void> {
+    for (const c of chunks) {
+      await CapBle.write(this.deviceId, MON_SVC, ECU_CHAR, new DataView(c.buffer, c.byteOffset, c.byteLength));
+      await new Promise((r) => setTimeout(r, 60));   // let the node drain this chunk
+    }
   }
 }

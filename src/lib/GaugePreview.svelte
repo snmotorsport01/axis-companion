@@ -2,7 +2,7 @@
   // Faithful in-app render of a gauge page (canvas) — looks like the real AMOLED
   // gauge. Style + colours are shown here so the owner previews without touching
   // the glass; Save is what writes to the gauge.
-  import { renderGaugePreview, ensureGaugeFont, type ChanLookup } from './gaugeRender';
+  import { renderGaugePreview, ensureGaugeFont, ensureMonogram, type ChanLookup } from './gaugeRender';
   let { layout, arc, col2, text, chan, ch, size = 116 }:
     { layout: number; arc: string; col2: string; text: string;
       chan: ChanLookup; ch: number[]; size?: number } = $props();
@@ -12,11 +12,15 @@
   // Canvas bakes in whatever font exists at draw time and never revisits it, so
   // the first paint can land before Psionic arrives. Flip this when the font
   // resolves and the effect re-runs — one redraw, and the CI font is real.
-  let fontLoaded = $state(false);
-  ensureGaugeFont().then(() => (fontLoaded = true));
+  // Canvas bakes in whatever font/image exists at draw time, so a redraw must be
+  // forced when each async asset lands. A counter (not a bool) guarantees a second
+  // asset resolving still bumps the reactive value even if the first already fired.
+  let redraw = $state(0);
+  ensureGaugeFont().then(() => (redraw += 1));          // CI font arrived
+  ensureMonogram().then(() => (redraw += 1));           // SN monogram (CONCENTRIC centre) arrived
 
   $effect(() => {
-    fontLoaded;                                         // redraw once the CI font lands
+    redraw;                                              // redraw once the CI font / monogram lands
     if (!canvas) return;
     const dpr = Math.min(3, window.devicePixelRatio || 1);
     const px = size * dpr;

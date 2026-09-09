@@ -16,9 +16,10 @@
   //                       App Store screenshots / UI development
   // =====================================================================
   import { onMount } from 'svelte';
-  import { MockClient, SCENES, type DemoScene } from '../lib/mockClient';
+  import { SCENES, type DemoScene } from '../lib/mockClient';
   import { BleClient, type BleScanHit } from '../lib/bleClient';
   import { store } from '../lib/store.svelte';
+  import { t } from '../lib/i18n';
 
   // ---- BLE pair flow ---------------------------------------------------
   // Inline scan/connect right on the Connect screen so first-time users
@@ -52,7 +53,7 @@
         else           hits = hits.map((h, i) => i === ix ? hit : h);
       }, 6000);
     } catch (e: any) {
-      bleErr = e?.message ?? 'BLE scan failed';
+      bleErr = e?.message ?? t('connect.err_scan_failed');
     } finally {
       scanning = false;
       scanned  = true;
@@ -76,7 +77,7 @@
       store.connected = true;
       store.goLive();
     } catch (e: any) {
-      bleErr = e?.message ?? 'Connect failed';
+      bleErr = e?.message ?? t('connect.err_connect_failed');
     } finally {
       connecting = null;
     }
@@ -87,18 +88,17 @@
   // Useful in the iOS simulator (no BLE radio), for App Store
   // screenshots, and for UI development without firmware running.
   async function demo(scene: DemoScene = 'default') {
-    const client = new MockClient(scene);
-    store.client = client;
-    store.info = await client.info();
-    store.connected = true;
-    store.goLive();
+    // Full demo: a synthetic knob (MockClient) AND monitor (MockMonitor) so every
+    // screen works with no hardware; lands in the primary AXIS shell.
+    store.enterDemo(scene);
+    try { store.info = await store.client!.info(); } catch {}
   }
 </script>
 
 <header class="card hero">
   <h1>AXIS</h1>
   <p class="sub">
-    <span class="dot offline"></span>NOT CONNECTED
+    <span class="dot offline"></span>{t('connect.not_connected')}
   </p>
 </header>
 
@@ -117,10 +117,10 @@
      ============================================================ -->
 {#if bleAvailable}
   <div class="card">
-    <h3>Connect to AXIS</h3>
+    <h3>{t('connect.connect_to_axis')}</h3>
     <button class="primary connect" on:click={scanBle}
             disabled={scanning || !!connecting}>
-      {scanning ? 'SCANNING…' : 'Connect to AXIS'}
+      {scanning ? t('connect.scanning') : t('connect.connect_to_axis')}
     </button>
 
     {#if bleErr}<p class="err">{bleErr}</p>{/if}
@@ -133,29 +133,28 @@
                     disabled={connecting === h.id}>
               <span class="hit-name">{h.name}</span>
               <span class="hit-rssi mono">
-                {connecting === h.id ? 'connecting…' : (h.rssi != null ? (h.rssi > -60 ? 'Strong' : h.rssi > -75 ? 'Good' : 'Weak') : '')}
+                {connecting === h.id ? t('connect.connecting') : (h.rssi != null ? (h.rssi > -60 ? t('connect.signal_strong') : h.rssi > -75 ? t('connect.signal_good') : t('connect.signal_weak')) : '')}
               </span>
             </button>
           </li>
         {/each}
       </ul>
     {:else if scanning}
-      <p class="muted small mono">Looking for AXIS…</p>
+      <p class="muted small mono">{t('connect.looking')}</p>
     {:else if scanned}
-      <p class="muted small">No AXIS found nearby. Make sure it's powered on and close by, then tap Connect again — or try the live preview below.</p>
+      <p class="muted small">{t('connect.none_found')}</p>
     {/if}
   </div>
   <!-- AXIS Gauge — a SEPARATE peripheral from the knob. Reachable directly
        from here so configuring the gauge needs neither a paired knob nor
        DEMO MODE (it has its own BLE link + Gauge Setup page). -->
   <div class="card">
-    <h3>AXIS Gauge</h3>
+    <h3>{t('connect.gauge_title')}</h3>
     <p class="muted small">
-      Set the gauge's redline, shift light, warnings and colours. Connects
-      on its own — no knob required.
+      {t('connect.gauge_desc')}
     </p>
     <button class="primary connect" on:click={() => (store.page = 'gaugesetup')}>
-      Set up AXIS Gauge
+      {t('connect.gauge_setup')}
     </button>
   </div>
 {:else}
@@ -163,10 +162,9 @@
        simulator / browser preview). DEMO MODE below is the only
        way to enter the app from here. -->
   <div class="card">
-    <h3>Bluetooth unavailable</h3>
+    <h3>{t('connect.bt_unavailable_title')}</h3>
     <p class="muted small">
-      Bluetooth isn't available here. Turn it on to connect your AXIS — or
-      explore the app with the live preview below.
+      {t('connect.bt_unavailable_desc')}
     </p>
   </div>
 {/if}
@@ -176,13 +174,13 @@
      situation so demos/screenshots can showcase the right behaviour
      without needing the hardware in the right state. -->
 <div class="card demo-card">
-  <h3>Take a look around</h3>
-  <p class="muted small">No AXIS yet? Explore the full app with a live preview — pick a scene to start.</p>
+  <h3>{t('connect.demo_title')}</h3>
+  <p class="muted small">{t('connect.demo_desc')}</p>
   <div class="scene-grid">
     {#each SCENES as scene}
       <button class="scene" on:click={() => demo(scene.id)} disabled={!!connecting}>
-        <strong>{scene.label}</strong>
-        <small>{scene.hint}</small>
+        <strong>{t('connect.scene_' + scene.id + '_label')}</strong>
+        <small>{t('connect.scene_' + scene.id + '_hint')}</small>
       </button>
     {/each}
   </div>

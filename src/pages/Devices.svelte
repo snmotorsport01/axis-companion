@@ -21,6 +21,7 @@
   import { store } from '../lib/store.svelte';
   import { BleClient, type BleScanHit } from '../lib/bleClient';
   import PageHeader from '../lib/PageHeader.svelte';
+  import { t } from '../lib/i18n';
 
   let scanning = $state(false);
   let scanErr  = $state<string | null>(null);
@@ -55,7 +56,7 @@
         hits = [...hits, hit];
       }, 6000);
     } catch (e: any) {
-      scanErr = e?.message ?? 'BLE scan failed';
+      scanErr = e?.message ?? t('devices.err_scan_failed');
     } finally {
       scanning = false;
     }
@@ -86,7 +87,7 @@
       store.setLastHost(`ble:${hit.id}`);
       store.goLive();
     } catch (e: any) {
-      scanErr = e?.message ?? 'Connect failed';
+      scanErr = e?.message ?? t('devices.err_connect_failed');
     } finally {
       connecting = null;
     }
@@ -110,27 +111,27 @@
   let gaugeLinked      = $derived(gaugeStatusKnown && store.info?.gauge_linked === true);
 </script>
 
-<PageHeader title="Devices" back="pro" backLabel="Pro" />
+<PageHeader title={t('devices.title')} back="pro" backLabel={t('devices.back_pro')} />
 
 <!-- Knob — the one you bought first. Live status if anything's paired,
      otherwise the SCAN/CONNECT entry point. -->
 <div class="card device">
   <header class="dev-head">
     <div>
-      <strong>AXIS Knob</strong>
-      <div class="muted small">Smart shifter · GC9A01 1.28"</div>
+      <strong>{t('devices.knob_name')}</strong>
+      <div class="muted small">{t('devices.knob_sub')}</div>
     </div>
     <span class="badge" class:online={knobConnected}>
-      {knobConnected ? 'CONNECTED' : 'OFFLINE'}
+      {knobConnected ? t('devices.connected') : t('devices.offline')}
     </span>
   </header>
 
   {#if knobConnected && store.info}
     <dl class="meta">
-      <dt>Name</dt>     <dd class="mono">{store.info.name}</dd>
-      <dt>Version</dt>  <dd class="mono">{store.info.version}</dd>
+      <dt>{t('devices.name')}</dt>     <dd class="mono">{store.info.name}</dd>
+      <dt>{t('devices.version')}</dt>  <dd class="mono">{store.info.version}</dd>
       {#if store.info.build}
-        <dt>Build</dt>  <dd class="mono">{store.info.build}</dd>
+        <dt>{t('devices.build')}</dt>  <dd class="mono">{store.info.build}</dd>
       {/if}
     </dl>
   {/if}
@@ -138,16 +139,14 @@
   {#if !knobConnected}
     {#if bleAvailable === false}
       <p class="muted small">
-        Bluetooth isn't available here. Turn it on to connect your AXIS, or
-        explore the app with the live preview from the Connect screen.
+        {t('devices.bt_unavailable')}
       </p>
     {:else}
       <p class="muted small">
-        Scan the airwaves for AXIS knobs nearby. They advertise on Bluetooth
-        the moment they're powered on — no SoftAP join required.
+        {t('devices.scan_hint')}
       </p>
       <button class="primary scan-btn" on:click={scan} disabled={scanning}>
-        {scanning ? 'SCANNING…' : 'SCAN BLUETOOTH'}
+        {scanning ? t('devices.scanning') : t('devices.scan_bt')}
       </button>
       {#if scanErr}<p class="err small">{scanErr}</p>{/if}
 
@@ -163,7 +162,7 @@
           </div>
           <div class="hit-right">
             {#if connecting === hit.id}
-              <span class="muted small">connecting…</span>
+              <span class="muted small">{t('devices.connecting')}</span>
             {:else if hit.rssi !== undefined}
               <span class="muted mono small">{hit.rssi} dBm</span>
             {/if}
@@ -181,11 +180,11 @@
 <div class="card device">
   <header class="dev-head">
     <div>
-      <strong>AXIS Gauge</strong>
-      <div class="muted small">1.75" round AMOLED · GPS + IMU</div>
+      <strong>{t('devices.gauge_name')}</strong>
+      <div class="muted small">{t('devices.gauge_sub')}</div>
     </div>
     <span class="badge" class:online={gaugeLinked}>
-      {gaugeLinked ? 'CONNECTED' : 'NOT CONNECTED'}
+      {gaugeLinked ? t('devices.connected') : t('devices.not_connected')}
     </span>
   </header>
 
@@ -195,44 +194,39 @@
       <dt>RPM</dt>  <dd class="mono">{store.info?.gauge_rpm ?? 0}</dd>
     </dl>
     <p class="muted small">
-      Linked over ESP-NOW. Check the MAC matches your gauge so you're not
-      reading another car's.
+      {t('devices.gauge_linked_note')}
     </p>
   {:else if gaugeStatusKnown}
     <p class="muted small">
-      No gauge telemetry. Power on the AXIS gauge — it links to the knob
-      automatically over ESP-NOW.
+      {t('devices.gauge_no_telem')}
     </p>
   {:else}
     <p class="muted small">
-      The AXIS Gauge is a dash-mounted display for speed, revs and more. Set
-      its redline, shift light, warnings and colours below — it connects on
-      its own over Bluetooth, no knob required.
+      {t('devices.gauge_roadmap')}
     </p>
   {/if}
 
   <!-- Direct-BLE config (redline / shift light / warns) — independent of
        the knob relay above, so it's available whenever the gauge is on. -->
   <button class="primary scan-btn" on:click={() => (store.page = 'gaugesetup')}>
-    CONFIGURE GAUGE →
+    {t('devices.configure_gauge')}
   </button>
 </div>
 
-<!-- OBD / CAN — roadmap hardware. Hidden in DEMO so a reviewer doesn't see
-     an actionless "COMING" placeholder card (Apple 5.6 placeholder content). -->
-{#if !store.isDemo}
+<!-- OBD / CAN — roadmap hardware. Never rendered in the shipped app: an
+     actionless "COMING" placeholder trips Apple 5.6 (placeholder content).
+     Flip to a real gate when the CAN module actually ships. -->
+{#if false}
 <div class="card device coming">
   <header class="dev-head">
     <div>
-      <strong>AXIS CAN Module</strong>
-      <div class="muted small">OBD-II + standalone ECU CAN-H/L</div>
+      <strong>{t('devices.can_name')}</strong>
+      <div class="muted small">{t('devices.can_sub')}</div>
     </div>
-    <span class="badge coming">COMING</span>
+    <span class="badge coming">{t('devices.coming')}</span>
   </header>
   <p class="muted small">
-    Reads engine telemetry, drives the shift light, lets the knob
-    virtual-switch your ECU's map / boost / launch. Local DTC dictionary
-    so check-engine lights speak plain language without the cloud.
+    {t('devices.can_desc')}
   </p>
 </div>
 {/if}

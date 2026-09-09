@@ -17,6 +17,7 @@
 //                       (the firmware branding char is phase-2)
 // =====================================================================
 import { BleClient as CapBle, type ScanResult } from '@capacitor-community/bluetooth-le';
+import { KeepAwake } from '@capacitor-community/keep-awake';
 import {
   DeviceClient,
   type DeviceInfo, type ConfigSnapshot, type TelemetryFrame,
@@ -166,6 +167,15 @@ export class BleClient extends DeviceClient {
   static async isAvailable(): Promise<boolean> {
     try { await ensureReady(); return true; }
     catch { return false; }
+  }
+
+  /** Native OS device chooser filtered to AXIS knobs — mirrors
+   *  MonitorBleClient.pick() so the shell's Connect sheet can pair the knob
+   *  with the same one-tap flow as the gauge (no manual scan list). */
+  static async pick(): Promise<string> {
+    await ensureReady();
+    const d = await CapBle.requestDevice({ namePrefix: 'AXIS', optionalServices: [AXIS_SVC] });
+    return d.deviceId;
   }
 
   /** Scan for nearby AXIS knobs for `durationMs` (default 6 s). Each
@@ -620,6 +630,13 @@ export class BleClient extends DeviceClient {
     // (Capacitor's WebView reads it into ArrayBuffer for any HTTP
     // upload path too).
     const bytes = new Uint8Array(await file.arrayBuffer());
-    return this.transferBytes_(XFER_TYPE_OTA, bytes, onProgress);
+    // Block auto-lock for the whole flash (see MonitorBleClient.flash) so a
+    // screen-off doesn't suspend the app and stall the BLE transfer.
+    try { await KeepAwake.keepAwake(); } catch {}
+    try {
+      return await this.transferBytes_(XFER_TYPE_OTA, bytes, onProgress);
+    } finally {
+      try { await KeepAwake.allowSleep(); } catch {}
+    }
   }
 }

@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import type { SysSnapshot } from '../lib/api';
   import { store } from '../lib/store.svelte';
+  import { t } from '../lib/i18n';
   import PageHeader from '../lib/PageHeader.svelte';
 
   // Live system snapshot — refreshed every 2s while this page is open.
@@ -10,10 +11,15 @@
   let busy = $state(false);
   let poll: number | undefined;
 
+  // No device paired (e.g. a hardware-less App Store reviewer who never tapped
+  // DEMO MODE): show a connect-prompt card instead of a spinner that never
+  // resolves (snap stays null forever). Mirrors Calibrate.svelte.
+  const noClient = $derived(!store.client);
+
   async function refresh() {
     if (!store.client) return;
     try { snap = await store.client.sys(); err = null; }
-    catch (e: any) { err = e?.message ?? 'load failed'; }
+    catch (e: any) { err = e?.message ?? t('sys.err_load'); }
   }
 
   onMount(() => {
@@ -26,7 +32,7 @@
 
   async function doReboot() {
     if (!store.client || store.isDemo) return;
-    if (!confirm('Restart the device? Active connections will drop.')) return;
+    if (!confirm(t('sys.confirm_reboot'))) return;
     busy = true;
     try {
       await store.client.reboot();
@@ -34,7 +40,7 @@
       // reflects a clean state.
       setTimeout(() => store.goLive(), 4000);
     } catch (e: any) {
-      err = e?.message ?? 'reboot failed';
+      err = e?.message ?? t('sys.err_reboot');
     } finally {
       busy = false;
     }
@@ -42,17 +48,13 @@
 
   async function doFactoryReset() {
     if (!store.client || store.isDemo) return;
-    if (!confirm(
-      'Reset everything to factory defaults?\n\n' +
-      'This clears: brand colours, device name, tunables, screensaver, Wi-Fi credentials, calibration.\n\n' +
-      'The device will reboot.'
-    )) return;
+    if (!confirm(t('sys.confirm_factory'))) return;
     busy = true;
     try {
       await store.client.factoryReset();
       setTimeout(() => store.goLive(), 5000);
     } catch (e: any) {
-      err = e?.message ?? 'factory reset failed';
+      err = e?.message ?? t('sys.err_factory');
     } finally {
       busy = false;
     }
@@ -84,23 +86,29 @@
   }
 </script>
 
-<PageHeader title="System info" back="pro" backLabel="Pro" />
+<PageHeader title={t('sys.title')} back="pro" backLabel={t('sys.back_pro')} />
 
 {#if err}<div class="card err">{err}</div>{/if}
 
-{#if !snap}
-  <div class="card muted">Loading…</div>
+{#if noClient}
+  <div class="card muted center">
+    <h3 class="connect-h">{t('sys.connect_title')}</h3>
+    <p class="small">{t('sys.connect_body')}</p>
+    <button class="ghost wide" on:click={() => (store.page = 'axis')}>{t('sys.back_to_connect')}</button>
+  </div>
+{:else if !snap}
+  <div class="card muted">{t('sys.loading')}</div>
 {:else}
   <!-- Identity -->
   <div class="card">
-    <h3>Identity</h3>
+    <h3>{t('sys.identity')}</h3>
     <dl>
-      <dt>Firmware</dt>      <dd class="mono accent">{snap.version}</dd>
-      <dt>Hardware ID</dt>   <dd class="mono small">{snap.mac}</dd>
+      <dt>{t('sys.firmware')}</dt>      <dd class="mono accent">{snap.version}</dd>
+      <dt>{t('sys.hardware_id')}</dt>   <dd class="mono small">{snap.mac}</dd>
       {#if !store.isDemo}
-        <dt>CPU</dt>         <dd class="mono">{snap.cpu_mhz} MHz</dd>
+        <dt>{t('sys.cpu')}</dt>         <dd class="mono">{snap.cpu_mhz} MHz</dd>
       {/if}
-      <dt>Uptime</dt>        <dd class="mono">{formatUptime(snap.uptime_ms)}</dd>
+      <dt>{t('sys.uptime')}</dt>        <dd class="mono">{formatUptime(snap.uptime_ms)}</dd>
     </dl>
   </div>
 
@@ -108,15 +116,15 @@
   <!-- Memory (engineer diagnostics — hidden in DEMO so a reviewer doesn't
        see raw heap/PSRAM/flash dumps) -->
   <div class="card">
-    <h3>Memory</h3>
+    <h3>{t('sys.memory')}</h3>
     <dl>
-      <dt>Heap (free)</dt>
+      <dt>{t('sys.heap_free')}</dt>
       <dd class="mono">{formatBytes(snap.free_heap)}<span class="muted small"> / {formatBytes(snap.heap_size)}</span></dd>
-      <dt>Heap (min seen)</dt>
+      <dt>{t('sys.heap_min')}</dt>
       <dd class="mono">{formatBytes(snap.min_heap)}</dd>
-      <dt>PSRAM (free)</dt>
+      <dt>{t('sys.psram_free')}</dt>
       <dd class="mono">{formatBytes(snap.psram_free)}<span class="muted small"> / {formatBytes(snap.psram_size)}</span></dd>
-      <dt>Flash</dt>
+      <dt>{t('sys.flash')}</dt>
       <dd class="mono">{formatBytes(snap.flash_size)}</dd>
     </dl>
     {#if snap.psram_size > 0}
@@ -124,34 +132,34 @@
         <div class="bar-fill"
              style="width: {pct(snap.psram_size - snap.psram_free, snap.psram_size)}"></div>
       </div>
-      <p class="muted small">PSRAM {pct(snap.psram_size - snap.psram_free, snap.psram_size)} used</p>
+      <p class="muted small">{t('sys.psram_used', { pct: pct(snap.psram_size - snap.psram_free, snap.psram_size) })}</p>
     {/if}
   </div>
   {/if}
 
   <!-- Wireless -->
   <div class="card">
-    <h3>Wireless</h3>
+    <h3>{t('sys.wireless')}</h3>
     <dl>
       {#if snap.ap_ssid}
-        <dt>Setup AP</dt>
-        <dd class="mono">{snap.ap_ssid} · {snap.ap_clients} client{snap.ap_clients === 1 ? '' : 's'}</dd>
-        <dt>AP address</dt>
+        <dt>{t('sys.setup_ap')}</dt>
+        <dd class="mono">{snap.ap_ssid} · {snap.ap_clients} {snap.ap_clients === 1 ? t('sys.client') : t('sys.clients')}</dd>
+        <dt>{t('sys.ap_address')}</dt>
         <dd class="mono">{snap.ap_ip}</dd>
       {/if}
-      <dt>Home Wi-Fi</dt>
+      <dt>{t('sys.home_wifi')}</dt>
       <dd>
         {#if snap.sta_connected}
           <span class="dot online"></span>
           <span class="mono">{snap.sta_ssid}</span>
         {:else}
           <span class="dot offline"></span>
-          <span class="muted">disconnected</span>
+          <span class="muted">{t('sys.disconnected')}</span>
         {/if}
       </dd>
       {#if snap.sta_connected}
-        <dt>Home IP</dt>      <dd class="mono">{snap.sta_ip}</dd>
-        <dt>Signal</dt>       <dd class="mono">{snap.sta_rssi} dBm</dd>
+        <dt>{t('sys.home_ip')}</dt>      <dd class="mono">{snap.sta_ip}</dd>
+        <dt>{t('sys.signal')}</dt>       <dd class="mono">{snap.sta_rssi} dBm</dd>
       {/if}
     </dl>
   </div>
@@ -159,18 +167,18 @@
   <!-- Battery -->
   {#if snap.battery && snap.battery.present}
     <div class="card">
-      <h3>Battery</h3>
+      <h3>{t('sys.battery')}</h3>
       <dl>
-        <dt>State</dt>
+        <dt>{t('sys.state')}</dt>
         <dd class="mono">
           {snap.battery.percent}%
           {#if snap.battery.charging}
-            <span class="badge ok">CHARGING</span>
+            <span class="badge ok">{t('sys.charging')}</span>
           {:else if snap.battery.low}
-            <span class="badge danger">LOW</span>
+            <span class="badge danger">{t('sys.low')}</span>
           {/if}
         </dd>
-        <dt>Voltage</dt>
+        <dt>{t('sys.voltage')}</dt>
         <dd class="mono">{snap.battery.volts.toFixed(2)} V</dd>
       </dl>
       <div class="bar-bg">
@@ -180,25 +188,25 @@
       </div>
     </div>
   {:else}
-    <div class="card muted small">No battery detected — running on USB.</div>
+    <div class="card muted small">{t('sys.no_battery')}</div>
   {/if}
 
   <!-- IMU (3-axis raw) — engineer diagnostics, hidden in DEMO -->
   {#if snap.imu && !store.isDemo}
     <div class="card">
-      <h3>IMU (raw)</h3>
+      <h3>{t('sys.imu_raw')}</h3>
       <dl>
-        <dt>Accel</dt>
+        <dt>{t('sys.accel')}</dt>
         <dd class="mono small">
-          x {snap.imu.ax.toFixed(2)}g · y {snap.imu.ay.toFixed(2)}g · z {snap.imu.az.toFixed(2)}g
+          {t('sys.imu_accel_val', { x: snap.imu.ax.toFixed(2), y: snap.imu.ay.toFixed(2), z: snap.imu.az.toFixed(2) })}
         </dd>
-        <dt>Gyro</dt>
+        <dt>{t('sys.gyro')}</dt>
         <dd class="mono small">
-          x {snap.imu.gx.toFixed(0)}° · y {snap.imu.gy.toFixed(0)}° · z {snap.imu.gz.toFixed(0)}° /s
+          {t('sys.imu_gyro_val', { x: snap.imu.gx.toFixed(0), y: snap.imu.gy.toFixed(0), z: snap.imu.gz.toFixed(0) })}
         </dd>
-        <dt>Tilt</dt>
+        <dt>{t('sys.tilt')}</dt>
         <dd class="mono small">
-          roll {snap.imu.roll.toFixed(1)}° · pitch {snap.imu.pitch.toFixed(1)}°
+          {t('sys.imu_tilt_val', { roll: snap.imu.roll.toFixed(1), pitch: snap.imu.pitch.toFixed(1) })}
         </dd>
       </dl>
     </div>
@@ -207,11 +215,11 @@
   <!-- Active mode -->
   {#if snap.mode_name}
     <div class="card">
-      <h3>Active mode</h3>
+      <h3>{t('sys.active_mode')}</h3>
       <dl>
-        <dt>Mode</dt>        <dd class="mono">{snap.mode_name}</dd>
+        <dt>{t('sys.mode')}</dt>        <dd class="mono">{snap.mode_name}</dd>
         {#if snap.gear_count}
-          <dt>Gears</dt>     <dd class="mono">{snap.gear_count}</dd>
+          <dt>{t('sys.gears')}</dt>     <dd class="mono">{snap.gear_count}</dd>
         {/if}
       </dl>
     </div>
@@ -219,13 +227,13 @@
 
   <!-- Actions -->
   <div class="card">
-    <h3>Actions</h3>
-    <p class="hint">Restart keeps your settings. Factory reset clears everything.</p>
+    <h3>{t('sys.actions')}</h3>
+    <p class="hint">{t('sys.actions_hint')}</p>
     <div class="actions">
-      <button on:click={doReboot} disabled={busy || store.isDemo}>RESTART</button>
-      <button class="danger" on:click={doFactoryReset} disabled={busy || store.isDemo}>FACTORY RESET</button>
+      <button on:click={doReboot} disabled={busy || store.isDemo}>{t('sys.restart')}</button>
+      <button class="danger" on:click={doFactoryReset} disabled={busy || store.isDemo}>{t('sys.factory_reset')}</button>
     </div>
-    {#if store.isDemo}<p class="hint">Available when an AXIS is connected.</p>{/if}
+    {#if store.isDemo}<p class="hint">{t('sys.demo_hint')}</p>{/if}
   </div>
 {/if}
 
@@ -234,6 +242,16 @@
   .muted { color: var(--muted); }
   .small { font-size: 12px; }
   .accent { color: var(--accent); }
+
+  .center { text-align: center; }
+  .connect-h { color: var(--fg); text-transform: none; letter-spacing: 0.3px; font-size: 16px; margin: 0 0 var(--s-2); }
+  .center .small { margin: 0 0 var(--s-3); font-size: 13px; line-height: 1.45; }
+  .ghost {
+    background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--fg); padding: var(--s-3); border-radius: var(--r-1);
+    font-size: 14px; cursor: pointer; min-height: var(--tap-min);
+  }
+  .ghost.wide { width: 100%; }
 
   h3 { margin: 0 0 var(--s-2); font-size: 14px; letter-spacing: 0.08em; color: var(--muted); text-transform: uppercase; }
 

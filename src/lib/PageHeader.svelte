@@ -25,7 +25,10 @@
 </script>
 
 <header class="page-header">
-  <img class="logo" src="/sn-logo.png" alt="SN Motorsports" />
+  <div class="brand">
+    <img class="mono" src="/sn-monogram.png" alt="SN" />
+    <span class="wm">AXIS</span>
+  </div>
   {#if children}
     <div class="right">{@render children()}</div>
   {/if}
@@ -61,16 +64,14 @@
          shrinking if absolutely needed.
        · status side gets margin-left:auto + flex-shrink:0 so it
          claims its own width first. */
-  .logo {
-    flex: 0 1 auto;
-    height: 24px;
-    width: auto;
-    max-width: 100%;
-    min-width: 0;
-    object-fit: contain;
-    object-position: left center;
-    display: block;
-    border: 0;
+  /* Compact AXIS lockup — mirrors the shell's top-bar brand (monogram + Psionic
+     wordmark) so a Pro/Update sub-page reads as the SAME app, not the old wide
+     "SN MOTORSPORTS" logotype (owner 2026-07-24). */
+  .brand { display: flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0; }
+  .brand .mono { height: 20px; width: auto; object-fit: contain; display: block; border: 0; }
+  .brand .wm {
+    font-family: 'Psionic', sans-serif; font-size: 13px; letter-spacing: .2em;
+    color: var(--fg); white-space: nowrap;
   }
   .right {
     display: flex;
@@ -79,11 +80,13 @@
     flex-shrink: 0;
     margin-left: auto;
   }
+  /* Match the AXIS shell header language (psionic + gold) so a page opened from the
+     Pro/Update door doesn't read as a different, older app (owner 2026-07-24). */
   .page-subhead { display: flex; align-items: baseline; gap: var(--s-3); margin-bottom: var(--s-3); }
   .ph-back {
-    background: none; border: 0; color: var(--accent);
-    font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px;
-    padding: 0; cursor: pointer; flex-shrink: 0;
+    background: none; border: 0; color: #cea24a;
+    font-family: 'Psionic', var(--font-mono); font-size: 11px; letter-spacing: .18em;
+    text-transform: uppercase; padding: 0; cursor: pointer; flex-shrink: 0;
   }
-  .ph-title { margin: 0; font-size: 20px; letter-spacing: 0.3px; }
+  .ph-title { margin: 0; font-family: 'Psionic', sans-serif; font-size: 18px; letter-spacing: .04em; }
 </style>

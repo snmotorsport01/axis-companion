@@ -629,7 +629,7 @@ async function extractVideoFramesByPlayback(
 
     const cv = document.createElement('canvas');
     cv.width = AXSV_W; cv.height = AXSV_H;
-    const ctx = cv.getContext('2d', { colorSpace: 'srgb' } as any)!;
+    const ctx = cv.getContext('2d', { colorSpace: 'srgb' } as any) as CanvasRenderingContext2D;
 
     const rgbaFrames: Uint8ClampedArray[] = [];
     let nextTargetIdx = 0;
@@ -1115,13 +1115,13 @@ async function encodeGifFallback(
   const compCtx = comp.getContext('2d', {
     willReadFrequently: true,
     colorSpace: 'srgb'
-  } as any)!;
+  } as any) as CanvasRenderingContext2D;
 
   // Output canvas — AXSV target size, fed through drawCoverFit each frame.
   const out = document.createElement('canvas');
   out.width  = AXSV_W;
   out.height = AXSV_H;
-  const outCtx = out.getContext('2d', { colorSpace: 'srgb' } as any)!;
+  const outCtx = out.getContext('2d', { colorSpace: 'srgb' } as any) as CanvasRenderingContext2D;
 
   const targetCount = Math.min(24, sourceCount);
   const rgbaFrames: Uint8ClampedArray[] = [];
@@ -1228,7 +1228,7 @@ export async function encodeGif(
 
   const cv = document.createElement('canvas');
   cv.width = AXSV_W; cv.height = AXSV_H;
-  const ctx = cv.getContext('2d', { colorSpace: 'srgb' } as any)!;
+  const ctx = cv.getContext('2d', { colorSpace: 'srgb' } as any) as CanvasRenderingContext2D;
 
   const rgbaFrames: Uint8ClampedArray[] = [];
   let totalDurationUs = 0;
@@ -1243,7 +1243,7 @@ export async function encodeGif(
       decoder.decode({ frameIndex: srcIdx }),
       8000,
       `GIF frame ${srcIdx + 1}`
-    );
+    ) as { image: any };
     const vf = result.image;            // VideoFrame
     const w = vf.displayWidth || vf.codedWidth || AXSV_W;
     const h = vf.displayHeight || vf.codedHeight || AXSV_H;

@@ -35,11 +35,18 @@ export interface DrivetrainPreset {
   finalDrive: number;     // representative; user can override in Advanced (0 for CVT)
   redline: number;        // rpmLimit (RPM)
   shiftRpm?: number;      // shift-light default
+  tire?: readonly [number, number, number];  // stock/representative tyre W/A/R (e.g. [235,40,19]); applyPreset fills it, else a base default
   note?: string;
 }
 
+// Base tyre used when a preset has no specific stock size — a very common OE
+// fitment (≈660 mm rolling). It only scales absolute rpm/kmh; the user adjusts it
+// (or nudges Final drive) if their gear reads a step off. Owner 2026-07-26: auto-
+// fill a base tyre on preset pick instead of leaving the field blank.
+export const DEFAULT_TIRE: readonly [number, number, number] = [215, 55, 17];
+
 export const DRIVETRAIN_PRESETS: DrivetrainPreset[] = [
-  { id:'volvo_v60_v90_xc60_xc90_t8', brand:'Volvo', model:'V60 / V90 / XC60 / XC90 (T8)', years:'2019-2025', trans:'Aisin TG-81SC 8-spd', transType:'AT', verified:true, gearCount:8, ratios:[5.25,3.029,1.95,1.457,1.221,1,0.809,0.673], finalDrive:3.1, redline:6000, shiftRpm:5500, note:'Verified in-car (235/40R19).' },
+  { id:'volvo_v60_v90_xc60_xc90_t8', brand:'Volvo', model:'V60 / V90 / XC60 / XC90 (T8)', years:'2019-2025', trans:'Aisin TG-81SC 8-spd', transType:'AT', verified:true, gearCount:8, ratios:[5.25,3.029,1.95,1.457,1.221,1,0.809,0.673], finalDrive:3.1, redline:6000, shiftRpm:5500, tire:[235,40,19], note:'Verified in-car (235/40R19).' },
   { id:'kia_stinger_gt_3_3t_rwd', brand:'Kia', model:'Stinger GT 3.3T (RWD)', years:'2018-2023', trans:'Hyundai A8LR1 8-spd', transType:'AT', gearCount:8, ratios:[3.665,2.396,1.61,1.19,1,0.826,0.643,0.556], finalDrive:3.538, redline:6500, note:'Twin-turbo V6; AWD final differs. Same box as Genesis G70/G80.' },
   { id:'kia_stinger_2_5t_2_0t_rwd', brand:'Kia', model:'Stinger 2.5T / 2.0T (RWD)', years:'2018-2023', trans:'Hyundai A8LR1 8-spd', transType:'AT', gearCount:8, ratios:[3.964,2.468,1.61,1.176,1,0.832,0.652,0.565], finalDrive:3.538, redline:6200, note:'Turbo-4; AWD final differs.' },
   { id:'genesis_g70_g80_3_3t_rwd', brand:'Genesis', model:'G70 / G80 3.3T (RWD)', years:'2019-2024', trans:'Hyundai A8LR1 8-spd', transType:'AT', gearCount:8, ratios:[3.665,2.396,1.61,1.19,1,0.826,0.643,0.556], finalDrive:3.538, redline:6500, note:'Shares A8LR1 with Stinger; final ~3.538-3.909 by AWD.' },

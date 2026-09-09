@@ -22,6 +22,7 @@
   } from '../lib/gaugeBleClient';
   import PageHeader from '../lib/PageHeader.svelte';
   import GaugePreview from '../lib/GaugePreview.svelte';
+  import { t } from '../lib/i18n';
 
   // When hosted inside another page (e.g. the Looks page's "AXIS Gauge"
   // segment), suppress this component's own page chrome — the host already
@@ -53,9 +54,9 @@
   function loadPageNames(): string[] {
     try {
       const raw = localStorage.getItem(LS_PAGE_NAMES);
-      if (raw) { const a = JSON.parse(raw); if (Array.isArray(a)) return GAUGE_PAGES.map((_, i) => a[i] || `Page ${i + 1}`); }
+      if (raw) { const a = JSON.parse(raw); if (Array.isArray(a)) return GAUGE_PAGES.map((_, i) => a[i] || t('gsetup.page_n', { n: i + 1 })); }
     } catch {}
-    return GAUGE_PAGES.map((_, i) => `Page ${i + 1}`);
+    return GAUGE_PAGES.map((_, i) => t('gsetup.page_n', { n: i + 1 }));
   }
   let pageNames = $state<string[]>(loadPageNames());
   function setPageName(i: number, v: string) {
@@ -74,9 +75,9 @@
     // gauge joins it — full styling UI + live preview on a local default
     // config, no BLE. There's no separate "try in demo" entry any more.
     if (store.client instanceof MockClient) { enterDemo(); return; }
-    const avail = await GaugeBleClient.isAvailable();
-    if (!avail) { phase = 'unavailable'; return; }
-    if (store.gaugeClient) {                       // reuse the live link (no rescan)
+
+    // Reuse a live gauge link from another page (no rescan) — real path.
+    if (store.gaugeClient) {
       gauge = store.gaugeClient;
       try {
         phase = 'loading';
@@ -86,10 +87,19 @@
         return;
       } catch { store.gaugeClient = null; gauge = null; }
     }
+
+    // Try a silent auto-reconnect to the last gauge if BLE is usable.
+    const avail = await GaugeBleClient.isAvailable();
     let lastId: string | null = null;
     try { lastId = localStorage.getItem(LS_GAUGE_ID); } catch {}
-    if (lastId) await connectTo(lastId);
-    else        phase = 'scan';
+    if (avail && lastId) { await connectTo(lastId); return; }
+
+    // No gauge to reach — a hardware-less App Store reviewer (never tapped DEMO
+    // MODE, no Web Bluetooth), no BLE, or nothing paired yet. Open the full
+    // styling UI on a local default config instead of dead-ending at an
+    // "unavailable"/empty-scan card. A real gauge can still be linked from the
+    // ready view via the "Connect a gauge" button (goScan → scan()).
+    enterDemo();
   });
   // No onDestroy disconnect — keep the gauge link alive across navigation.
 
@@ -98,8 +108,8 @@
     scanning = true; errMsg = null; statusMsg = null; hits = [];
     try {
       await GaugeBleClient.scan(h => { hits = [...hits, h]; }, 6000);
-      if (hits.length === 0) errMsg = 'No AXIS Gauge found nearby. Power it on and scan again.';
-    } catch (e: any) { errMsg = e?.message ?? 'BLE scan failed'; }
+      if (hits.length === 0) errMsg = t('gsetup.no_gauge_found');
+    } catch (e: any) { errMsg = e?.message ?? t('gsetup.scan_failed'); }
     finally { scanning = false; }
   }
 
@@ -110,7 +120,7 @@
       await g.connect(() => {
         store.gaugeClient = null;
         if (phase === 'ready' || phase === 'loading') {
-          phase = 'scan'; cfg = null; saved = null; statusMsg = 'Gauge disconnected.';
+          phase = 'scan'; cfg = null; saved = null; statusMsg = t('gsetup.gauge_disconnected');
         }
       });
       gauge = g;
@@ -121,7 +131,7 @@
       try { localStorage.setItem(LS_GAUGE_ID, id); } catch {}
       phase = 'ready';
     } catch (e: any) {
-      errMsg = e?.message ?? 'Connect failed — is the gauge powered on?';
+      errMsg = e?.message ?? t('gsetup.connect_failed');
       phase = 'scan';   // keep the saved id for next time
     }
   }
@@ -135,16 +145,16 @@
   async function save() {
     if (!gauge || !cfg || busy) return;
     busy = true; statusMsg = null; errMsg = null;
-    try { await gauge.setConfig(cfg); saved = clone(cfg); statusMsg = 'Saved to gauge ✓'; }
-    catch (e: any) { errMsg = e?.message ?? 'Save failed'; }
+    try { await gauge.setConfig(cfg); saved = clone(cfg); statusMsg = t('gsetup.saved_ok'); }
+    catch (e: any) { errMsg = e?.message ?? t('gsetup.save_failed'); }
     finally { busy = false; }
   }
 
   async function resetPeaks() {
     if (!gauge || busy) return;
     busy = true; statusMsg = null; errMsg = null;
-    try { await gauge.resetPeaks(); statusMsg = 'Peak markers cleared ✓'; }
-    catch (e: any) { errMsg = e?.message ?? 'Reset failed'; }
+    try { await gauge.resetPeaks(); statusMsg = t('gsetup.peaks_cleared'); }
+    catch (e: any) { errMsg = e?.message ?? t('gsetup.reset_failed'); }
     finally { busy = false; }
   }
 
@@ -203,6 +213,15 @@
     phase = 'ready';
   }
 
+  // Leave the offline demo and open the scan card so a user who actually has a
+  // gauge can find, connect and save to it. Clearing cfg drops the ready view;
+  // phase 'scan' falls through to the scan/pick block.
+  function goScan() {
+    demo = false; gauge = null; cfg = null; saved = null;
+    hits = []; errMsg = null; statusMsg = null;
+    phase = 'scan';
+  }
+
   // Which slots RENDER as a coloured arc/bar in a given page layout (so we only
   // offer a colour swatch there — hero support slots 1-3 are plain text readouts,
   // not arcs). layout 0=concentric (5 arcs) · 1=hero (only slot 0 is the big arc) ·
@@ -216,34 +235,37 @@
   <PageHeader />
 
   <button class="back" on:click={() => (store.page = store.client ? 'devices' : 'connect')}>
-    {store.client ? '‹ DEVICES' : '‹ CONNECT'}
+    {store.client ? t('gsetup.nav_devices') : t('gsetup.nav_connect')}
   </button>
 
-  <h2 class="title">Gauge</h2>
+  <h2 class="title">{t('gsetup.title')}</h2>
 {/if}
 
 {#if phase === 'unavailable'}
   <div class="card">
     <p class="muted small">
-      Bluetooth isn't available here. Turn it on to set up your AXIS Gauge.
+      {t('gsetup.bt_unavailable')}
     </p>
-    <p class="hint">To explore without hardware, start the live preview from the Connect screen — the gauge joins the same preview.</p>
+    <p class="hint">{t('gsetup.bt_explore_hint')}</p>
   </div>
 
 {:else if phase === 'connecting' || phase === 'loading'}
   <div class="card"><p class="muted small">
-    {phase === 'connecting' ? 'Connecting to gauge…' : 'Reading config…'}
+    {phase === 'connecting' ? t('gsetup.connecting') : t('gsetup.reading_config')}
   </p></div>
 
 {:else if phase === 'ready' && cfg}
   <!-- Live preview — reflects colour + layout edits instantly (like the knob). -->
   <div class="card preview-card">
     <div class="preview-head">
-      <span class="preview-label">PREVIEW · live</span>
+      <span class="preview-label">{t('gsetup.preview_live')}</span>
     </div>
-    <GaugePreview arc={cfg.arc} globals={cfg.globals} slotColor={cfg.slotColor}
-                  pageSlots={cfg.pageSlots} pageLayout={cfg.pageLayout} pageNames={pageNames} />
-    {#if demo}<p class="demo-banner">Demo preview — changes here aren't saved. Connect an AXIS Gauge to keep them.</p>{/if}
+    <!-- Legacy GaugeSetup preview: its cfg predates the current GaugePreview prop
+         API (this whole page belongs to the old gaugeClient flow). Spread the old
+         props through an `as any` so the stale shape doesn't type-error. -->
+    <GaugePreview {...({ arc: cfg.arc, globals: cfg.globals, slotColor: cfg.slotColor,
+                  pageSlots: cfg.pageSlots, pageLayout: cfg.pageLayout, pageNames } as any)} />
+    {#if demo}<p class="demo-banner">{t('gsetup.demo_banner')}</p>{/if}
   </div>
 
   <!-- Engineer config (calibration + layout) is hidden when this editor is
@@ -252,56 +274,56 @@
   {#if !embedded}
   <!-- Calibration -->
   <div class="card">
-    <header class="card-head"><strong>Calibration</strong>
-      <span class="badge" class:online={!demo} class:demo={demo}>{demo ? 'DEMO' : 'CONNECTED'}</span></header>
+    <header class="card-head"><strong>{t('gsetup.calibration')}</strong>
+      <span class="badge" class:online={!demo} class:demo={demo}>{demo ? t('gsetup.badge_demo') : t('gsetup.badge_connected')}</span></header>
 
     <div class="row">
-      <div class="row-head"><label for="redline">Redline</label>
+      <div class="row-head"><label for="redline">{t('gsetup.redline')}</label>
         <span class="val mono">{fmt(cfg.redline, 100)} <span class="unit">rpm</span></span></div>
       <input id="redline" type="range" min="4000" max="12000" step="100"
              value={cfg.redline} on:input={(e) => onRedline(+e.currentTarget.value)} />
-      <p class="hint">Full-scale RPM — the gauge sweeps to red here.</p>
+      <p class="hint">{t('gsetup.redline_hint')}</p>
     </div>
 
     <div class="row">
-      <div class="row-head"><label for="shift">Shift light</label>
+      <div class="row-head"><label for="shift">{t('gsetup.shift_light')}</label>
         <span class="val mono">{fmt(cfg.shiftRpm, 100)} <span class="unit">rpm</span></span></div>
       <input id="shift" type="range" min="3000" max={cfg.redline} step="100" bind:value={cfg.shiftRpm} />
-      <p class="hint">Shift-light strobe point — knob + gauge flash together here.</p>
+      <p class="hint">{t('gsetup.shift_hint')}</p>
     </div>
 
     <div class="row">
-      <div class="row-head"><span class="lbl">Peak hold</span></div>
+      <div class="row-head"><span class="lbl">{t('gsetup.peak_hold')}</span></div>
       <div class="seg">
-        <button class:on={cfg.peakHold === 0} on:click={() => cfg && (cfg.peakHold = 0)}>ROLLING</button>
-        <button class:on={cfg.peakHold === 1} on:click={() => cfg && (cfg.peakHold = 1)}>HOLD</button>
+        <button class:on={cfg.peakHold === 0} on:click={() => cfg && (cfg.peakHold = 0)}>{t('gsetup.rolling')}</button>
+        <button class:on={cfg.peakHold === 1} on:click={() => cfg && (cfg.peakHold = 1)}>{t('gsetup.hold')}</button>
       </div>
-      <p class="hint">{cfg.peakHold === 1 ? 'Peaks stay until you reset them.' : 'Peaks fade ~3 s after the value drops.'}</p>
+      <p class="hint">{cfg.peakHold === 1 ? t('gsetup.peak_hold_on') : t('gsetup.peak_hold_off')}</p>
     </div>
 
-    <button class="ghost full" on:click={resetPeaks} disabled={busy || demo}>RESET PEAK MARKERS</button>
+    <button class="ghost full" on:click={resetPeaks} disabled={busy || demo}>{t('gsetup.reset_peaks_btn')}</button>
   </div>
 
   <!-- Layout — which channel sits in each slot, per page -->
   <details class="card warns">
-    <summary>Layout</summary>
-    <p class="hint">Pick what each arc shows on every page — and give each arc its own colour (the swatch). ↺ resets an arc to the default gold.</p>
+    <summary>{t('gsetup.layout')}</summary>
+    <p class="hint">{t('gsetup.layout_hint')}</p>
     {#each GAUGE_PAGES as page, p (p)}
       <div class="lay-page">
         <input class="lay-name-input mono" value={pageNames[p]}
                on:input={(e) => setPageName(p, e.currentTarget.value)}
-               placeholder={'Page ' + (p + 1)} maxlength="12" aria-label="Page name" />
+               placeholder={t('gsetup.page_n', { n: p + 1 })} maxlength="12" aria-label={t('gsetup.page_name_aria')} />
         {#each Array(page.slots) as _, sl}
           <div class="lay-row">
             <span class="lay-slot mono">{sl + 1}</span>
             <select bind:value={cfg.pageSlots[p][sl]}>
-              <option value={-1}>— empty —</option>
+              <option value={-1}>{t('gsetup.empty_option')}</option>
               {#each GAUGE_CHANNELS as ch, ci}
                 <!-- Always SELECTABLE — avail is just a HINT (the firmware only marks
                      a channel "seen" once a fresh frame arrives, so a channel that
                      really has data can still read "no data" until then). -->
                 <option value={ci}>
-                  {ch.label}{ch.unit ? ` (${ch.unit})` : ''}{cfg.avail && cfg.avail[ci] === false ? ' — no data' : ''}
+                  {ch.label}{ch.unit ? ` (${ch.unit})` : ''}{cfg.avail && cfg.avail[ci] === false ? t('gsetup.no_data') : ''}
                 </option>
               {/each}
             </select>
@@ -309,11 +331,11 @@
                  channel. Empty (auto) inherits the channel's Arc colour below. -->
             {#if cfg.pageSlots[p][sl] >= 0 && isArcSlot(cfg.pageLayout[p], sl)}
               <input class="lay-col" type="color"
-                     title="This arc’s colour"
+                     title={t('gsetup.arc_colour_title')}
                      value={cfg.slotColor[p][sl] ? rgb565ToHex(cfg.slotColor[p][sl]) : rgb565ToHex(GAUGE_ARC_DEFAULT)}
                      on:input={(e) => cfg && (cfg.slotColor[p][sl] = hexToRgb565(e.currentTarget.value))} />
               {#if cfg.slotColor[p][sl]}
-                <button class="lay-reset" title="Reset to default gold"
+                <button class="lay-reset" title={t('gsetup.reset_gold_title')}
                         on:click={() => cfg && (cfg.slotColor[p][sl] = 0)}>↺</button>
               {/if}
             {/if}
@@ -326,8 +348,8 @@
 
   <!-- Global element colours -->
   <details class="card warns">
-    <summary>Element colours</summary>
-    <p class="hint">Shared chrome + typography across all pages.</p>
+    <summary>{t('gsetup.element_colours')}</summary>
+    <p class="hint">{t('gsetup.element_colours_hint')}</p>
     {#each GAUGE_GLOBAL_SLOTS as slot (slot.key)}
       <div class="crow">
         <label for={'g-' + slot.key}>{slot.label}</label>
@@ -341,8 +363,8 @@
   {#if !embedded}
   <!-- Warning thresholds -->
   <details class="card warns">
-    <summary>Warning thresholds</summary>
-    <p class="hint">Channel turns red + flashes at or above these values.</p>
+    <summary>{t('gsetup.warning_thresholds')}</summary>
+    <p class="hint">{t('gsetup.warning_hint')}</p>
     {#each WARN_CH as ch (ch.i)}
       <div class="row">
         <div class="row-head"><label for={'w' + ch.i}>{ch.label}</label>
@@ -360,25 +382,24 @@
 
   {#if demo}
     <div class="card demo-note">
-      <p class="muted small">Demo mode — part of your knob's demo session.
-        Connect a real AXIS Gauge to save this setup to it.</p>
+      <p class="muted small">{t('gsetup.demo_note')}</p>
+      <button class="ghost full" on:click={goScan}>{t('gsetup.connect_gauge')}</button>
     </div>
   {:else}
     <button class="primary full save" class:hot={dirty} on:click={save} disabled={!dirty || busy}>
-      {busy ? 'SAVING…' : dirty ? 'SAVE TO GAUGE' : 'SAVED'}
+      {busy ? t('gsetup.saving') : dirty ? t('gsetup.save_to_gauge') : t('gsetup.saved_btn')}
     </button>
-    <button class="link" on:click={forget}>Forget this gauge</button>
+    <button class="link" on:click={forget}>{t('gsetup.forget')}</button>
   {/if}
 
 {:else}
   <!-- scan / pick -->
   <div class="card">
     <p class="muted small">
-      Connect to the AXIS Gauge over Bluetooth to set its redline, shift
-      light, layout, colours and warnings. The gauge stores its own config.
+      {t('gsetup.scan_intro')}
     </p>
     <button class="primary full" on:click={scan} disabled={scanning}>
-      {scanning ? 'SCANNING…' : 'SCAN FOR GAUGE'}
+      {scanning ? t('gsetup.scanning') : t('gsetup.scan_for_gauge')}
     </button>
     {#if statusMsg}<p class="ok small">{statusMsg}</p>{/if}
     {#if errMsg}<p class="err small">{errMsg}</p>{/if}

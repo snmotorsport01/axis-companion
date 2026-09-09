@@ -17,6 +17,7 @@
   // =====================================================================
   import PageHeader from '../lib/PageHeader.svelte';
   import { store } from '../lib/store.svelte';
+  import { t } from '../lib/i18n';
   import {
     MonitorBleClient, type MonScanHit, type DeviceVersions,
     OTA_TARGET_MONITOR, OTA_TARGET_NODE, verStr, verCmp,
@@ -25,6 +26,11 @@
     fetchCanManifest, latest, parseVer, downloadFirmware,
     type CanManifest, type CanReleaseEntry,
   } from '../lib/axisCanOta';
+
+  // Dev-only tooling gate. Ships FALSE so consumers never see the raw
+  // local firmware-file flasher (App-Store 5.6). The one-tap over-the-air
+  // update flow is unaffected. Flip true only in local engineering builds.
+  const DEV_TOOLS = false;
 
   type Phase = 'idle' | 'scan' | 'connecting' | 'loading' | 'ready';
   let phase    = $state<Phase>('idle');
@@ -66,8 +72,8 @@
     scanning = true; errMsg = null; statusMsg = null; hits = [];
     try {
       await MonitorBleClient.scan(h => { hits = [...hits, h]; }, 6000);
-      if (hits.length === 0) errMsg = 'No AXIS Monitor found nearby. Power it on and scan again.';
-    } catch (e: any) { errMsg = e?.message ?? 'BLE scan failed'; }
+      if (hits.length === 0) errMsg = t('monota.no_monitor');
+    } catch (e: any) { errMsg = e?.message ?? t('monota.scan_failed'); }
     finally { scanning = false; }
   }
 
@@ -75,11 +81,11 @@
     phase = 'connecting'; errMsg = null; statusMsg = null;
     try {
       const m = new MonitorBleClient(id);
-      await m.connect(() => { store.monClient = null; mon = null; phase = 'scan'; statusMsg = 'Monitor disconnected.'; });
+      await m.connect(() => { store.monClient = null; mon = null; phase = 'scan'; statusMsg = t('monota.disconnected'); });
       mon = m; store.monClient = m;
       await load();
     } catch (e: any) {
-      errMsg = e?.message ?? 'Connect failed'; phase = 'scan';
+      errMsg = e?.message ?? t('monota.connect_failed'); phase = 'scan';
     }
   }
 
@@ -95,7 +101,7 @@
     } catch (e: any) {
       // Reading versions off a live monitor is optional; only the manifest
       // fetch can hard-fail here. Still land on the page so the user sees why.
-      otaNote = 'Couldn’t load updates: ' + (e?.message ?? e);
+      otaNote = t('monota.load_err', { err: e?.message ?? e });
       phase = 'ready';
     }
   }
@@ -120,15 +126,16 @@
   }
 
   async function installUpdate(which: 'monitor' | 'node', entry: CanReleaseEntry) {
-    if (demo || !mon) { flashMsg = 'Demo — connect your AXIS Monitor to install firmware.'; return; }
+    if (demo || !mon) { flashMsg = t('monota.demo_install'); return; }
     if (flashing) return;
-    flashing = which; flashPct = 0; flashMsg = 'Downloading…';
+    flashing = which; flashPct = 0; flashMsg = t('monota.downloading');
     try {
       const bin = await downloadFirmware(entry);
-      flashMsg = which === 'monitor' ? 'Flashing gauge…' : 'Flashing sensor…';
+      flashMsg = which === 'monitor' ? t('monota.flashing_gauge') : t('monota.flashing_sensor');
       const target = which === 'monitor' ? OTA_TARGET_MONITOR : OTA_TARGET_NODE;
-      await mon.flash(target, bin, (p) => (flashPct = p));
-      flashMsg = which === 'monitor' ? '✓ Gauge updated — rebooting' : '✓ Sensor updated — rebooting';
+      await mon.flash(target, bin, (p) => (flashPct = p),
+        () => { flashMsg = t('monota.tap_gauge'); });   // Phase-2 authz (fw v0.69.0+)
+      flashMsg = which === 'monitor' ? t('monota.gauge_updated') : t('monota.sensor_updated');
       setTimeout(refresh, 4500);        // device reboots; re-read versions
     } catch (e: any) {
       flashMsg = '✗ ' + (e?.message ?? e);
@@ -147,7 +154,7 @@
       ]);
       manifest = m; devVers = v;
     } catch (e: any) {
-      otaNote = 'Couldn’t load updates: ' + (e?.message ?? e);
+      otaNote = t('monota.load_err', { err: e?.message ?? e });
     } finally {
       otaBusy = false;
     }
@@ -164,13 +171,14 @@
     manName = f.name; flashMsg = '';
   }
   async function doManFlash() {
-    if (demo || !mon) { flashMsg = 'Demo — connect your AXIS Monitor to install firmware.'; return; }
+    if (demo || !mon) { flashMsg = t('monota.demo_install'); return; }
     if (!manFile || flashing) return;
-    flashing = manTarget; flashPct = 0; flashMsg = 'Flashing…';
+    flashing = manTarget; flashPct = 0; flashMsg = t('monota.flashing');
     try {
       const target = manTarget === 'monitor' ? OTA_TARGET_MONITOR : OTA_TARGET_NODE;
-      await mon.flash(target, manFile, (p) => (flashPct = p));
-      flashMsg = '✓ flashed — rebooting';
+      await mon.flash(target, manFile, (p) => (flashPct = p),
+        () => { flashMsg = t('monota.tap_gauge'); });   // Phase-2 authz (fw v0.69.0+)
+      flashMsg = t('monota.flashed');
     } catch (e: any) {
       flashMsg = '✗ ' + (e?.message ?? e);
     } finally {
@@ -179,12 +187,12 @@
   }
 </script>
 
-<PageHeader title="Firmware update" back="pro" backLabel="Pro" />
+<PageHeader title={t('monota.title')} back="axis" backLabel="AXIS" />
 
 {#if phase === 'scan' || phase === 'idle'}
   <div class="card">
-    <p class="sub">Keep your gauge and sensor current — one tap installs the latest firmware over Bluetooth. Connect your <b>AXIS Monitor</b> first.</p>
-    <button class="ghost wide" onclick={scan} disabled={scanning}>{scanning ? 'Scanning…' : 'Scan for AXIS Monitor'}</button>
+    <p class="sub">{@html t('monota.intro')}</p>
+    <button class="ghost wide" onclick={scan} disabled={scanning}>{scanning ? t('monota.scanning') : t('monota.scan_btn')}</button>
     {#each hits as h (h.id)}
       <button class="ghost wide hit" onclick={() => connectTo(h.id)}>{h.name}</button>
     {/each}
@@ -192,21 +200,21 @@
     {#if statusMsg}<p class="note">{statusMsg}</p>{/if}
   </div>
 {:else if phase === 'connecting' || phase === 'loading'}
-  <div class="card"><p class="sub">{phase === 'connecting' ? 'Connecting to monitor…' : 'Checking for updates…'}</p></div>
+  <div class="card"><p class="sub">{phase === 'connecting' ? t('monota.connecting') : t('monota.checking_updates')}</p></div>
 {:else if phase === 'ready'}
   <div class="card">
-    <div class="head"><strong>Firmware</strong>
-      <span class="badge" class:online={!demo} class:demo={demo}>{demo ? 'DEMO' : 'CONNECTED'}</span></div>
-    <p class="sub dim">The phone downloads the update; the gauge flashes itself and relays the sensor's update over ESP-NOW.{#if demo} <b>Demo</b> — connect your AXIS Monitor to install.{/if}</p>
+    <div class="head"><strong>{t('monota.firmware')}</strong>
+      <span class="badge" class:online={!demo} class:demo={demo}>{demo ? t('monota.demo') : t('monota.connected')}</span></div>
+    <p class="sub dim">{t('monota.ready_intro')}{#if demo}{@html t('monota.demo_suffix')}{/if}</p>
 
     {#if otaBusy && !manifest}
-      <p class="sub dim">Checking for updates…</p>
+      <p class="sub dim">{t('monota.checking_updates')}</p>
     {:else if manifest}
       <!-- Gauge (monitor) row -->
-      {@render fwRow('Gauge (monitor)', 'monitor', verStr(devVers?.monitor), monLatest, monUpdate)}
+      {@render fwRow(t('monota.row_gauge'), 'monitor', verStr(devVers?.monitor), monLatest, monUpdate)}
       <!-- Sensor (node) row -->
-      {@render fwRow('Sensor (OBD reader)', 'node',
-        devVers?.node ? verStr(devVers.node) : 'unknown', nodeLatest, nodeUpdate)}
+      {@render fwRow(t('monota.row_sensor'), 'node',
+        devVers?.node ? verStr(devVers.node) : t('monota.unknown'), nodeLatest, nodeUpdate)}
     {/if}
 
     {#if flashing}
@@ -217,26 +225,27 @@
 
     <div class="fw-actions">
       <button class="ghost" onclick={refresh} disabled={demo || otaBusy || flashing !== ''}>
-        {otaBusy ? 'Checking…' : 'Check again'}
+        {otaBusy ? t('monota.checking') : t('monota.check_again')}
       </button>
     </div>
   </div>
 
-  {#if !demo}
-    <!-- Advanced: install a local .app.bin (offline / pre-release testing) -->
+  {#if DEV_TOOLS}
+    <!-- Advanced: install a local firmware file (dev-only; hidden in the
+         shipped app so consumers never see a raw file flasher — 5.6). -->
     <details class="card fw-manual-card">
-      <summary>Advanced — install a .bin file</summary>
-      <p class="sub dim">Pick an <b>app image</b> (<code>.app.bin</code>, not merged) and its target.</p>
+      <summary>{t('monota.adv_summary')}</summary>
+      <p class="sub dim">{@html t('monota.adv_hint')}</p>
       <div class="fw-man-row">
         <select bind:value={manTarget} disabled={flashing !== ''}>
-          <option value="node">Sensor (node)</option>
-          <option value="monitor">Gauge (monitor)</option>
+          <option value="node">{t('monota.opt_sensor')}</option>
+          <option value="monitor">{t('monota.opt_gauge')}</option>
         </select>
         <input class="fw-input" type="file" accept=".bin" onchange={onManPick} disabled={flashing !== ''} />
       </div>
       {#if manName}<p class="fw-name">{manName} · {Math.round((manFile?.length ?? 0) / 1024)} KB</p>{/if}
       <button class="ghost wide" onclick={doManFlash} disabled={!manFile || flashing !== ''}>
-        {flashing ? `Flashing… ${flashPct}%` : 'Flash this file'}
+        {flashing ? t('monota.flashing_pct', { pct: flashPct }) : t('monota.flash_file')}
       </button>
     </details>
   {/if}
@@ -249,7 +258,7 @@
     <div class="fw-row-main">
       <span class="fw-row-label">{label}</span>
       <span class="fw-row-ver">
-        {cur}{#if ent} · latest {ent.version}{/if}
+        {cur}{#if ent} · {t('monota.latest')} {ent.version}{/if}
       </span>
     </div>
     {#if flashing === which}
@@ -257,7 +266,7 @@
     {:else if ent}
       <button class="fw-install" class:up={hasUpdate}
         onclick={() => installUpdate(which, ent)} disabled={flashing !== ''}>
-        {hasUpdate ? 'Update' : 'Reinstall'}
+        {hasUpdate ? t('monota.update') : t('monota.reinstall')}
       </button>
     {:else if manifest}
       <span class="fw-row-status dim">—</span>

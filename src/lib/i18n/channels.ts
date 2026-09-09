@@ -1,0 +1,57 @@
+// Channel display names for the APP pickers — FULL WORDS, not the gauge's short
+// codes (owner 2026-07-26: "ตัวเลือกค่าต่างๆใช้คำเต็ม ตัวย่อใช้แค่บนจอ"). Keyed by
+// the channel's English `label` ('chan:' + label); chName() falls back to that
+// label when a row is missing. The gauge firmware keeps its own SHORT codes.
+import type { Row } from '../i18n';
+
+export default {
+  'chan:— empty —':            { en: '— empty —', th: '— ว่าง —', zh: '— 空 —', ja: '— 空 —' },
+  'chan:RPM':                  { en: 'Engine RPM', th: 'รอบเครื่องยนต์', zh: '发动机转速', ja: 'エンジン回転数' },
+  'chan:Speed':                { en: 'Speed', th: 'ความเร็ว', zh: '车速', ja: '速度' },
+  'chan:Engine load':          { en: 'Engine load', th: 'โหลดเครื่องยนต์', zh: '发动机负荷', ja: 'エンジン負荷' },
+  'chan:Throttle':             { en: 'Throttle', th: 'คันเร่ง', zh: '节气门', ja: 'スロットル' },
+  'chan:Cmd throttle':         { en: 'Commanded throttle', th: 'คันเร่งสั่งการ', zh: '目标节气门', ja: '指令スロットル' },
+  'chan:Boost':                { en: 'Boost', th: 'บูสต์', zh: '增压', ja: 'ブースト' },
+  'chan:Manifold press':       { en: 'Manifold pressure', th: 'แรงดันท่อร่วมไอดี', zh: '进气歧管压力', ja: '吸気圧' },
+  'chan:Air flow (MAF)':       { en: 'Air flow (MAF)', th: 'อัตราการไหลอากาศ (MAF)', zh: '空气流量 (MAF)', ja: '空気流量 (MAF)' },
+  'chan:Spark advance':        { en: 'Spark advance', th: 'องศาไฟจุดระเบิด', zh: '点火提前角', ja: '点火時期' },
+  'chan:Gear (calc)':          { en: 'Gear (calculated)', th: 'เกียร์ (คำนวณ)', zh: '挡位 (计算)', ja: 'ギア (計算)' },
+  'chan:Absolute load':        { en: 'Absolute load', th: 'โหลดสัมบูรณ์', zh: '绝对负荷', ja: '絶対負荷' },
+  'chan:Accelerator pedal':    { en: 'Accelerator pedal', th: 'แป้นคันเร่ง', zh: '油门踏板', ja: 'アクセルペダル' },
+  'chan:Rel. throttle':        { en: 'Relative throttle', th: 'คันเร่งสัมพัทธ์', zh: '相对节气门', ja: '相対スロットル' },
+  'chan:Water temp':           { en: 'Coolant temperature', th: 'อุณหภูมิน้ำหล่อเย็น', zh: '冷却液温度', ja: '冷却水温' },
+  'chan:Oil temp':             { en: 'Oil temperature', th: 'อุณหภูมิน้ำมันเครื่อง', zh: '机油温度', ja: '油温' },
+  'chan:Intake air':           { en: 'Intake air temp', th: 'อุณหภูมิอากาศไอดี', zh: '进气温度', ja: '吸気温' },
+  'chan:Ambient air':          { en: 'Ambient air temp', th: 'อุณหภูมิอากาศภายนอก', zh: '环境温度', ja: '外気温' },
+  'chan:Catalyst temp':        { en: 'Catalyst temperature', th: 'อุณหภูมิแคทาลิสต์', zh: '催化器温度', ja: '触媒温度' },
+  'chan:Fuel rate':            { en: 'Fuel rate', th: 'อัตราสิ้นเปลืองเชื้อเพลิง', zh: '燃油消耗率', ja: '燃料消費率' },
+  'chan:Fuel level':           { en: 'Fuel level', th: 'ระดับน้ำมัน', zh: '油量', ja: '燃料残量' },
+  'chan:Short fuel trim':      { en: 'Short-term fuel trim', th: 'ชดเชยเชื้อเพลิงระยะสั้น', zh: '短期燃油修正', ja: '短期燃料補正' },
+  'chan:Long fuel trim':       { en: 'Long-term fuel trim', th: 'ชดเชยเชื้อเพลิงระยะยาว', zh: '长期燃油修正', ja: '長期燃料補正' },
+  'chan:A/F ratio (cmd)':      { en: 'Air/fuel ratio (commanded)', th: 'อัตราส่วนอากาศ/เชื้อเพลิง (สั่งการ)', zh: '空燃比 (目标)', ja: '空燃比 (指令)' },
+  'chan:Lambda (cmd)':         { en: 'Lambda (commanded)', th: 'แลมบ์ดา (สั่งการ)', zh: 'Lambda (目标)', ja: 'ラムダ (指令)' },
+  'chan:A/F actual (wideband)':{ en: 'Air/fuel actual (wideband)', th: 'อากาศ/เชื้อเพลิงจริง (ไวด์แบนด์)', zh: '实际空燃比 (宽域)', ja: '実空燃比 (ワイドバンド)' },
+  'chan:Lambda actual':        { en: 'Lambda actual', th: 'แลมบ์ดาจริง', zh: '实际 Lambda', ja: '実ラムダ' },
+  'chan:Fuel rail pressure':   { en: 'Fuel rail pressure', th: 'แรงดันรางน้ำมัน', zh: '燃油轨压力', ja: '燃圧' },
+  'chan:Voltage':              { en: 'Voltage', th: 'แรงดันไฟ', zh: '电压', ja: '電圧' },
+  'chan:Battery SOC':          { en: 'Battery charge', th: 'ระดับแบตเตอรี่', zh: '电池电量', ja: 'バッテリー残量' },
+  'chan:Motor torque':         { en: 'Motor torque', th: 'แรงบิดมอเตอร์', zh: '电机扭矩', ja: 'モーター トルク' },
+  'chan:Power (dyno)':         { en: 'Power (dyno)', th: 'กำลัง (ไดโน)', zh: '功率 (测功)', ja: '出力 (ダイノ)' },
+  'chan:Torque (dyno)':        { en: 'Torque (dyno)', th: 'แรงบิด (ไดโน)', zh: '扭矩 (测功)', ja: 'トルク (ダイノ)' },
+  'chan:Accelerator (passive)':{ en: 'Accelerator (passive)', th: 'คันเร่ง (พาสซีฟ)', zh: '油门 (被动)', ja: 'アクセル (パッシブ)' },
+  'chan:Fuel economy (inst.)': { en: 'Fuel economy (instant)', th: 'อัตราสิ้นเปลือง (ทันที)', zh: '瞬时油耗', ja: '瞬間燃費' },
+  'chan:Wheel power (est.)':   { en: 'Wheel power (est.)', th: 'กำลังที่ล้อ (ประมาณ)', zh: '轮上功率 (估算)', ja: 'ホイール出力 (推定)' },
+  'chan:Barometric':           { en: 'Barometric pressure', th: 'ความกดอากาศ', zh: '大气压', ja: '大気圧' },
+  'chan:Run time':             { en: 'Engine run time', th: 'เวลาเดินเครื่อง', zh: '运行时间', ja: 'エンジン稼働時間' },
+  'chan:Dist. MIL on':         { en: 'Distance with MIL on', th: 'ระยะทางที่ไฟ MIL ติด', zh: 'MIL 亮起里程', ja: 'MIL 点灯後の走行距離' },
+  'chan:Dist. cleared':        { en: 'Distance since cleared', th: 'ระยะทางหลังล้างโค้ด', zh: '清码后里程', ja: 'コード消去後の走行距離' },
+  'chan:Fault codes (count)':  { en: 'Fault codes', th: 'จำนวนรหัสปัญหา', zh: '故障码数量', ja: '故障コード数' },
+
+  // channel group headings (the <optgroup> labels in the value picker)
+  'group:Engine':   { en: 'Engine', th: 'เครื่องยนต์', zh: '发动机', ja: 'エンジン' },
+  'group:Temps':    { en: 'Temperatures', th: 'อุณหภูมิ', zh: '温度', ja: '温度' },
+  'group:Fuel':     { en: 'Fuel', th: 'เชื้อเพลิง', zh: '燃油', ja: '燃料' },
+  'group:Electric': { en: 'Electric', th: 'ไฟฟ้า', zh: '电气', ja: '電気' },
+  'group:Power':    { en: 'Power', th: 'กำลัง', zh: '动力', ja: '出力' },
+  'group:Trip':     { en: 'Trip', th: 'ทริป', zh: '行程', ja: 'トリップ' },
+} satisfies Record<string, Row>;

@@ -1,16 +1,13 @@
 /* =====================================================================
-   AXIS Companion — design tokens (matching the device theme)
+   SN AXIS — design tokens.  "Understated luxury · the performance
+   architecture."  Night-cockpit carbon ground, one earned CI-gold accent,
+   Psionic for legends/wordmarks, tabular mono for data, hairline panels.
+   (Restyled 2026-07-23 to the SN AXIS interface system — see the demo.)
    ===================================================================== */
 
-/* Psionic — the same OTF (sourced from ~/Library/Fonts/psionic.otf and
-   copied into public/fonts/) that fontconvert.py turned into Psionic.h
-   for the GC9A01's bitmap renderer. Loaded as a web font so the
-   DevicePreview's gear digit + status text on the CUSTOM page reads
-   pixel-for-pixel like the real device, not whatever the system
-   monospace falls back to.
-   font-display:block while the font is fetching so the preview doesn't
-   flash a generic shape before swapping — the 23 KB OTF lands fast
-   enough that the block isn't perceptible. */
+/* Psionic — the SN CI / device techno face (same 23 KB OTF fontconvert
+   turned into Psionic.h for the gauge). Used for the wordmark, legends and
+   readouts so the app reads like the instrument it configures. */
 @font-face {
   font-family: 'Psionic';
   src: url('/fonts/psionic.otf') format('opentype');
@@ -20,68 +17,73 @@
 }
 
 :root {
-  /* Color palette: keeps device + PWA visually identical */
-  --bg:         #0a0a0a;
-  --surface:   #141414;
-  --surface-2: #1c1c1c;
-  --border:    #2a2a2a;
-  --fg:        #ffffff;
-  --muted:     #888888;
-  --accent:    #ffa500;
-  --accent-d:  #cc8400;
-  --success:   #00d97e;
-  --danger:    #ff3b3b;
+  /* ---- ground + panels (night cockpit) ---- */
+  --bg:        #08090b;
+  --surface:   #16191e;   /* panel */
+  --surface-2: #1c2026;   /* raised panel / input */
+  --panel-hi:  #20242b;
+  --border:    rgba(238,240,244,.09);   /* hairline, not a solid line */
+  --border-2:  rgba(238,240,244,.17);
 
-  /* Type */
-  --font-ui:     'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono:   'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
-  /* Device font — only used inside the LCD preview so the simulated
-     gear / status / G-meter readouts match what the GC9A01 actually
-     draws. Falls back to the UI mono if the OTF hasn't loaded yet. */
+  /* ---- ink ---- */
+  --fg:        #eef0f4;
+  --muted:     #8b9199;
+  --faint:     #565c64;
+
+  /* ---- one earned accent = SN CI gold (RGB565 0xCD09) ---- */
+  --accent:    #cea24a;
+  --accent-d:  #a67f30;
+  --accent-hi: #e0b85a;
+  --accent-glow: rgba(206,162,74,.16);
+
+  /* ---- semantic (separate from the accent) ---- */
+  --success:   #68b09b;
+  --danger:    #c9584a;
+  --warn:      #d9a34a;
+
+  /* ---- type ---- */
+  --font-ui:     -apple-system, BlinkMacSystemFont, system-ui, 'Helvetica Neue', sans-serif;
+  --font-mono:   ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  --font-legend: 'Psionic', ui-monospace, 'SF Mono', Menlo, monospace;
   --font-device: 'Psionic', 'JetBrains Mono', 'SF Mono', Menlo, monospace;
 
-  /* Spacing — 8px grid */
-  --s-1: 4px;
-  --s-2: 8px;
-  --s-3: 12px;
-  --s-4: 16px;
-  --s-5: 24px;
-  --s-6: 32px;
-
-  /* Radii */
-  --r-1: 6px;
-  --r-2: 12px;
-  --r-3: 18px;
-
+  /* ---- spacing (8px grid) ---- */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px;
+  /* ---- radii (softer, demo-matched) ---- */
+  --r-1: 10px; --r-2: 14px; --r-3: 20px;
   --tap-min: 44px;
+
+  /* carbon-fibre whisper texture, laid over the ground */
+  --carbon:
+    repeating-linear-gradient(45deg, rgba(255,255,255,.012) 0 2px, transparent 2px 4px),
+    repeating-linear-gradient(-45deg, rgba(255,255,255,.012) 0 2px, transparent 2px 4px);
 }
 
-/* Reset */
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #app { height: 100%; margin: 0; }
 
 body {
-  background: var(--bg);
   color: var(--fg);
   font-family: var(--font-ui);
   font-size: 16px;
-  line-height: 1.4;
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  /* iOS safe-area padding */
+  background:
+    radial-gradient(130% 85% at 50% -10%, #111318, var(--bg) 62%);
+  background-attachment: fixed;
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
            env(safe-area-inset-bottom) env(safe-area-inset-left);
   user-select: none;
   -webkit-tap-highlight-color: transparent;
-  /* Kill the iOS double-tap-to-zoom AND the 300 ms tap-delay it implies.
-     `manipulation` keeps single tap, pan, and scroll working — only
-     pinch-zoom + double-tap-zoom are dropped. Pairs with the viewport
-     meta's user-scalable=no so neither path can zoom the layout. */
   touch-action: manipulation;
-  /* Belt-and-braces on iOS WKWebView: prevents the user-agent stylesheet
-     from re-enabling text-size auto-scaling when rotated. */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+}
+/* the carbon weave, whisper-faint, on its own layer so it never muddies text */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1;
+  background: var(--carbon); opacity: .6; pointer-events: none;
 }
 
 #app {
@@ -92,73 +94,86 @@ body {
   min-height: 100%;
 }
 
-/* Reusable card */
+/* ---- Card = soft-lit hairline panel (demo look) ---- */
 .card {
-  background: var(--surface);
+  /* Frosted glass — translucent + backdrop blur so the carbon-wave "ฝ้" behind it
+     (AeroBg / body carbon) shows through softly, matching the AXIS shell's panels
+     (owner 2026-07-24: อยากให้เป็นฝ้าเหมือนกันในหน้าย่อย). */
+  background: rgba(24,27,33,.55);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  backdrop-filter: blur(18px) saturate(1.15);
   border: 1px solid var(--border);
   border-radius: var(--r-2);
   padding: var(--s-4);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
 }
-
 .card + .card { margin-top: var(--s-3); }
 
-/* Buttons */
+/* ---- Buttons ---- */
 button {
   font-family: var(--font-ui);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   min-height: var(--tap-min);
   padding: 0 var(--s-4);
-  border: 1px solid var(--border);
-  background: var(--surface);
+  border: 1px solid var(--border-2);
+  background: var(--panel-hi);
   color: var(--fg);
   border-radius: var(--r-1);
   cursor: pointer;
-  transition: background 150ms ease-out, border-color 150ms ease-out;
+  transition: background 150ms ease, border-color 150ms ease, transform 120ms ease;
 }
-button:hover:not(:disabled)  { background: var(--surface-2); }
-button:active:not(:disabled) { transform: scale(0.98); }
-button:disabled              { opacity: 0.5; cursor: not-allowed; }
+button:hover:not(:disabled)  { border-color: var(--border-2); background: var(--surface-2); }
+button:active:not(:disabled) { transform: translateY(1px); }
+button:disabled              { opacity: 0.45; cursor: not-allowed; }
 
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #000;
+  color: #161003;
+  font-weight: 700;
+  box-shadow: 0 8px 22px -10px var(--accent-glow);
 }
 button.primary:hover:not(:disabled) { background: var(--accent-d); border-color: var(--accent-d); }
 
-/* Inputs */
+/* ---- Inputs ---- */
 input[type="text"], input[type="number"], input[type="password"] {
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: 16px;             /* >=16 prevents iOS zoom on focus */
   min-height: var(--tap-min);
   width: 100%;
   padding: 0 var(--s-3);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  background: var(--panel-hi);
+  border: 1px solid var(--border-2);
   border-radius: var(--r-1);
   color: var(--fg);
   outline: none;
 }
-input:focus {
-  border-color: var(--accent);
-}
+input:focus { border-color: var(--accent); }
 
+/* ---- Legends / labels = Psionic, tracked, quiet (the instrument voice) ---- */
 label {
   display: block;
-  font-size: 12px;
+  font-family: var(--font-legend);
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  margin-bottom: var(--s-1);
+  letter-spacing: 0.2em;
+  color: var(--faint);
+  margin-bottom: var(--s-2);
 }
 
-h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -0.01em; }
-h1 { font-size: 24px; }
-h2 { font-size: 18px; }
-h3 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.015em; }
+h1 { font-size: 26px; }
+h2 { font-size: 19px; }
+h3 {
+  font-family: var(--font-legend);
+  font-size: 12px; font-weight: 400;
+  text-transform: uppercase; letter-spacing: 0.2em; color: var(--faint);
+}
 
-.mono { font-family: var(--font-mono); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.legend { font-family: var(--font-legend); letter-spacing: .2em; text-transform: uppercase; color: var(--faint); }
 
 /* Status dot */
 .dot {
@@ -169,5 +184,5 @@ h3 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: 
   vertical-align: middle;
 }
 .dot.online  { background: var(--success); box-shadow: 0 0 8px var(--success); }
-.dot.offline { background: var(--muted); }
+.dot.offline { background: var(--faint); }
 .dot.error   { background: var(--danger); }
