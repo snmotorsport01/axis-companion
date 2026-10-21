@@ -3,6 +3,14 @@
   "releases": [
     {
       "version": "AXIS V1.0.0",
+      "build": "v3.1.10-glitch",
+      "date": "2026-10-21",
+      "notes": "Glitch transitions on every screen change (slice-tear + white scanline, ~560ms trapezoid; ported from AXIS 1.75) replacing fade. + render-optimize baseline accepted on-glass. App-only; screensaver/calibration/branding preserved; dual-slot auto-rollback.",
+      "url": "firmware/knob_v3_1.43-v3.1.10-glitch.bin",
+      "size_bytes": 2178224
+    },
+    {
+      "version": "AXIS V1.0.0",
       "build": "v3.1.7",
       "date": "2026-06-22",
       "notes": "Tune the corner-G gear-misread filter live, no reflash. The 7 gyro-fusion constants behind the v3.1.3 cornering fix (how hard the accel re-anchors the tilt, the gyro 'quiet' trust window, the reject threshold, the coast timeout) are now runtime tunables on the device's web app (Tune page over the AXIS Wi-Fi hotspot) — so the mid-corner gear hold can be dialled in on-car and saved without rebuilding firmware. Every value is range-clamped and NaN-rejected, and the on-screen Tune sliders appear automatically. Defaults are identical to v3.1.6, so behaviour is unchanged until you move a slider. (These advanced IMU controls are web-only — too many to fit the BLE config channel; the everyday gear/feel tunables stay on both Wi-Fi and the Bluetooth app.) No gear/UI behaviour change vs v3.1.6 out of the box. The v3.1.4 dirty-gate, v3.1.5 async present and v3.1.3 gyro-fusion still want their on-hardware confirmation per the validation checklist.",
