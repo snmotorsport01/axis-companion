@@ -3,6 +3,14 @@
   "releases": [
     {
       "version": "AXIS V1.0.0",
+      "build": "v3.1.11-music",
+      "date": "2026-10-25",
+      "notes": "Music is back — the knob shows the now-playing track and controls music from your phone again (Apple Music / Spotify / any app, over Bluetooth). This needs a one-time PAIR: the first time you connect after updating, your phone will ask to pair — tap Pair, and the knob then appears in your iPhone's Bluetooth list (that's normal for music mode). Everything else this release fixes too: the app reliably reads the knob's version + live gear again; the knob re-appears for a fresh connect after any disconnect (no more 'can't find it until reboot'); the gear no longer freezes after hours of driving (the motion sensor self-recovers); press-and-hold to unlock the screen now works the moment you've held long enough; and large screensaver uploads no longer time out at 100%. App-only; your screensaver, calibration and look are preserved; dual-slot auto-rollback if anything is wrong.",
+      "url": "firmware/knob_v3_1.43-v3.1.11-music.bin",
+      "size_bytes": 2207344
+    },
+    {
+      "version": "AXIS V1.0.0",
       "build": "v3.1.10-glitch",
       "date": "2026-10-21",
       "notes": "Glitch transitions on every screen change (slice-tear + white scanline, ~560ms trapezoid; ported from AXIS 1.75) replacing fade. + render-optimize baseline accepted on-glass. App-only; screensaver/calibration/branding preserved; dual-slot auto-rollback.",
