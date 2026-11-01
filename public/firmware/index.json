@@ -3,6 +3,14 @@
   "releases": [
     {
       "version": "AXIS V1.0.0",
+      "build": "v3.1.12-gearzero",
+      "date": "2026-11-01",
+      "notes": "Fixes the gear axes flipping after a restart (gears 1/3/5 reading as 2/4/6, or the shift pattern mirrored, that forced a re-calibration). The knob now REMEMBERS your saved calibration zero across every power-up instead of re-measuring it at each boot — a warm restart (ignition off→on, where the motion sensor keeps power) could catch it still settling and capture a flipped reference, inverting the gears for that whole session. After updating, calibrate once on a normal cold start and it stays correct from then on. Everything from v3.1.11 (BLE music + gear + version together) is unchanged.",
+      "url": "firmware/knob_v3_1.43-v3.1.12-gearzero.bin",
+      "size_bytes": 2207712
+    },
+    {
+      "version": "AXIS V1.0.0",
       "build": "v3.1.11-music",
       "date": "2026-10-25",
       "notes": "Music is back — the knob shows the now-playing track and controls music from your phone again (Apple Music / Spotify / any app, over Bluetooth). This needs a one-time PAIR: the first time you connect after updating, your phone will ask to pair — tap Pair, and the knob then appears in your iPhone's Bluetooth list (that's normal for music mode). Everything else this release fixes too: the app reliably reads the knob's version + live gear again; the knob re-appears for a fresh connect after any disconnect (no more 'can't find it until reboot'); the gear no longer freezes after hours of driving (the motion sensor self-recovers); press-and-hold to unlock the screen now works the moment you've held long enough; and large screensaver uploads no longer time out at 100%. App-only; your screensaver, calibration and look are preserved; dual-slot auto-rollback if anything is wrong.",
