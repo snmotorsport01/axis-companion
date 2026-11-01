@@ -3,6 +3,14 @@
   "releases": [
     {
       "version": "AXIS V1.0.0",
+      "build": "v3.1.13-ssfix",
+      "date": "2026-11-01",
+      "notes": "Fixes the screensaver “Remove” breaking re-upload: after removing a screensaver, uploading a new one failed for every file (even a small still). Remove used to leave a hidden backup copy of the old image on the device, which filled the storage so the next upload had nowhere to go — and also made a removed screensaver come back on the next restart. Remove now fully clears it, so you can upload a fresh screensaver right away. Also includes the gear-axis fix from v3.1.12 (gears no longer flip after a restart — calibrate once on a cold start and it sticks).",
+      "url": "firmware/knob_v3_1.43-v3.1.13-ssfix.bin",
+      "size_bytes": 2207744
+    },
+    {
+      "version": "AXIS V1.0.0",
       "build": "v3.1.12-gearzero",
       "date": "2026-11-01",
       "notes": "Fixes the gear axes flipping after a restart (gears 1/3/5 reading as 2/4/6, or the shift pattern mirrored, that forced a re-calibration). The knob now REMEMBERS your saved calibration zero across every power-up instead of re-measuring it at each boot — a warm restart (ignition off→on, where the motion sensor keeps power) could catch it still settling and capture a flipped reference, inverting the gears for that whole session. After updating, calibrate once on a normal cold start and it stays correct from then on. Everything from v3.1.11 (BLE music + gear + version together) is unchanged.",
