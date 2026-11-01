@@ -10,7 +10,27 @@
   import { fetchCanManifest, latest, parseVer, downloadFirmware } from '../lib/axisCanOta';
   import { carbonWave } from '../lib/carbonWave';
   import { t, has, setLang, LANGS } from '../lib/i18n';
-  import { richDtc, SEVERITY_META } from '../lib/dtcRich';
+  // DTC dictionary is LAZY — a large payload (code dict + Thai i18n) only needed on the
+  // DTC tab, kept out of the initial bundle. One SHARED in-flight promise; _alive guards a
+  // resolve that lands after the shell unmounts; render() repaints once data is in.
+  // render() lives inside onMount's closure, but these helpers are module-scope → call it
+  // through _render (captured in onMount). _alive guards a resolve after unmount.
+  let _richDtc = null, _SEVERITY_META = null, _dtcLoading = null, _dtcErr = false, _alive = true, _render = null;
+  function _repaint(){ if (_alive && _render) _render(); }
+  function ensureDtc(){
+    if (_richDtc) return Promise.resolve();
+    if (_dtcLoading) return _dtcLoading;
+    if (_dtcErr) return Promise.resolve();       // stay in the error state until the user taps Retry — no auto-retry loop
+    // Split load-failure from render-failure (GPT‑6 nit): the rejection handler sits ONLY on the
+    // import, so a throw inside render() during the repaint can't flip _dtcErr → the UI never
+    // reports a successful load as "couldn't load the data".
+    _dtcLoading = import('../lib/dtcRich').then(
+      m  => { _richDtc = m.richDtc; _SEVERITY_META = m.SEVERITY_META; },   // success: module assign only
+      () => { _dtcErr = true; }                                           // LOAD failure only
+    ).then(() => { _dtcLoading = null; _repaint(); });                     // repaint after, outside the load catch
+    return _dtcLoading;
+  }
+  function retryDtc(){ if (_dtcLoading) return; _dtcErr = false; ensureDtc(); _repaint(); }
   import '../lib/axisShell.css';
 
   onMount(() => {
@@ -22,7 +42,7 @@ const PALETTE=[['#cea24a','GOLD'],['#eef0f4','WHITE'],['#9aa0a6','SILVER'],['#b8
 const CHAN_ORDER=CHANNELS.filter(c=>c.id!==0).map(c=>c.id);
 // APP uses the FULL label (not the gauge's short code), translated when available.
 const chName=id=>{const d=channelDef(id);if(!d)return '-';const k='chan:'+d.label;return has(k)?t(k):d.label;};
-const FACES=[['concentric','5-Arc',0],['hero','Hero',0],['bars','Bars',0],['needle','Needle',0],['ticks','Ticks',0],['gmeter','G-Meter',0],['tuner','Tuner',1],['regent','Regent',1],['chrono','Chrono',1]];
+const FACES=[['concentric','5-Arc',0],['hero','Hero',0],['bars','Bars',0],['needle','Needle',0],['ticks','Ticks',0],['gmeter','G-Meter',0],['trip','Trip',0],['lanes','Lanes',0],['tuner','Tuner',1],['regent','Regent',1],['chrono','Chrono',1]];
 // Per-face ELEMENTS. Each row = a shown value (s = ch slot, -1 = none) + a colour
 // source `c`: a NUMBER n = PER-VALUE colour slot n (own swatch → work.slot[n], one
 // per value, matches firmware slotColour) · 'col2'/'text' = a shared decorative/text
@@ -40,6 +60,9 @@ const ELEMS={
   // the grid/rings (slot 0) + the value text. The live G dot ramps green→amber→red on
   // its own in firmware, so it is not a picked colour.
   gmeter:[{n:'Grid + rings',s:-1,c:0},{n:'Value text',s:-1,c:'text'}],
+  trip:[{n:'Trip A / B',s:-1,c:'text'}],
+  // LANES live-graph — 4 stacked channel lanes, each with its own colour (slot 0..3).
+  lanes:[{n:'Lane 1',s:0,c:0},{n:'Lane 2',s:1,c:1},{n:'Lane 3',s:2,c:2},{n:'Lane 4',s:3,c:3}],
 };
 // STORE &mdash; the paid gauge faces (the premium tier) sold through App Store / Play Billing.
 const STORE_ITEMS=[
@@ -48,12 +71,12 @@ const STORE_ITEMS=[
   {id:'chrono',name:'Chrono',price:'$4.99',kind:'face',blurb:'Chronograph twin-dial'},
   {id:'allfaces',name:'All premium faces',price:'$9.99',kind:'bundle',blurb:'Regent + Tuner + Chrono, save $5'},
 ];
-const FREE_FACES=['hero','bars','needle','ticks','concentric','gmeter'];
+const FREE_FACES=['hero','bars','needle','ticks','concentric','gmeter','trip','lanes'];
 // The gauge holds MULTIPLE pages (up to 10). S.face/S.work are the LIVE editing values
 // for the current page; S.pages[] holds every page (each {face, work}); S.cur = index.
-let S={tab:store.axisTab||'home',target:'gauge',face:'hero',peak:true,work:null,owned:new Set([...FREE_FACES,'regent','tuner','chrono']),buying:null,pages:null,cur:0,dirty:false,knobName:'AXIS',dtcSnap:null,dtcBusy:false,dtcLook:'',bright:200,connect:false,connecting:null,upd:false,updBusy:null,units:[...UNITS_METRIC]};
+let S={tab:store.axisTab||'home',target:'gauge',face:'hero',peak:true,work:null,owned:new Set([...FREE_FACES,'regent','tuner','chrono']),buying:null,pages:null,cur:0,dirty:false,knobName:'AXIS',dtcSnap:null,dtcBusy:false,dtcLook:'',bright:200,night:{mode:0,nightBright:50,startHr:18,endHr:6,rtcValid:false,curHour:0},connect:false,connecting:null,upd:false,updBusy:null,units:[...UNITS_METRIC]};
 // one decoded fault-code card (severity + plain-language symptoms + basic fixes)
-function dtcCard(r){const sv=SEVERITY_META[r.severity];
+function dtcCard(r){const sv=_SEVERITY_META[r.severity];
   return `<div class="dtccard" style="--sv:${sv.color}">
     <div class="dch"><span class="dcode">${r.code}</span>
       <span class="dsev">${has('dtc.sev_'+r.severity)?t('dtc.sev_'+r.severity):sv.label}</span></div>
@@ -111,7 +134,11 @@ async function openLive(){
     liveKnob = true;
     try {
       liveSock = store.client.openTelemetry((f)=>{
-        if (f && f.gear_label != null) { LIVE.gear = String(f.gear_label); if (S.tab==='home') render(); }
+        // Real knob telemetry carries the gear in `label` (TelemetryFrame.label,
+        // matching Live.svelte + the firmware frame). The MockClient used `gear_label`,
+        // so the Home card only ever updated in demo — accept either. (fix: live gear)
+        const gl = (f && f.label != null) ? f.label : (f && f.gear_label != null ? f.gear_label : null);
+        if (gl != null) { LIVE.gear = String(gl); if (S.tab==='home') render(); }
       }, ()=>{});
     } catch(e){ liveKnob=false; }
   }
@@ -120,10 +147,14 @@ async function openLive(){
   const mon = store.monClient;
   if (mon && liveMonId !== mon) {
     liveMonId = mon;
+    try { if(mon.setTime) await mon.setTime(new Date()); } catch(e){}   // sync the gauge clock (universal auto-night)
+    try { if(mon.readNight){ const n=await mon.readNight(); if(n) S.night=n; } } catch(e){}
     try { const v = await mon.readVersions(); const m=v?.monitor; if(m) LIVE.fw = 'v'+m.major+'.'+m.minor; store.obdSeen = !!v?.node; } catch(e){ store.obdSeen=false; }
     try { const d = await mon.readDtcCodes(); LIVE.dtc = d ? { count:d.count, mil:!!d.mil } : null; } catch(e){ LIVE.dtc = null; }
     try { const t = await mon.readAccelTimes(); const b=t?.speed?.[0]; LIVE.best = (b&&b.ms!=null) ? (b.ms/1000).toFixed(2) : null; } catch(e){}
     await pullGaugeConfig(mon);   // load the gauge's ACTUAL pages/faces/colours into the editor
+    // Multi-car: read the VIN-decoded car and auto-switch to its saved profile (if any).
+    try { if(mon.carId){ const car=await mon.carId(); if(car&&car.make){ S.detectedCar={make:car.make,year:car.year||0}; presetAutoSwitch(); } } } catch(e){}
     // AUTO-RESTORE after a firmware update: a version bump resets the gauge to
     // defaults, so once it reboots + reconnects, push the owner's LOCAL style back
     // automatically (owner 2026-07-25: "style หาย ตั้งคืนไม่ได้ หลังจาก update").
@@ -218,10 +249,12 @@ const FACECFG={
   regent:{l:5,ch:[Ch.SOC]},
   chrono:{l:6,ch:[Ch.RPM,Ch.SPEED],c2:'#0a0b0d'},
   gmeter:{l:8,ch:[Ch.NONE,Ch.NONE,Ch.NONE,Ch.NONE,Ch.NONE]},   // IMU-driven; no channels
+  trip:{l:9,ch:[Ch.NONE,Ch.NONE,Ch.NONE,Ch.NONE,Ch.NONE]},     // OBD-computed on the gauge; no channels
+  lanes:{l:10,ch:[Ch.RPM,Ch.SPEED,Ch.BOOST,Ch.THROTTLE],slotDef:['#CEA24A','#37E0C8','#E06AC8','#5C9BFF']},  // live-graph; per-lane default gold/cyan/mag/blue
 };
 // slot[] = PER-VALUE colour, one CSS colour per slot (default all gold = the old
 // single-arc look). col2 = shared decorative (2nd needle bg / honeycomb); text = value text.
-function defWork(f){const c=FACECFG[f];return{ch:[...c.ch],slot:[GOLD,GOLD,GOLD,GOLD,GOLD],col2:c.c2||'#8b9199',text:'#eef0f4'};}
+function defWork(f){const c=FACECFG[f];const base=[GOLD,GOLD,GOLD,GOLD,GOLD];if(c.slotDef)c.slotDef.forEach((x,i)=>{if(i<5)base[i]=x;});return{ch:[...c.ch],slot:base,col2:c.c2||'#8b9199',text:'#eef0f4'};}
 function buildPage(){const f=FACECFG[S.face];return{layout:f.l,ch:S.work.ch,arc:S.work.slot[0],col2:S.work.col2,text:S.work.text,slot:[...S.work.slot],slotLimit:S.work.ch.map(c=>S.limits[c]||0),peak:(S.peaks[S.work.ch[0]]&&S.peaks[S.work.ch[0]].on)?S.peaks[S.work.ch[0]].val:0};}
 
 // ---- LIVE PREVIEW on the physical gauge -------------------------------------
@@ -286,6 +319,7 @@ function drawGaugeCanvas(){
 function faceThumb(id,a){ // small gallery thumb (52x38); a = accent (gold if selected, else silver)
   const m={concentric:`<circle cx="26" cy="19" r="18" fill="none" stroke="#868c94" stroke-width="1.4"/><g fill="none" stroke="${a}" stroke-width="1.4"><path d="M26 4.5 A14.5 14.5 0 0 0 26 33.5"/><path d="M26 8 A11 11 0 0 0 26 30"/><path d="M26 11.5 A7.5 7.5 0 0 0 26 26.5"/><path d="M26 15 A4 4 0 0 0 26 23"/></g>`,
     gmeter:`<g fill="none" stroke="#868c94" stroke-width="1.3"><circle cx="26" cy="19" r="15"/><circle cx="26" cy="19" r="8"/></g><g stroke="#565c64" stroke-width="1"><line x1="26" y1="5" x2="26" y2="33"/><line x1="12" y1="19" x2="40" y2="19"/></g><circle cx="34" cy="12" r="3" fill="${a}"/>`,
+    trip:`<line x1="11" y1="28" x2="41" y2="28" stroke="#868c94" stroke-width="1.6"/><circle cx="13" cy="28" r="2.6" fill="none" stroke="#868c94" stroke-width="1.4"/><circle cx="39" cy="28" r="2.6" fill="none" stroke="${a}" stroke-width="1.4"/><path d="M20 28 L26 12 L32 28" fill="none" stroke="${a}" stroke-width="1.6"/>`,
     hero:`<path d="M12 32 A16 16 0 1 1 40 32" fill="none" stroke="#868c94" stroke-width="3"/><path d="M12 32 A16 16 0 0 1 28 11" fill="none" stroke="${a}" stroke-width="3"/>`,
     bars:`<g fill="#868c94"><rect x="10" y="8" width="32" height="4" rx="2"/><rect x="10" y="17" width="22" height="4" rx="2"/><rect x="10" y="26" width="28" height="4" rx="2"/></g><rect x="10" y="8" width="20" height="4" rx="2" fill="${a}"/>`,
     needle:`<circle cx="26" cy="19" r="14" fill="none" stroke="#868c94" stroke-width="1.5"/><line x1="26" y1="19" x2="35" y2="12" stroke="${a}" stroke-width="2"/><circle cx="26" cy="19" r="2.5" fill="${a}"/>`,
@@ -327,17 +361,37 @@ function render(){
       <div class="hdev ${kOn(cK)}" onclick="${cK?`go('looks')`:`openConnect()`}"><span class="sd"></span><span class="g">&#9673;</span><div class="c"><div class="n">${t('home.knob')}</div><div class="s">${cK?t('home.connected'):t('home.tap_connect')}</div></div><div class="v"><div class="vv">${kGear}</div><div class="vl">${cK?t('home.lbl_gear'):t('home.lbl_off')}</div></div></div>
       <div class="hdev ${kOn(cG)}" onclick="${cG?`openUpdate()`:`openConnect()`}"><span class="sd"></span><span class="g">&#9680;</span><div class="c"><div class="n">${t('home.gauge')}</div><div class="s">${cG?t('home.connected'):t('home.tap_connect')}</div></div><div class="v"><div class="vv" style="font-size:15px">${gFw}</div><div class="vl">${cG?t('home.lbl_firmware'):t('home.lbl_off')}</div></div></div>
       <div class="hdev ${kOn(obdC)}" onclick="${obdC?`go('dtc')`:`openConnect()`}"><span class="sd"></span><span class="g">&#9636;</span><div class="c"><div class="n">${t('home.obd')}</div><div class="s">${obdC?t('home.via_gauge'):(cG?t('home.no_obd_module'):t('home.connect_gauge_first'))}</div></div><div class="v"><div class="vv" style="color:${oCol}">${oVal}</div><div class="vl">${oLbl}</div></div></div></div>
-      <button class="linkrow" onclick="goPage('track')">${t('home.track')} &rarr;</button>
       <button class="linkrow" onclick="goPage('analysis')">${t('home.analysis')} &rarr;</button>
-      <button class="linkrow" onclick="goPage('shortcuts')">${t('home.shortcuts')} &rarr;</button>
+      <button class="linkrow" onclick="goPage('track')">${t('home.track')} &rarr;</button>
       <button class="linkrow" onclick="go('setup')">${t('home.first_setup')} &rarr;</button>
       <div class="cta">${live?`<button class="prim" onclick="go('looks')">&#10003; ${t('home.style_gauge')}</button>`:`<button class="prim" onclick="openConnect()">${t('home.connect_axis')}</button>`}<button class="sec" onclick="go('store')">&#9670;</button></div>`;
+    if(live&&!demo) h+=`<button class="linkrow discrow" onclick="disconnectDev()">${t('home.disconnect')}</button>`;
   } else if(S.tab==='looks'){
     // PINNED preview — stays at the top of the scroll while faces/elements/peaks
     // scroll under it, so the owner sees the live gauge without scrolling up.
     h=`<div class="stick-top"><div class="disc">${previewMarkup()}</div></div>
       <div class="tgt"><button class="${S.target==='gauge'?'on':''}" onclick="setT('gauge')">${t('common.gauge')}</button><button class="${S.target==='knob'?'on':''}" onclick="setT('knob')">${t('common.knob')}</button></div>`;
     if(S.target==='gauge'){
+      // PRESETS — save/load the whole gauge setup (multi-car: 1 gauge ↔ many cars).
+      const _pl = presetList();
+      h+=`<div class="eyebrow">${t('preset.title')}</div>
+        <div class="preset-help">${t('preset.help')}</div>
+        <div class="presets">`+
+        _pl.map(p=>`<div class="prow${p.id===S.activePreset?' active':''}">
+          <input class="pname" value="${(p.name||'').replace(/"/g,'&quot;')}" maxlength="20" spellcheck="false" onchange="presetRename('${p.id}',this.value)" aria-label="preset name">
+          <button class="ppill" onclick="presetLoad('${p.id}')">${p.id===S.activePreset?t('preset.loaded'):t('preset.load')}</button>
+          <button class="ppill gh${p.car?' caron':''}" onclick="presetAssignCar('${p.id}')" title="${t('preset.assign_car')}" aria-label="${t('preset.assign_car')}">${p.car?((p.car.make||'').slice(0,8)):'CAR'}</button>
+          <button class="ppill gh" onclick="presetOverwrite('${p.id}')" title="${t('preset.update')}" aria-label="${t('preset.update')}">&#8635;</button>
+          <button class="ppill gh" onclick="presetShare('${p.id}')" title="${t('preset.share')}" aria-label="${t('preset.share')}">&#8599;</button>
+          <button class="pdel" onclick="presetDelete('${p.id}')" aria-label="delete">&times;</button>
+        </div>`).join('')+
+        `<button class="pgact addpreset" onclick="presetSaveNew()">+ ${t('preset.save_new')}</button>
+        <div class="preset-util">
+          <button class="pgact" onclick="presetImportOpen()">${t('preset.import_btn')}</button>
+          <button class="pgact" onclick="backupOpen()">${t('preset.backup_btn')}</button>
+          <button class="pgact" onclick="restoreOpen()">${t('preset.restore_btn')}</button>
+        </div>
+        </div>`;
       // page selector — the page numbers in one row; Add / Remove BELOW them
       h+=`<div class="eyebrow">${t('looks.pages')} &middot; ${S.cur+1} ${t('looks.of')} ${S.pages.length}</div>
         <div class="pages">`+
@@ -388,6 +442,33 @@ function render(){
           <input class="brislider" type="range" min="8" max="255" value="${S.bright}" oninput="setBright(this.value)" aria-label="Gauge screen brightness">
           <span class="en" id="brival" style="min-width:44px;text-align:right">${Math.round(S.bright/255*100)}%</span></div>
       </div>`;
+      // (Vehicle mass lives on the Drivetrain page now — it's a per-car physics value that auto-
+      //  fills from the picked car, so it was removed from here to avoid two places for one setting.)
+      // NIGHT MODE — universal auto-dim by the on-board RTC (no light sensor, no car data).
+      { const nm=S.night||{mode:0,nightBright:50,startHr:18,endHr:6};
+        h+=`<div class="eyebrow">${t('night.title')}</div><div class="rows">
+          <div class="erow"><span class="en">${t('night.mode')}</span><span class="uopts">
+            <span class="chip sm ${nm.mode===0?'on':''}" onclick="setNightMode(0)">${t('night.off')}</span>
+            <span class="chip sm ${nm.mode===1?'on':''}" onclick="setNightMode(1)">${t('night.auto')}</span>
+            <span class="chip sm ${nm.mode===2?'on':''}" onclick="setNightMode(2)">${t('night.manual')}</span>
+          </span></div>`;
+        if(nm.mode!==0){
+          h+=`<div class="erow"><span class="en">${t('night.bright')}</span>
+            <input class="brislider" type="range" min="8" max="255" value="${nm.nightBright}" onchange="setNightBright(this.value)" aria-label="Night brightness">
+            <span class="en" style="min-width:44px;text-align:right">${Math.round(nm.nightBright/255*100)}%</span></div>`;
+        }
+        if(nm.mode===1){
+          h+=`<div class="erow"><span class="en">${t('night.hours')}</span><span class="uopts" style="align-items:center">
+            <input class="pkin sm" type="number" min="0" max="23" value="${nm.startHr}" onchange="setNightHours(this.value,${nm.endHr})" aria-label="night start hour">
+            <span style="color:var(--ink3)">&ndash;</span>
+            <input class="pkin sm" type="number" min="0" max="23" value="${nm.endHr}" onchange="setNightHours(${nm.startHr},this.value)" aria-label="night end hour"></span></div>`;
+        }
+        if(nm.mode===2){
+          h+=`<div class="erow"><span class="en">${t('night.now')}</span>
+            <span class="tog ${nm.manualNight?'on':''}" onclick="toggleNightNow()">${nm.manualNight?t('night.is_night'):t('night.is_day')}</span></div>`;
+        }
+        h+=`</div><div style="font-size:10.5px;color:var(--ink3);line-height:1.4;margin:2px 2px 0">${nm.mode===0?t('night.help_off'):nm.rtcValid?t('night.help_synced',{h:nm.curHour}):t('night.help_sync')}</div>`;
+      }
       // (Splash-sound selector removed 2026-09-02 — the boot sound is finalized to the
       //  anime intro on the gauge, fw v0.63.0; the gentleman theme is gone.)
       // UNITS — per-quantity choice (each value's unit set individually, like peak/limit),
@@ -408,7 +489,8 @@ function render(){
         <div class="erow"><span class="en">${t('looks.shift_ring')}</span>${chanSelect(0)}<input type="color" class="ck" value="${accent()}" oninput="setSlotColor(0,this.value)" title="pick any colour"></div>
         <div class="erow"><span class="en">${t('looks.device_name')}</span><input class="nameinput" value="${S.knobName}" oninput="setKnobName(this.value)" maxlength="14" placeholder="AXIS" spellcheck="false" aria-label="Device name"><input type="color" class="ck" value="${S.work.text}" oninput="setRoleColor('text',this.value)" title="pick any colour"></div></div>
         <div class="eyebrow">${t('looks.peak_hold')}</div><div class="rows">
-        <div class="erow"><span class="en">${t('looks.redline_flash')}</span><span class="tog ${S.peak?'on':''}" onclick="togglePeak()">${S.peak?t('common.on'):t('common.off')}</span></div></div>`;
+        <div class="erow"><span class="en">${t('looks.redline_flash')}</span><span class="tog ${S.peak?'on':''}" onclick="togglePeak()">${S.peak?t('common.on'):t('common.off')}</span></div></div>
+        <button class="linkrow" onclick="goPage('screensaver')">${t('saver.title')} &rarr;</button>`;
     }
     if(S.target==='knob'){
       h+=`<div class="cta"><button class="prim" onclick="applyLooks('all')">&#10003; ${t('looks.apply_knob')}</button></div>`;
@@ -517,6 +599,11 @@ function render(){
     // Fault codes — a REAL shell tab (not a shortcut). Live read/clear needs the
     // gauge; the code look-up below is an OFFLINE dictionary, always available.
     const cG=!!store.monClient, snap=S.dtcSnap;
+    ensureDtc();                                   // kick off the lazy dict load on first DTC-tab render
+    const dtcReady = !!_richDtc;
+    const dtcPlace = _dtcErr
+      ? `<div class="dmsg">Couldn't load the fault-code data. <button class="linkrow" onclick="retryDtc()">Retry</button></div>`
+      : `<div class="dmsg" aria-busy="true">Loading fault-code data&hellip;</div>`;
     h=`<div class="eyebrow">${t('dtc.fault_codes')}</div>`;
     if(cG){
       const mil = snap ? (snap.mil?t('common.on'):t('common.off')) : '&mdash;';
@@ -525,15 +612,16 @@ function render(){
         <div class="erow"><span class="en">${t('dtc.stored_codes')}</span><span class="dbig">${snap?snap.count:'&mdash;'}</span></div></div>
         <div class="cta" style="margin-top:0"><button class="prim" onclick="dtcRead()">${S.dtcBusy?'&hellip;':(snap?t('dtc.reread_car'):t('dtc.read_car'))}</button>${snap&&snap.count>0?`<button class="sec2" onclick="dtcClear()">${t('dtc.clear_codes')}</button>`:''}</div>`;
       if(snap){ if(snap.count===0) h+=`<div class="dclean">${t('dtc.clean')}</div>`;
-        else h+=`<div class="rows2">`+snap.codes.map(c=>{const r=richDtc(c);return r?dtcCard(r):'';}).join('')+`</div>`; }
+        else if(!dtcReady) h+=dtcPlace;
+        else h+=`<div class="rows2">`+snap.codes.map(c=>{const r=_richDtc(c);return r?dtcCard(r):'';}).join('')+`</div>`; }
     } else {
       h+=`<div class="demobanner">${t('dtc.connect_read')} <button class="linkrow" style="margin-top:8px" onclick="openConnect()">${t('dtc.connect_gauge')}</button></div>`;
     }
-    // OFFLINE look-up — always available
-    const lk = S.dtcLook.trim()? richDtc(S.dtcLook.trim().toUpperCase()) : null;
+    // OFFLINE look-up — always available (once the dict is loaded)
+    const lk = (dtcReady && S.dtcLook.trim())? _richDtc(S.dtcLook.trim().toUpperCase()) : null;
     h+=`<div class="eyebrow">${t('dtc.lookup')}</div>
       <input class="codeinput" value="${S.dtcLook||''}" oninput="dtcLook(this.value)" placeholder="${t('dtc.lookup_ph')}" maxlength="6" autocapitalize="characters" spellcheck="false">
-      <div id="dtclookres">${lk?dtcCard(lk):(S.dtcLook.trim()?`<div class="dmsg">${t('dtc.lookup_bad')}</div>`:'')}</div>`;
+      <div id="dtclookres">${!dtcReady?dtcPlace:(lk?dtcCard(lk):(S.dtcLook.trim()?`<div class="dmsg">${t('dtc.lookup_bad')}</div>`:''))}</div>`;
   }
   b.innerHTML=h;
   b.classList.toggle('looks', S.tab==='looks');   // enables the sticky preview + Apply (CSS)
@@ -557,6 +645,36 @@ function buySheet(){const it=STORE_ITEMS.find(i=>i.id===S.buying);if(!it)return'
     <div class="sheetblurb">${has('blurb:'+it.blurb)?t('blurb:'+it.blurb):it.blurb}</div>
     <button class="prim" onclick="confirmBuy()">&#10003; ${t('sheet.add_try')}</button>
     <button class="sheetcancel" onclick="cancelBuy()">${t('sheet.not_now')}</button>
+  </div></div>`;}
+// Preset confirm (Load-over-unsaved-edits / Delete) — reuses the frosted sheet pattern.
+function presetConfirmSheet(){const c=S.presetConfirm;if(!c)return'';
+  return `<div class="sheet"><div class="sheetcard">
+    <div class="sheeteyebrow">${t('preset.confirm_eyebrow')}</div>
+    <div class="sheetname">${(c.name||'').replace(/</g,'&lt;')}</div>
+    <div class="sheetblurb">${c.blurb}</div>
+    <button class="prim" onclick="presetConfirmYes()">${c.ok}</button>
+    <button class="sheetcancel" onclick="presetConfirmNo()">${t('sheet.not_now')}</button>
+  </div></div>`;}
+// Preset Share / Backup / Import / Restore — one sheet, 4 modes (export shows a code to copy,
+// import/restore take a pasted code). Codes are portable "AXIS1." text (no backend).
+function shareSheetView(){const c=S.shareSheet;if(!c)return'';
+  const isOut = c.mode==='share'||c.mode==='backup';
+  const title = c.mode==='share'?t('preset.share_title'):c.mode==='backup'?t('preset.backup_title')
+              : c.mode==='import'?t('preset.import_title'):t('preset.restore_title');
+  const blurb = c.mode==='share'?t('preset.share_blurb',{name:c.name})
+              : c.mode==='backup'?t('preset.backup_blurb',{n:c.n})
+              : c.mode==='import'?t('preset.import_blurb'):t('preset.restore_blurb');
+  const body = isOut
+    ? `<textarea id="sharecode" class="codebox" readonly onclick="this.select()">${(c.code||'').replace(/</g,'&lt;')}</textarea>
+       <button class="prim" onclick="shareCopy()">${t('preset.copy')}</button>`
+    : `<textarea id="sharecode" class="codebox" placeholder="AXIS1…" oninput="shareInput(this.value)"></textarea>
+       <button class="prim" onclick="${c.mode==='import'?'shareImportDo()':'shareRestoreDo()'}">${c.mode==='import'?t('preset.do_import'):t('preset.do_restore')}</button>`;
+  return `<div class="sheet"><div class="sheetcard">
+    <div class="sheeteyebrow">${t('preset.title')}</div>
+    <div class="sheetname">${title}</div>
+    <div class="sheetblurb">${blurb}</div>
+    ${body}
+    <button class="sheetcancel" onclick="shareClose()">${isOut?t('sheet.done'):t('sheet.not_now')}</button>
   </div></div>`;}
 // In-shell CONNECT sheet — replaces the old bounce to the dense MonitorConfig editor.
 // One tap per device → native OS BLE chooser (BleClient.pick / MonitorBleClient.pick),
@@ -586,7 +704,7 @@ function connectSheet(){
 let _sheetOpen=false;
 function renderSheet(){
   const el=document.getElementById('sheet'); if(!el)return;
-  const html=S.connect?connectSheet():S.upd?updateSheet():S.buying?buySheet():'';
+  const html=(S.onboard!=null)?onboardView():S.connect?connectSheet():S.upd?updateSheet():S.buying?buySheet():S.presetConfirm?presetConfirmSheet():S.shareSheet?shareSheetView():'';
   const opening=!!html && !_sheetOpen;
   el.innerHTML=html; _sheetOpen=!!html;
   if(opening){ const sh=el.querySelector('.sheet'); if(sh)sh.classList.add('in'); }
@@ -602,11 +720,33 @@ async function connectDev(which){
       const id=await BleClient.pick();
       const c=new BleClient(id);
       await c.connect(()=>{ store.client=null; store.connected=false; render(); });
-      store.client=c; store.connected=true; openLive(); toast(t('toast.knob_connected'));
+      store.client=c;
+      // Read device INFO (name/version/build/gauge-link) just like the Connect +
+      // Devices paths do. WITHOUT this the Home-card connect left store.info null,
+      // so the Firmware page showed "Installed: ?" and no gear/version ever — even
+      // though telemetry subscribed fine (same service). try/catch so a transient
+      // first-read blip still lets the connection stand; the infoTimer/pages re-read.
+      try{ store.info = await c.info(); }catch(e){ /* transient; pages re-read */ }
+      store.connected=true; openLive(); toast(t('toast.knob_connected'));
     }
   }catch(e){ const m=String((e&&e.message)?e.message:e);
     toast(/cancel|abort|no device/i.test(m)?'Connect cancelled':'Couldn’t connect — try again'); }
   S.connecting=null; render();
+}
+// Explicit DISCONNECT — drop the gauge (+ knob) BLE links. The gauge then reboots
+// out of app-connect back into DRIVE (voice returns). Owner: a manual Disconnect on
+// HOME so you're not stuck connected while reading DTC at the engine / leaving the car.
+async function disconnectDev(){
+  try{ if(liveSock&&liveSock.close) liveSock.close(); }catch{} liveSock=null; liveKnob=false;
+  const mon=store.monClient, kn=store.client;
+  try{ if(mon) await mon.disconnect(); }catch{}
+  try{ if(kn)  await kn.disconnect();  }catch{}
+  store.monClient=null; store.client=null; store.connected=false; store.obdSeen=false;
+  liveMonId=null;
+  LIVE.fw=null; LIVE.gear=null; LIVE.dtc=null; LIVE.best=null;
+  S.upd=false; S.connect=false;
+  toast(t('toast.disconnected'));
+  render();
 }
 // ---- Firmware update sheet (same in-shell popup pattern as connectSheet) --------
 function openUpdate(){ if(!store.monClient){ openConnect(); return; } S.upd=true; render(); checkUpdates(); }
@@ -633,6 +773,8 @@ function updateSheet(){
       ${row('gauge',t('home.gauge'),UPD.gauge,'&#9680;')}
       ${row('node',t('update.obd_module'),UPD.node,'&#9636;')}
     </div>
+    ${(()=>{ const g=UPD.gauge, nd=UPD.node; const e=(g&&g.has)?g:(nd&&nd.has)?nd:null; const n=e&&e.entry&&e.entry.notes;
+      return n?`<div class="whatsnew"><div class="wnh">${t('update.whats_new')} &middot; v${e.latest}</div><div class="wnb">${String(n).replace(/</g,'&lt;')}</div></div>`:''; })()}
     <div class="csheetnote">${t('sheet.update_note')}</div>
     <button class="sheetcancel" onclick="closeUpdate()">${S.updBusy?t('sheet.updating'):t('sheet.done')}</button>
   </div></div>`;}
@@ -692,12 +834,30 @@ function setKnobName(v){S.knobName=v;S.dirty=true;document.querySelector('.axiss
 async function dtcRead(){const mon=store.monClient;if(!mon||S.dtcBusy)return;S.dtcBusy=true;render();
   try{S.dtcSnap=await mon.readDtcCodes();}catch(e){toast(t('toast.read_failed'));}
   S.dtcBusy=false;render();}
-async function dtcClear(){const mon=store.monClient;if(!mon||S.dtcBusy)return;S.dtcBusy=true;render();
-  try{await mon.clearDtcCodes();S.dtcSnap=await mon.readDtcCodes();toast(t('toast.codes_cleared'));}catch(e){toast(t('toast.clear_failed'));}
+// Clearing fault codes is a Phase-2 AUTHZ-gated (dangerous) command: the app writes it, the
+// gauge shows a TAP-TO-CONFIRM card, and nothing clears until the driver taps the gauge. So we
+// guide the user to tap, wait, then re-read and report honestly (never claim a premature clear).
+async function dtcClear(){const mon=store.monClient;if(!mon||S.dtcBusy)return;
+  const before=(S.dtcSnap&&S.dtcSnap.count)||0;
+  S.dtcBusy=true;render();
+  try{
+    await mon.clearDtcCodes();                 // gauge now shows "TAP TO CONFIRM"
+    toast(t('dtc.tap_confirm'));               // → tap your gauge to confirm
+    await new Promise(r=>setTimeout(r,4500));   // give the driver time to reach over + tap
+    S.dtcSnap=await mon.readDtcCodes();
+    const after=(S.dtcSnap&&S.dtcSnap.count)||0;
+    toast(after<before||after===0 ? t('toast.codes_cleared') : t('dtc.not_confirmed'));
+  }catch(e){toast(t('toast.clear_failed'));}
   S.dtcBusy=false;render();}
 // look-up updates ONLY the result div (no full render → the text input keeps focus)
-function dtcLook(v){S.dtcLook=v;const lk=v.trim()?richDtc(v.trim().toUpperCase()):null;
-  const el=document.getElementById('dtclookres');if(el)el.innerHTML=lk?dtcCard(lk):(v.trim()?`<div class="dmsg">Enter a valid code like P0301, P0420 or U0100.</div>`:'');}
+function dtcLook(v){S.dtcLook=v;
+  const el=document.getElementById('dtclookres');if(!el)return;
+  if(!_richDtc){ ensureDtc();   // dict still loading → placeholder; render() repaints the real result when ready
+    el.innerHTML = _dtcErr ? `<div class="dmsg">Couldn't load the fault-code data. <button class="linkrow" onclick="retryDtc()">Retry</button></div>`
+                           : `<div class="dmsg" aria-busy="true">Loading fault-code data&hellip;</div>`;
+    return; }
+  const lk=v.trim()?_richDtc(v.trim().toUpperCase()):null;
+  el.innerHTML=lk?dtcCard(lk):(v.trim()?`<div class="dmsg">Enter a valid code like P0301, P0420 or U0100.</div>`:'');}
 // Open a web search for the code — deeper detail + repair videos the offline card can't hold.
 function dtcSearch(code){ const q=encodeURIComponent(code+' OBD code symptoms causes fix'); window.open('https://www.google.com/search?q='+q,'_blank'); }
 function chanSelect(slot){const cur=S.work.ch[slot];let o='';CHANNEL_GROUPS.forEach(g=>{const items=CHANNELS.filter(c=>c.id!==0&&c.group===g);if(!items.length)return;o+=`<optgroup label="${has('group:'+g)?t('group:'+g):g}">`;items.forEach(c=>{o+=`<option value="${c.id}" ${c.id===cur?'selected':''}>${chName(c.id)}</option>`;});o+='</optgroup>';});return `<select class="chsel" onchange="setChan(${slot},this.value)">${o}</select>`;}
@@ -718,6 +878,14 @@ function setRoleColor(role,hex){S.work[role]=hex;markDirty();syncCur();drawGauge
 function setBright(v){S.bright=Math.max(8,Math.min(255,+v||0)); if(_gaugeCfg)_gaugeCfg.brightness=S.bright;
   const el=document.getElementById('brival'); if(el)el.textContent=Math.round(S.bright/255*100)+'%';
   const mon=store.monClient; if(mon&&mon.setBrightness)mon.setBrightness(S.bright).catch(()=>{});}
+// Vehicle mass (kg) — VirtualDyno power/torque physics input; per-car, so it rides in presets.
+// Night mode — universal auto-dim by the gauge RTC. Each change pushes the whole config over BLE.
+let _nightT=null;
+function nightPush(){ const mon=store.monClient; if(!mon||!mon.setNight) return; clearTimeout(_nightT); _nightT=setTimeout(()=>{ mon.setNight(S.night).catch(()=>{}); },140); }
+function setNightMode(m){ S.night={...S.night,mode:(m|0)}; render(); nightPush(); }
+function setNightBright(v){ S.night={...S.night,nightBright:Math.max(8,Math.min(255,Math.round(+v||8)))}; render(); nightPush(); }
+function setNightHours(s,e){ S.night={...S.night,startHr:Math.max(0,Math.min(23,+s|0)),endHr:Math.max(0,Math.min(23,+e|0))}; render(); nightPush(); }
+function toggleNightNow(){ S.night={...S.night,mode:2,manualNight:!S.night.manualNight}; render(); nightPush(); }
 // Display units — one chip flips the whole gauge Metric ↔ Imperial (cfg.units array).
 function setUnit(cls,idx){ S.units[cls]=idx; S.dirty=true; document.querySelector('.axisshell')?.classList.add('dirty'); saveUnits(); render(); livePush(); }
 function setUnitsAll(kind){ S.units = kind==='imperial'?[...UNITS_IMPERIAL]:[...UNITS_METRIC]; S.dirty=true; document.querySelector('.axisshell')?.classList.add('dirty'); saveUnits(); render(); livePush(); }
@@ -728,6 +896,123 @@ function setPeak(id,v){S.peaks[id].val=(v===''?0:+v);S.dirty=true;document.query
 function setLimit(id,v){S.limits[id]=(v===''?0:+v);S.dirty=true;document.querySelector('.axisshell')?.classList.add('dirty');livePush();}
 function togPeak(id){S.peaks[id].on=!S.peaks[id].on;S.dirty=true;render();livePush();}
 function setFeel(f){S.feel=f;render();}
+
+// ---- Gauge PRESETS: named full-config snapshots (multi-car: 1 gauge ↔ many cars) ----------
+// A preset captures EVERYTHING the Looks editor owns + what applyLooks('all') pushes: every
+// page (face + values + per-value colours), each channel's peak/warn + arc full-scale limit,
+// the per-quantity units, and screen brightness. Stored app-side (localStorage) — Load restores
+// the editor state then pushes it to the physical gauge over BLE in one tap. Cap at 8.
+const PRESET_MAX = 8;
+function presetList(){ try{ return JSON.parse(localStorage.getItem('axis.presets')||'[]'); }catch(e){ return []; } }
+function presetStore(a){ try{ localStorage.setItem('axis.presets', JSON.stringify(a)); }catch(e){} }
+function presetSnapshot(){
+  syncCur();   // fold the live page edits into S.pages first
+  return {
+    pages:  JSON.parse(JSON.stringify(S.pages)),
+    peaks:  JSON.parse(JSON.stringify(S.peaks)),
+    limits: JSON.parse(JSON.stringify(S.limits)),
+    units:  [...S.units],
+    bright: S.bright,
+  };
+}
+function presetSaveNew(){
+  const a=presetList();
+  if(a.length>=PRESET_MAX){ toast(t('preset.full',{n:PRESET_MAX})); return; }
+  // Name a new preset after the detected car (multi-car) if we know it, else the default.
+  const car=S.detectedCar&&S.detectedCar.make?{...S.detectedCar}:null;
+  const name=car?(car.make+(car.year?(' '+car.year):'')).slice(0,20):t('preset.default',{n:a.length+1});
+  a.push({ id:'p'+Date.now().toString(36), name, ts:Date.now(), car, snap:presetSnapshot() });
+  presetStore(a); toast(t('preset.saved')); render();
+}
+// Overwrite now CONFIRMS first (owner: guard the one-tap update of a saved car profile).
+function presetOverwrite(id){ const a=presetList(); const p=a.find(x=>x.id===id); if(!p)return;
+  S.presetConfirm={kind:'overwrite',id,name:p.name,blurb:t('preset.confirm_ow',{name:p.name}),ok:t('preset.ow_ok')}; render(); }
+function presetOverwriteDo(id){ const a=presetList(); const p=a.find(x=>x.id===id); if(!p)return; p.snap=presetSnapshot(); p.ts=Date.now(); presetStore(a); toast(t('preset.updated',{name:p.name})); render(); }
+// Tag/untag a preset with the currently-detected car → it auto-loads when that car is seen.
+function presetAssignCar(id){ const a=presetList(); const p=a.find(x=>x.id===id); if(!p)return;
+  if(!S.detectedCar||!S.detectedCar.make){ toast(t('preset.no_car')); return; }
+  const same=p.car&&p.car.make===S.detectedCar.make&&p.car.year===S.detectedCar.year;
+  p.car=same?null:{...S.detectedCar};
+  presetStore(a); toast(same?t('preset.car_cleared'):t('preset.car_set',{car:p.car.make})); render();
+}
+// Auto-switch to the saved profile whose car matches the VIN-decoded car — once per car change,
+// never over unsaved edits or when it's already active.
+function presetAutoSwitch(){
+  const car=S.detectedCar; if(!car||!car.make) return;
+  const m=car.make.toLowerCase();
+  if(S._autoCar===m) return; S._autoCar=m;
+  const hit=presetList().find(p=>p&&p.car&&(p.car.make||'').toLowerCase()===m);
+  if(!hit||hit.id===S.activePreset||S.dirty) return;
+  toast(t('preset.switched',{car:car.make+(car.year?(' '+car.year):'')}));
+  presetLoadDo(hit.id);
+}
+function presetRename(id,name){ const a=presetList(); const p=a.find(x=>x.id===id); if(!p)return; p.name=(name||'').trim().slice(0,20)||p.name; presetStore(a); }
+function presetDelete(id){   // confirm first — a preset is precious, delete is one tap
+  const p=presetList().find(x=>x.id===id); if(!p)return;
+  S.presetConfirm={kind:'delete',id,name:p.name,blurb:t('preset.confirm_del'),ok:t('preset.del_ok')}; render();
+}
+function presetDeleteDo(id){
+  presetStore(presetList().filter(x=>x.id!==id));
+  if(S.activePreset===id) S.activePreset=null;
+  toast(t('preset.deleted')); render();
+}
+// Guard: loading REPLACES the whole editor state, so if there are unsaved edits confirm first.
+function presetLoad(id){
+  const p=presetList().find(x=>x.id===id); if(!p||!p.snap||!Array.isArray(p.snap.pages)||!p.snap.pages.length) return;
+  if(S.dirty){ S.presetConfirm={kind:'load',id,name:p.name,blurb:t('preset.confirm_load'),ok:t('preset.load_ok')}; render(); return; }
+  presetLoadDo(id);
+}
+function presetConfirmYes(){ const c=S.presetConfirm; S.presetConfirm=null; if(!c){render();return;} if(c.kind==='load')presetLoadDo(c.id); else if(c.kind==='delete')presetDeleteDo(c.id); else if(c.kind==='overwrite')presetOverwriteDo(c.id); }
+function presetConfirmNo(){ S.presetConfirm=null; render(); }
+async function presetLoadDo(id){
+  const p=presetList().find(x=>x.id===id); if(!p||!p.snap||!Array.isArray(p.snap.pages)||!p.snap.pages.length) return;
+  const s=p.snap;
+  // restore the editor state from the snapshot
+  S.pages  = JSON.parse(JSON.stringify(s.pages));
+  S.peaks  = Object.assign({}, S.peaks, s.peaks||{});     // merge so any newer channel id keeps a default
+  S.limits = Object.assign({}, S.limits, s.limits||{});
+  if(Array.isArray(s.units)) S.units = s.units.slice(0,UC_COUNT);
+  if(typeof s.bright==='number') S.bright = s.bright;
+  S.cur=0; S.face=S.pages[0].face; S.work=S.pages[0].work; S.dirty=false;
+  S.activePreset=id;                                               // highlight the loaded preset
+  S.pages.forEach(pg=>{ if(pg&&pg.face) S.owned.add(pg.face); });   // unlock any premium face the preset uses
+  savePages(); saveUnits(); saveOwned();
+  drawGaugeCanvas(); render();
+  // push to the physical gauge if connected — brightness (live char) + the whole config
+  if(store.monClient){
+    try{ if(store.monClient.setBrightness) await store.monClient.setBrightness(S.bright); }catch(e){}
+    await applyLooks('all');                                // pages + units + warn + limits → gauge
+    toast(t('preset.applied',{name:p.name}));
+  } else {
+    toast(t('preset.loaded_local',{name:p.name}));          // staged locally; applies on next connect+save
+  }
+}
+
+// ---- Preset SHARE + full BACKUP: portable "AXIS1." text codes (copy/paste, no backend) -----
+// One preset (or the whole set) serialises to a short code the owner can copy + send; importing
+// decodes it back. Same codec powers per-preset Share and a full-set Backup / Restore.
+function axisEncode(obj){ try{ return 'AXIS1.'+btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); }catch(e){ return ''; } }
+function axisDecode(str){ try{ const s=(str||'').trim(); const b=s.startsWith('AXIS1.')?s.slice(6):s; return JSON.parse(decodeURIComponent(escape(atob(b)))); }catch(e){ return null; } }
+function presetShare(id){ const p=presetList().find(x=>x.id===id); if(!p)return;
+  S.shareSheet={mode:'share', name:p.name, code:axisEncode({t:'preset', name:p.name, snap:p.snap})}; render(); }
+function presetImportOpen(){ S.shareSheet={mode:'import', text:''}; render(); }
+function backupOpen(){ const a=presetList(); S.shareSheet={mode:'backup', n:a.length, code:axisEncode({t:'backup', presets:a})}; render(); }
+function restoreOpen(){ S.shareSheet={mode:'restore', text:''}; render(); }
+function shareClose(){ S.shareSheet=null; render(); }
+function shareInput(v){ if(S.shareSheet) S.shareSheet.text=v; }
+async function shareCopy(){ const c=S.shareSheet&&S.shareSheet.code; if(!c)return;
+  try{ await navigator.clipboard.writeText(c); toast(t('preset.copied')); }
+  catch(e){ const ta=document.getElementById('sharecode'); if(ta){ ta.focus(); ta.select(); try{ document.execCommand('copy'); toast(t('preset.copied')); }catch(_){ toast(t('preset.copy_manual')); } } } }
+function shareImportDo(){ const d=axisDecode(S.shareSheet&&S.shareSheet.text);
+  if(!d||d.t!=='preset'||!d.snap||!Array.isArray(d.snap.pages)||!d.snap.pages.length){ toast(t('preset.bad_code')); return; }
+  const a=presetList(); if(a.length>=PRESET_MAX){ toast(t('preset.full',{n:PRESET_MAX})); return; }
+  a.push({ id:'p'+Date.now().toString(36), name:(d.name||t('preset.default',{n:a.length+1})).toString().slice(0,20), ts:Date.now(), snap:d.snap });
+  presetStore(a); S.shareSheet=null; toast(t('preset.imported')); render(); }
+function shareRestoreDo(){ const d=axisDecode(S.shareSheet&&S.shareSheet.text);
+  if(!d||d.t!=='backup'||!Array.isArray(d.presets)){ toast(t('preset.bad_code')); return; }
+  const clean=d.presets.filter(p=>p&&p.snap&&Array.isArray(p.snap.pages)&&p.snap.pages.length).slice(0,PRESET_MAX)
+    .map(p=>({ id:p.id||('p'+Math.random().toString(36).slice(2,9)), name:(p.name||'?').toString().slice(0,20), ts:p.ts||Date.now(), snap:p.snap }));
+  presetStore(clean); S.shareSheet=null; S.activePreset=null; toast(t('preset.restored',{n:clean.length})); render(); }
 // Canvas bakes whatever font is loaded at draw time, so resolve Psionic first,
 // then draw, and redraw once more when it settles (belt + braces).
 S.work=defWork(S.face);
@@ -812,7 +1097,31 @@ render();
     // mode 'current' = save ONLY this page · 'all' = save every page.
     async function applyLooks(mode){
       mode = mode || 'all';
-      if (S.target === 'knob') { toast(t('toast.knob_style_connect')); return; }
+      if (S.target === 'knob') {
+        // Knob styling apply (previously a stub that only toasted). Push the edited
+        // colours + device name to the knob over BLE via store.client.setBranding()
+        // — the same working path Brand.svelte uses. The firmware's branding char
+        // applies + persists (brand.save()) on write. Only fires when the knob is
+        // actually connected (store.client set); otherwise prompt to connect.
+        const kc = store.client;
+        if (!kc) { toast(t('toast.knob_style_connect')); return; }
+        try {
+          syncCur();
+          const acc = accent();               // S.work.slot[0] — gear/accent colour
+          await kc.setBranding({
+            name:       (S.knobName || '').trim().slice(0, 14),
+            accent_hex: acc,
+            gear_hex:   acc,
+            name_hex:   S.work.text            // device-name colour
+          });
+          S.dirty = false;
+          document.querySelector('.axisshell')?.classList.remove('dirty');
+          toast(t('toast.saved_all', { n: 1 }));
+        } catch (e) {
+          toast(t('toast.save_failed') + (e && e.message ? e.message : 'try again'));
+        }
+        return;
+      }
       // Not paired yet? Pair now (inline) instead of dead-ending at Pro.
       if (!store.monClient) { if (!(await ensureGauge())) return; }
       const mon = store.monClient;
@@ -846,12 +1155,47 @@ render();
     }
 
     // expose the handlers the innerHTML onclick="" attributes call
-    Object.assign(window, { go, setT, setFace, cycleChan, setChan, cycleColor, cycleSlot, setSlotColor, setRoleColor, setKnobName, dtcRead, dtcClear, dtcLook, dtcSearch, setBright, setUnit, setUnitsAll, setLimit, setPeak, togPeak, togglePeak, openConnect, closeConnect, connectDev, openUpdate, closeUpdate, doUpdate, setFeel, toast, openBuy, cancelBuy, confirmBuy, goPage, applyLooks, setPage, addPage, removePage, setLangUI, exploreDemo });
+    // ---- First-run guided setup: a 2-step welcome that hands off to Connect, shown once ----
+    function onboardMark(){ try{ localStorage.setItem('axis.onboarded','1'); }catch(e){} }
+    function onboardNext(){ S.onboard=(S.onboard||0)+1; render(); }
+    function onboardSkip(){ S.onboard=null; onboardMark(); render(); }
+    function onboardConnect(){ S.onboard=null; onboardMark(); openConnect(); }   // hand off to the real connect sheet
+    function onboardStyle(){ S.onboard=null; onboardMark(); go('looks'); }
+    function onboardOpen(){ S.onboard=0; render(); }                              // re-openable from Settings
+    function onboardView(){
+      const step=S.onboard|0, cG=!!store.monClient;
+      const dots=`<div class="obdots">${[0,1].map(i=>`<i class="${i===step?'on':''}"></i>`).join('')}</div>`;
+      if(step===0){
+        return `<div class="sheet"><div class="sheetcard ob">
+          <div class="sheeteyebrow">${t('ob.eyebrow')}</div>
+          <div class="sheetname">${t('ob.welcome')}</div>
+          <div class="sheetblurb">${t('ob.welcome_sub')}</div>
+          ${dots}
+          <button class="prim" onclick="onboardNext()">${t('ob.start')}</button>
+          <button class="sheetcancel" onclick="onboardSkip()">${t('ob.skip')}</button>
+        </div></div>`;
+      }
+      const steps=[['1',t('ob.s1'),t('ob.s1d')],['2',t('ob.s2'),t('ob.s2d')],['3',t('ob.s3'),t('ob.s3d')]]
+        .map(([n,h,d])=>`<div class="obstep"><span class="obn">${n}</span><div><div class="obh">${h}</div><div class="obd">${d}</div></div></div>`).join('');
+      return `<div class="sheet"><div class="sheetcard ob">
+        <div class="sheeteyebrow">${t('ob.eyebrow')}</div>
+        <div class="sheetname">${t('ob.setup')}</div>
+        <div class="obsteps">${steps}</div>
+        ${dots}
+        ${cG?`<button class="prim" onclick="onboardStyle()">${t('ob.style_now')}</button>`
+            :`<button class="prim" onclick="onboardConnect()">${t('ob.connect_gauge')}</button>`}
+        <button class="sheetcancel" onclick="onboardSkip()">${t('ob.later')}</button>
+      </div></div>`;
+    }
+    // Show onboarding on a genuine first run only (never onboarded · no device · not demo).
+    try{ if(!localStorage.getItem('axis.onboarded') && !store.monClient && !store.client && !store.isDemo) S.onboard=0; }catch(e){}
+    _render = render;   // let the module-scope lazy-DTC helpers repaint the shell (see ensureDtc)
+    Object.assign(window, { go, setT, setFace, cycleChan, setChan, cycleColor, cycleSlot, setSlotColor, setRoleColor, setKnobName, dtcRead, dtcClear, dtcLook, dtcSearch, retryDtc, setBright, setUnit, setUnitsAll, setLimit, setPeak, togPeak, togglePeak, openConnect, closeConnect, connectDev, openUpdate, closeUpdate, doUpdate, setFeel, toast, openBuy, cancelBuy, confirmBuy, goPage, applyLooks, setPage, addPage, removePage, setLangUI, exploreDemo, disconnectDev, setNightMode, setNightBright, setNightHours, toggleNightNow, presetSaveNew, presetOverwrite, presetRename, presetDelete, presetLoad, presetAssignCar, presetConfirmYes, presetConfirmNo, presetShare, presetImportOpen, backupOpen, restoreOpen, shareClose, shareInput, shareCopy, shareImportDo, shareRestoreDo, onboardNext, onboardSkip, onboardConnect, onboardStyle, onboardOpen });
     render();
     ensureGaugeFont().then(() => { drawGaugeCanvas(); drawStore(); }).catch(() => {});
     openLive();   // if a device is already connected on mount, pull its REAL status
     _stopWave = carbonWave(document.getElementById('aeroflow'), {NL:72,lineA:.24,lineW:2,sheen:.3,speed:1.35});
-    return () => { try { liveSock && liveSock.close(); } catch(e){} _stopWave && _stopWave(); };   // stop telemetry + flow on unmount
+    return () => { _alive=false; _render=null; try { liveSock && liveSock.close(); } catch(e){} _stopWave && _stopWave(); };   // on unmount: drop the render ref so a late DTC-dict resolve can't repaint a dead shell
   });
 
 // AERO background — SN's draped carbon-fibre waves + a slow light sheen behind
