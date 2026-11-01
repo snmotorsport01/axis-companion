@@ -33,6 +33,9 @@ const NLOG_CHAR       = '7e1c020c-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // node-log text
 const CAN_CHAR        = '7e1c020d-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // raw CAN-log pull + capture start/stop
 const SHORT_CHAR      = '7e1c0213-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // driver shortcuts: WRITE 1B action | READ 28B status (rec+lap+peaks)
 const AS_CHAR         = '7e1c020f-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // anti-sleep config + live drowsiness (READ | WRITE)
+const TIME_CHAR       = '7e1c0216-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // clock set: WRITE 7B [yrLE,mon,day,hr,min,sec] | READ 8B [..,valid]
+const NIGHT_CHAR      = '7e1c0217-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // night mode: R/W 4B [mode,nightBright,startHr,endHr]; READ +[valid,curHour]
+const TELEM_CHAR      = '7e1c0218-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // live telemetry NOTIFY 6B [speedKmh u16LE, fuelRate L/h×10 u16LE, fuelLvl% u8, flags u8]
 const CAR_CHAR        = '7e1c0210-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // car-ID (READ): [yearLE u16, make[12] NUL-pad] the node decoded from the VIN (VIN never sent)
 const EXH_CHAR        = '7e1c020e-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // exhaust valve control (READ status | WRITE cmd) — ported from founder
 const HEALTH_CHAR     = '7e1c0211-9b3a-4f8e-8a5b-9d2e1f3a7c6d'; // vehicle health / I-M readiness (READ) — ported from founder
@@ -49,6 +52,10 @@ export interface DeviceVersions { monitor: FwVersion; node: FwVersion | null; }
 
 /** Car identity the node decoded from the VIN (make + model-year only; VIN never sent). */
 export interface CarId { make: string; year: number; }
+
+/** Live telemetry pushed by the gauge (char 7e1c0218). fuelRate/fuelLvl are null
+ *  when the car doesn't report them (EV mode, or no PID). Speed is always present. */
+export interface LiveTelem { speedKmh: number; fuelRateLph: number | null; fuelLvlPct: number | null; }
 
 /** The car's live stored trouble codes, read from the monitor (char 7e1c020a).
  *  `codes` are decoded to printed form ("P0301"); `mil` = check-engine lamp on.
@@ -73,6 +80,14 @@ export interface AntiSleepCfg {
   enabled: boolean; intervalMin: number; restMin: number; snoozeMin: number; moveKph: number;
   gyroOn: boolean; sens: number;
   drowsyScore?: number; baselinePct?: number;
+}
+
+/** Night mode (char 7e1c0217). mode 0=off · 1=auto-by-time · 2=manual. The gauge dims to
+ *  nightBright between startHr and endHr (auto) using the on-board RTC. rtcValid/curHour are
+ *  read-only status. Universal — no light sensor, no car CAN; the phone sets the clock. */
+export interface NightCfg {
+  mode: number; nightBright: number; startHr: number; endHr: number;
+  manualNight?: boolean; rtcValid?: boolean; curHour?: number;
 }
 
 // ---- Exhaust valve control (char 7e1c020e) — ported from founder-gauge ----
@@ -142,11 +157,11 @@ export enum Ch {
 // GMETER = 8 is an IMU-driven G-force meter (axis_175_fw LAYOUT_GMETER). It has NO
 // configurable channels — the firmware reads the on-board accel, not telemetry — so a
 // page set to it just needs the layout VALUE + colours; the wire format is unchanged.
-export enum Layout { HERO = 0, BARS = 1, NEEDLE = 2, TICKS = 3, TUNER = 4, REGENT = 5, CHRONO = 6, CONCENTRIC = 7, GMETER = 8 }
+export enum Layout { HERO = 0, BARS = 1, NEEDLE = 2, TICKS = 3, TUNER = 4, REGENT = 5, CHRONO = 6, CONCENTRIC = 7, GMETER = 8, TRIP = 9, LANES = 10 }
 export const LAYOUT_NAMES: Record<Layout, string> = {
   [Layout.HERO]: "Hero", [Layout.BARS]: "Bars", [Layout.NEEDLE]: "Needle", [Layout.TICKS]: "Ticks",
   [Layout.TUNER]: "Tuner", [Layout.REGENT]: "Regent", [Layout.CHRONO]: "Chrono", [Layout.CONCENTRIC]: "5-Arc",
-  [Layout.GMETER]: "G-Meter",
+  [Layout.GMETER]: "G-Meter", [Layout.TRIP]: "Trip", [Layout.LANES]: "Lanes",
 };
 
 export const CFG_VERSION   = 16;        // v16 = + warnSet(1) + warn[Ch.COUNT] u16 (per-channel WARN column, native ×10^decimals). MUST equal firmware GaugeCfg.version.  // v15 = slotLimit float32→uint16 (keeps GaugeCfg < 512 B BLE-char max; v14=519 B write failed).
@@ -454,7 +469,7 @@ export function decodeCfg(v: DataView): GaugeCfg {
       slotLimit.push(lv > 0 ? lv : 0);
     }
     pages.push({
-      layout: layout > Layout.GMETER ? Layout.HERO : layout,   // keep premium TUNER/REGENT/CHRONO/CONCENTRIC/GMETER (was stale at TICKS → paid faces read back as Hero; GMETER=8 kept, not flattened)
+      layout: layout > Layout.LANES ? Layout.HERO : layout,   // keep every real face incl. GMETER/TRIP/LANES (clamp only truly-unknown ids)
       ch,
       arcColor: arcColor || ARC_DEFAULT,
       // round off float32 storage noise (1.6f -> 1.6000000238) so the peak
@@ -515,7 +530,7 @@ export function cfgValid(c: GaugeCfg): boolean {
   if (c.pages.length !== GAUGE_PAGES) return false;
   if (!(c.pageCount >= 1 && c.pageCount <= GAUGE_PAGES)) return false;
   for (const pg of c.pages) {
-    if (pg.layout > Layout.GMETER) return false;   // HERO..GMETER (was stale at CHRONO/CONCENTRIC — rejected the 5-arc + G-meter faces, blocking Save)
+    if (pg.layout > Layout.TRIP) return false;   // HERO..TRIP (was stale at GMETER — rejected the TRIP face, blocking Save)
     if (pg.ch.length !== SLOTS_PER_PAGE) return false;
     for (const ch of pg.ch) if (ch < 0 || ch >= Ch.COUNT) return false;
     if (!Number.isFinite(pg.peak) || pg.peak < 0) return false;
@@ -622,6 +637,26 @@ export class MonitorBleClient {
   }
   async offAck(): Promise<void> {
     try { await CapBle.stopNotifications(this.deviceId, MON_SVC, ACK_CHAR); } catch {}
+  }
+
+  /** Subscribe to live telemetry (fuel rate / level + speed) the gauge streams from
+   *  the CAN node. 6-byte frame: [speed km/h u16LE, fuelRate L/h×10 u16LE, fuelLvl% u8,
+   *  flags u8] where flags bit0 = fuelRate valid, bit1 = fuelLvl valid. Powers the Trip
+   *  computer's fuel economy. A car in EV mode (or without PID 0x5E) leaves fuelRate=0
+   *  with the valid bit clear. */
+  async subscribeTelem(cb: (t: LiveTelem) => void): Promise<void> {
+    await CapBle.startNotifications(this.deviceId, MON_SVC, TELEM_CHAR, (v: DataView) => {
+      if (v.byteLength < 6) return;
+      const flags = v.getUint8(5);
+      cb({
+        speedKmh:    v.getUint16(0, true),
+        fuelRateLph: (flags & 0x01) ? v.getUint16(2, true) / 10 : null,
+        fuelLvlPct:  (flags & 0x02) ? v.getUint8(4) : null,
+      });
+    });
+  }
+  async unsubscribeTelem(): Promise<void> {
+    try { await CapBle.stopNotifications(this.deviceId, MON_SVC, TELEM_CHAR); } catch {}
   }
 
   /** Read the 46-byte struct off the monitor and decode it. */
@@ -1155,6 +1190,36 @@ export class MonitorBleClient {
     b[6] = c.gyroOn ? 1 : 0;
     b[7] = Math.max(1, Math.min(10, c.sens | 0)) & 0xff;
     await CapBle.write(this.deviceId, MON_SVC, AS_CHAR, new DataView(b.buffer));
+  }
+
+  // ---- Clock (char 7e1c0216) — push the phone's local time → the gauge RTC (universal, no GPS).
+  async setTime(d: Date = new Date()): Promise<void> {
+    const b = new Uint8Array(7); const dv = new DataView(b.buffer);
+    dv.setUint16(0, d.getFullYear() & 0xffff, true);
+    b[2] = (d.getMonth() + 1) & 0xff; b[3] = d.getDate() & 0xff;
+    b[4] = d.getHours() & 0xff; b[5] = d.getMinutes() & 0xff; b[6] = d.getSeconds() & 0xff;
+    await CapBle.write(this.deviceId, MON_SVC, TIME_CHAR, new DataView(b.buffer));
+  }
+
+  // ---- Night mode (char 7e1c0217) — mode 0=off/1=auto-by-time/2=manual + night brightness + hours.
+  async readNight(): Promise<NightCfg> {
+    const v = await CapBle.read(this.deviceId, MON_SVC, NIGHT_CHAR);
+    if (v.byteLength < 4) return { mode: 0, nightBright: 50, startHr: 18, endHr: 6, rtcValid: false, curHour: 0 };
+    return {
+      mode: v.getUint8(0), nightBright: v.getUint8(1), startHr: v.getUint8(2), endHr: v.getUint8(3),
+      rtcValid: v.byteLength >= 5 ? v.getUint8(4) !== 0 : false,
+      curHour:  v.byteLength >= 6 ? v.getUint8(5) : 0,
+      manualNight: v.byteLength >= 7 ? v.getUint8(6) !== 0 : false,
+    };
+  }
+  async setNight(c: NightCfg): Promise<void> {
+    const b = new Uint8Array(5);
+    b[0] = Math.max(0, Math.min(2, c.mode | 0)) & 0xff;
+    b[1] = Math.max(8, Math.min(255, c.nightBright | 0)) & 0xff;
+    b[2] = Math.max(0, Math.min(23, c.startHr | 0)) & 0xff;
+    b[3] = Math.max(0, Math.min(23, c.endHr | 0)) & 0xff;
+    b[4] = c.manualNight ? 1 : 0;
+    await CapBle.write(this.deviceId, MON_SVC, NIGHT_CHAR, new DataView(b.buffer));
   }
 
   // ---- Exhaust valve control (char 7e1c020e) — ported from founder-gauge ----

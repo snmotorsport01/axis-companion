@@ -155,7 +155,7 @@
   const slotsUsed = (l: Layout) =>
     l === Layout.GMETER ? 0                       // IMU-driven — no channel slots
     : l === Layout.CONCENTRIC ? SLOTS_PER_PAGE
-    : (l === Layout.BARS || l === Layout.TUNER || l === Layout.HERO) ? 4 : l === Layout.REGENT ? 1 : 2;
+    : (l === Layout.BARS || l === Layout.TUNER || l === Layout.HERO || l === Layout.LANES) ? 4 : l === Layout.REGENT ? 1 : 2;
   const has2ndColor = (l: Layout) =>
     l === Layout.NEEDLE || l === Layout.TICKS || l === Layout.TUNER || l === Layout.CHRONO;
 
@@ -169,6 +169,7 @@
     if (layout === Layout.CHRONO) return s === 0 ? t('monconfig.slot_main_dial') : t('monconfig.slot_sub_dial');
     if (layout === Layout.CONCENTRIC) return t('monconfig.slot_arc', { n: s + 1 });
     if (layout === Layout.GMETER) return 'G-Meter';   // no channel slots (IMU-driven)
+    if (layout === Layout.LANES)  return t('monconfig.slot_generic', { n: s + 1 });   // 4 live-graph lanes
     return t('monconfig.slot_bar', { n: s + 1 });
   }
 
@@ -230,7 +231,7 @@
 
       <!-- layout toggle -->
       <div class="seg" role="group" aria-label={t('monconfig.layout')}>
-        {#each [Layout.HERO, Layout.BARS, Layout.NEEDLE, Layout.TICKS, Layout.TUNER, Layout.REGENT, Layout.CHRONO, Layout.CONCENTRIC, Layout.GMETER] as L}
+        {#each [Layout.HERO, Layout.BARS, Layout.NEEDLE, Layout.TICKS, Layout.TUNER, Layout.REGENT, Layout.CHRONO, Layout.CONCENTRIC, Layout.GMETER, Layout.LANES] as L}
           <button class="seg-btn" class:on={page.layout === L}
             onclick={() => setLayout(i, L)}>{LAYOUT_NAMES[L]}</button>
         {/each}

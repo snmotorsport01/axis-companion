@@ -327,6 +327,8 @@ export function renderGaugePreview(
   if (page.layout === 6) { renderChrono(ctx, page, chan); return; }       // ---- CHRONO (paid) ----
   if (page.layout === 7) { renderConcentric(ctx, page, chan); return; }   // ---- CONCENTRIC 5-arc (paid) ----
   if (page.layout === 8) { renderGMeter(ctx, page); return; }             // ---- G-METER (IMU-driven, free) ----
+  if (page.layout === 9) { renderTripFace(ctx, page); return; }           // ---- TRIP A/B (OBD-computed on the gauge) ----
+  if (page.layout === 10) { renderLanes(ctx, page, chan); return; }        // ---- LANES live-graph (4 stacked channel lanes) ----
 
   // ---- HERO (default) ----
   band(ctx, 196, 13, A0, A1, TRACK);
@@ -734,6 +736,31 @@ function renderConcentric(ctx: CanvasRenderingContext2D, page: PagePreview, chan
 //    ticks + centre pip) plus a sample G dot toward the lower-right (a mid-corner) and
 //    the LAT/LON/PEAK readouts. Geometry is 1:1 with the firmware: GM_R1G=104 px/g,
 //    outer ring = 208 px (2.0g). Grid colour = slot 0 (the page arc); text = page.text.
+// ---- TRIP face preview: Trip A / B columns (distance / time / avg / km-L).
+//  Sample values only — the gauge fills real numbers from OBD speed + fuelRate. ----
+function renderTripFace(ctx: CanvasRenderingContext2D, page: PagePreview): void {
+  const GOLD = '#cea24a', text = page.text || '#eef0f4';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = MUT; setDevFont(ctx, 'p10'); ctx.fillText('TRIP', CX, 74);
+  ctx.strokeStyle = dim(GOLD, 0.30); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(CX, 108); ctx.lineTo(CX, 360); ctx.stroke();
+  const cols = [CX - 108, CX + 108];
+  const names = ['TRIP A', 'TRIP B'];
+  const val: string[][] = [['12.4', '1:07', '58', '9.8'], ['248.6', '4:12:30', '61', '10.4']];
+  for (let i = 0; i < 2; i++) {
+    const x = cols[i], d = val[i];
+    ctx.fillStyle = GOLD; setDevFont(ctx, 'p10'); ctx.fillText(names[i], x, 122);
+    ctx.fillStyle = text; setDevFont(ctx, 'p20'); ctx.fillText(d[0], x, 168);
+    ctx.fillStyle = MUT;  setDevFont(ctx, 'p8');  ctx.fillText('km', x, 196);
+    ctx.fillStyle = text; setDevFont(ctx, 'p13'); ctx.fillText(d[1], x, 236);
+    ctx.fillStyle = MUT;  setDevFont(ctx, 'p8');  ctx.fillText('TIME', x, 258);
+    ctx.fillStyle = text; setDevFont(ctx, 'p13'); ctx.fillText(d[2], x, 296);
+    ctx.fillStyle = MUT;  setDevFont(ctx, 'p8');  ctx.fillText('AVG km/h', x, 318);
+    ctx.fillStyle = GOLD; setDevFont(ctx, 'p13'); ctx.fillText(d[3], x, 350);
+    ctx.fillStyle = MUT;  setDevFont(ctx, 'p8');  ctx.fillText('km/L', x, 372);
+  }
+}
+
 function renderGMeter(ctx: CanvasRenderingContext2D, page: PagePreview): void {
   const grid = slotCol(page, 0);           // rings/crosshair colour (arcColor)
   const text = page.text;
@@ -797,4 +824,79 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.beginPath(); ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); ctx.fill();
+}
+
+// ★ LANES — mirror of axis_175_fw ScreenGauge renderLanes (LAYOUT_LANES = 10).
+//   4 stacked channel lanes; each = a plate with a label + big live value on the
+//   left and a scrolling area-fill sparkline on the right. The device streams the
+//   traces live; the preview draws a representative waveform ending at the
+//   channel's sample level. Per-lane colour = page.slot[i] (app-set) or the
+//   device-default palette gold/cyan/magenta/blue.
+function renderLanes(ctx: CanvasRenderingContext2D, page: PagePreview, chan: ChanLookup): void {
+  const PAL = ['#CEA24A', '#37E0C8', '#E06AC8', '#5C9BFF'];
+  const text = page.text;   // value-text colour (same pattern as every other module-scope renderer)
+
+  // header: "LIVE TELEMETRY" + gold status dot
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  setDevFont(ctx, 'p13');
+  const title = 'LIVE TELEMETRY';
+  const tw = ctx.measureText(title).width;
+  ctx.fillStyle = '#FF4D5E';
+  ctx.beginPath(); ctx.arc(CX - tw / 2 - 12, 64, 5, 0, 2 * Math.PI); ctx.fill();
+  ctx.fillStyle = '#CEA24A'; ctx.fillText(title, CX, 74);
+
+  const top = 95, laneH = 61, gap = 7, lx = 51, lw = 363;
+  for (let i = 0; i < 4; i++) {
+    const m = chan(page.ch[i]);
+    const col = slotCol(page, i, PAL[i]);
+    const ly = top + i * (laneH + gap);
+
+    // plate (dark fill + hairline border)
+    ctx.fillStyle = '#0c0e11'; roundRect(ctx, lx, ly, lw, laneH, 14);
+    ctx.strokeStyle = '#17191e'; ctx.lineWidth = 1.2;
+    { const r = 14; ctx.beginPath(); ctx.moveTo(lx + r, ly);
+      ctx.arcTo(lx + lw, ly, lx + lw, ly + laneH, r); ctx.arcTo(lx + lw, ly + laneH, lx, ly + laneH, r);
+      ctx.arcTo(lx, ly + laneH, lx, ly, r); ctx.arcTo(lx, ly, lx + lw, ly, r); ctx.closePath(); ctx.stroke(); }
+
+    // label (channel colour, top-left)
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillStyle = m ? col : '#4a4f57'; setDevFont(ctx, 'p10');
+    ctx.fillText(m ? m.label.toUpperCase() : '—', lx + 16, ly + 8);
+
+    if (!m) continue;
+    const s = sample(m, page.slotLimit?.[i]);
+
+    // big live value (left, lower) + small unit
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = text; setDevFont(ctx, 'p20');
+    ctx.fillText(s.text, lx + 16, ly + laneH - 12);
+    if (s.unit) { const vw = ctx.measureText(s.text).width;
+      ctx.fillStyle = MUT; setDevFont(ctx, 'p10'); ctx.fillText(s.unit, lx + 16 + vw + 6, ly + laneH - 14); }
+
+    // scrolling filled sparkline (right ~56%)
+    const gx = lx + lw * 0.40, gw = lw * 0.56, gy = ly + 10, gh = laneH - 20;
+    const n = 48; const pts: [number, number][] = [];
+    for (let k = 0; k < n; k++) {
+      const u = k / (n - 1);
+      const base = 0.15 + (s.frac - 0.15) * u;
+      const ripple = 0.10 * Math.sin(u * 9 + i * 1.7) * (0.3 + 0.7 * u);
+      let f = base + ripple; f = Math.max(0, Math.min(1, f));
+      if (k === n - 1) f = s.frac;
+      pts.push([gx + u * gw, gy + gh - f * gh]);
+    }
+    // area fill (vertical gradient col44 → col08)
+    const grd = ctx.createLinearGradient(0, gy, 0, gy + gh);
+    grd.addColorStop(0, col + '44'); grd.addColorStop(1, col + '08');
+    ctx.beginPath(); ctx.moveTo(pts[0][0], gy + gh);
+    for (const p of pts) ctx.lineTo(p[0], p[1]);
+    ctx.lineTo(pts[n - 1][0], gy + gh); ctx.closePath();
+    ctx.fillStyle = grd; ctx.fill();
+    // neon trace
+    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.shadowColor = col; ctx.shadowBlur = 6;
+    ctx.beginPath(); pts.forEach((p, k) => k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.stroke();
+    ctx.restore();
+    // head dot
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(pts[n - 1][0], pts[n - 1][1], 3.5, 0, 2 * Math.PI); ctx.fill();
+  }
 }
