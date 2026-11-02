@@ -858,20 +858,21 @@ function renderLanes(ctx: CanvasRenderingContext2D, page: PagePreview, chan: Cha
       ctx.arcTo(lx + lw, ly, lx + lw, ly + laneH, r); ctx.arcTo(lx + lw, ly + laneH, lx, ly + laneH, r);
       ctx.arcTo(lx, ly + laneH, lx, ly, r); ctx.arcTo(lx, ly, lx + lw, ly, r); ctx.closePath(); ctx.stroke(); }
 
-    // label (channel colour, top-left)
+    // label (channel colour) — top band, clear of the value below
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     ctx.fillStyle = m ? col : '#4a4f57'; setDevFont(ctx, 'p10');
-    ctx.fillText(m ? m.label.toUpperCase() : '—', lx + 16, ly + 8);
+    ctx.fillText(m ? m.label.toUpperCase() : '—', lx + 16, ly + 5);
 
     if (!m) continue;
     const s = sample(m, page.slotLimit?.[i]);
 
-    // big live value (left, lower) + small unit
+    // big live value — bottom band (baseline near the lane floor) so it never
+    // collides with the label row above it. Small unit trails it.
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = text; setDevFont(ctx, 'p20');
-    ctx.fillText(s.text, lx + 16, ly + laneH - 12);
+    ctx.fillText(s.text, lx + 16, ly + laneH - 7);
     if (s.unit) { const vw = ctx.measureText(s.text).width;
-      ctx.fillStyle = MUT; setDevFont(ctx, 'p10'); ctx.fillText(s.unit, lx + 16 + vw + 6, ly + laneH - 14); }
+      ctx.fillStyle = MUT; setDevFont(ctx, 'p10'); ctx.fillText(s.unit, lx + 16 + vw + 6, ly + laneH - 9); }
 
     // scrolling filled sparkline (right ~56%)
     const gx = lx + lw * 0.40, gw = lw * 0.56, gy = ly + 10, gh = laneH - 20;
