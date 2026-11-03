@@ -3,6 +3,14 @@
   "releases": [
     {
       "version": "AXIS V1.0.0",
+      "build": "v3.1.14-ssbleclear",
+      "date": "2026-11-03",
+      "notes": "Fixes removing a screensaver from the app: tapping Remove didn't actually clear it on the knob (the app tried to reach the device a way it can't over Bluetooth), so afterwards every new upload failed because the old image still filled the storage. Remove now works over the app's Bluetooth connection and frees the space, so you can upload a fresh screensaver right away. NOTE: needs BOTH this knob update AND the latest app update to work. App-only; your screensaver, calibration and look are preserved; dual-slot auto-rollback if anything is wrong.",
+      "url": "firmware/knob_v3_1.43-v3.1.14-ssbleclear.bin",
+      "size_bytes": 2207792
+    },
+    {
+      "version": "AXIS V1.0.0",
       "build": "v3.1.13-ssfix",
       "date": "2026-11-01",
       "notes": "Fixes the screensaver “Remove” breaking re-upload: after removing a screensaver, uploading a new one failed for every file (even a small still). Remove used to leave a hidden backup copy of the old image on the device, which filled the storage so the next upload had nowhere to go — and also made a removed screensaver come back on the next restart. Remove now fully clears it, so you can upload a fresh screensaver right away. Also includes the gear-axis fix from v3.1.12 (gears no longer flip after a restart — calibrate once on a cold start and it sticks).",
